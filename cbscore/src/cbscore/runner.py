@@ -118,6 +118,7 @@ async def runner(
     log_out_cb: AsyncRunCmdOutCallback | None = None,
     skip_build: bool = False,
     force: bool = False,
+    tls_verify: bool = True,
 ) -> None:
     our_actual_loc = Path(__file__).parent
 
@@ -174,6 +175,7 @@ async def runner(
     log to file:             {log_file_path if log_file_path else "not logging to file"}
     skip build:              {skip_build}
     force:                   {force}
+    tls-verify:              {tls_verify}
 """)
 
     if not entrypoint_path.exists() or not entrypoint_path.is_file():
@@ -250,7 +252,7 @@ async def runner(
         logger.error(msg)
         raise RunnerError(msg) from e
 
-    podman_args = ["--desc", desc_mount_loc]
+    podman_args = ["--desc", desc_mount_loc, f"--tls-verify={tls_verify}"]
     podman_volumes = {
         desc_file_path.resolve().as_posix(): desc_mount_loc,
         cbscore_path.resolve().as_posix(): "/runner/cbscore",
