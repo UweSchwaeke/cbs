@@ -32,6 +32,8 @@ from cbscore.utils.secrets.mgr import SecretsMgr
 
 logger = parent_logger.getChild("skopeo")
 
+SKOPEO_IMAGE_NOT_FOUND_RETCODE = 2
+
 
 class SkopeoTagListResult(pydantic.BaseModel):
     repository: str = pydantic.Field(alias="Repository")
@@ -112,7 +114,7 @@ def skopeo_copy(
     logger.info(f"signed image '{dst}': {out}")
 
 
-def skopeo_inspect(img: str, secrets: SecretsMgr) -> str:
+def skopeo_inspect(img: str, secrets: SecretsMgr, *, tls_verify: bool = True) -> str:
     logger.debug(f"inspect image '{img}'")
 
     try:
@@ -132,6 +134,7 @@ def skopeo_inspect(img: str, secrets: SecretsMgr) -> str:
         retcode, raw_out, err = skopeo(
             [
                 "inspect",
+                f"--tls-verify={tls_verify}",
                 "--creds",
                 Password(f"{user}:{passwd}"),
                 f"docker://{img}",
@@ -143,19 +146,26 @@ def skopeo_inspect(img: str, secrets: SecretsMgr) -> str:
 
     if retcode != 0:
         msg = f"error inspecting image '{img}': {err}"
-        logger.error(msg)
-        if re.match(r".*not\s+found.*", err):
+        # Handle "image not found" across different Skopeo versions:
+        # - Newer versions of Skopeo explicitly return exit code 2.
+        # - Older versions return a generic error code but include "not found" in
+        #   stderr.
+        if retcode == SKOPEO_IMAGE_NOT_FOUND_RETCODE or re.match(r".*not\s+found.*", err):
+            logger.debug(msg)
             raise ImageNotFoundError(img) from None
+        logger.error(msg)
         raise SkopeoError(msg) from None
 
     return raw_out
 
 
-def skopeo_image_exists(img: str, secrets: SecretsMgr) -> bool:
+def skopeo_image_exists(
+    img: str, secrets: SecretsMgr, *, tls_verify: bool = True
+) -> bool:
     logger.debug(f"check if image '{img}' exists")
 
     try:
-        _ = skopeo_inspect(img, secrets)
+        _ = skopeo_inspect(img, secrets, tls_verify=tls_verify)
     except ImageNotFoundError:
         logger.debug(f"image '{img}' does not exist")
         return False

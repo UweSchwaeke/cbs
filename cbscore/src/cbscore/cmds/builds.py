@@ -124,6 +124,11 @@ logger = parent_logger.getChild("builds")
     is_flag=True,
     default=False,
 )
+@click.option(
+    "--tls-verify",
+    help="Require HTTPS and verify certificates when talking to the container registry or daemon.",
+    default=True,
+)
 @pass_ctx
 def cmd_build(
     ctx: Ctx,
@@ -136,6 +141,7 @@ def cmd_build(
     log_file_path: Path | None,
     skip_build: bool,
     force: bool,
+    tls_verify: bool,
 ) -> None:
     assert ctx.config_path
 
@@ -192,6 +198,7 @@ def cmd_build(
                 log_file_path=log_file_path,
                 skip_build=skip_build,
                 force=force,
+                tls_verify=tls_verify,
             )
         )
 
@@ -245,12 +252,18 @@ Should not be called by the user directly. Use 'build' instead.
     is_flag=True,
     default=False,
 )
+@click.option(
+    "--tls-verify",
+    help="Require HTTPS and verify certificates when talking to the container registry or daemon.",
+    default=True,
+)
 @with_config
 def cmd_runner_build(
     config: Config,
     desc_path: Path,
     skip_build: bool,
     force: bool,
+    tls_verify: bool,
 ) -> None:
     upload_to_str = (
         config.storage.s3.url
@@ -285,6 +298,7 @@ sign with transit: {transit_signing_str}
          registry: {registry_str}
        skip build: {skip_build}
             force: {force}
+       tls-verify: {tls_verify}
 """)
 
     if not desc_path.exists():
@@ -303,6 +317,7 @@ sign with transit: {transit_signing_str}
             config,
             skip_build=skip_build,
             force=force,
+            tls_verify=tls_verify,
         )
     except BuilderError as e:
         logger.error(f"unable to initialize builder: {e}")

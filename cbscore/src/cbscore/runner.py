@@ -118,6 +118,7 @@ async def runner(
     log_out_cb: AsyncRunCmdOutCallback | None = None,
     skip_build: bool = False,
     force: bool = False,
+    tls_verify: bool = True,
 ) -> None:
     our_actual_loc = Path(__file__).parent
 
@@ -174,6 +175,7 @@ async def runner(
     log to file:             {log_file_path if log_file_path else "not logging to file"}
     skip build:              {skip_build}
     force:                   {force}
+    tls-verify:              {tls_verify}
 """)
 
     if not entrypoint_path.exists() or not entrypoint_path.is_file():
@@ -275,6 +277,9 @@ async def runner(
 
     if force:
         podman_args.append("--force")
+
+    if not tls_verify:
+        podman_args.append("--tls-verify=false")
 
     ctr_name = run_name if run_name else gen_run_name()
 
