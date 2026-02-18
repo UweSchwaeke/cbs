@@ -29,7 +29,7 @@ class ContainerBuilder:
     version_desc: VersionDescriptor
     release_desc: ReleaseDesc
     components: dict[str, CoreComponentLoc]
-
+    tls_verify: bool
     container: BuildahContainer | None
 
     def __init__(
@@ -37,10 +37,13 @@ class ContainerBuilder:
         version_desc: VersionDescriptor,
         release_desc: ReleaseDesc,
         components: dict[str, CoreComponentLoc],
+        *,
+        tls_verify: bool = True,
     ) -> None:
         self.version_desc = version_desc
         self.release_desc = release_desc
         self.components = components
+        self.tls_verify = tls_verify
         self.container = None
 
     async def build(self) -> None:
@@ -238,4 +241,6 @@ class ContainerBuilder:
     ) -> None:
         logger.info(f"finish container for '{self.version_desc.version}'")
         assert self.container
-        await self.container.finish(secrets, sign_with_transit=sign_with_transit)
+        await self.container.finish(
+            secrets, sign_with_transit=sign_with_transit, tls_verify=self.tls_verify
+        )
