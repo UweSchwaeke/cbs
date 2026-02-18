@@ -401,7 +401,7 @@ class UserAuthorizationRule(pydantic.BaseModel):
     ) -> bool:
         """Check whether this rule grants access for the given registry."""
         return self._is_authorized_pattern_type(
-            groups, ProjectAuthorizationEntry, registry
+            groups, RegistryAuthorizationEntry, registry
         )
 
     def is_repository_authorized(
