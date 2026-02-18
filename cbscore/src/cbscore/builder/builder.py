@@ -184,7 +184,9 @@ class Builder:
             return None
 
         try:
-            ctr_builder = ContainerBuilder(self.desc, release_desc, self.components)
+            ctr_builder = ContainerBuilder(
+                self.desc, release_desc, self.components, tls_verify=self.tls_verify
+            )
             await ctr_builder.build()
             await ctr_builder.finish(
                 self.secrets,
