@@ -108,7 +108,7 @@ class PeriodicBuildTask(PeriodicTask):
         new_descriptor.dst_image.tag = self.formatted_tag
 
         try:
-            build_id, build_state = await mgr.new(self.created_by_user, self.descriptor)
+            build_id, build_state = await mgr.new(self.created_by_user, new_descriptor)
         except NotAvailableError:
             logger.warning("unable to build at this time, backoff and try again")
             raise TryAgainError() from None
