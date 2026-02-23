@@ -121,6 +121,7 @@ async def runner(
     force: bool = False,
     tls_verify: bool = True,
     local: bool = False,
+    dev: bool,
 ) -> BuildArtifactReport | None:
     our_actual_loc = Path(__file__).parent
 
@@ -179,6 +180,7 @@ async def runner(
     force:                   {force}
     tls-verify:              {tls_verify}
     push to s3:              {not local}
+    development mode:        {dev}
 """)
 
     if not entrypoint_path.exists() or not entrypoint_path.is_file():
@@ -294,6 +296,7 @@ async def runner(
                     if logger.getEffectiveLevel() == logging.DEBUG
                     else "0",
                     "CBS_LOCAL": "1" if local else "0",
+                    "CBS_DEV": "1" if dev else "0",
                 },
                 args=podman_args,
                 volumes=podman_volumes,
