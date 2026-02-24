@@ -125,7 +125,7 @@ class Builder:
                 self.desc.version,
             )
 
-            # FIXME: checking for arch must be done agaisnt the version descriptor,
+            # FIXME: checking for arch must be done against the version descriptor,
             # instead of hardcoded.
             if release_desc and release_desc.builds.get(ArchType.x86_64):
                 if not self.force:

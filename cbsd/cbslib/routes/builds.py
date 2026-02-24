@@ -134,7 +134,7 @@ async def get_builds_status(
     This operation will either be for all builds across the service, regardless of
     their issuing user, or for just for the authenticated user.
 
-    Whether the `all` paramenter will be accepted will depend on the user's
+    Whether the `all` parameter will be accepted will depend on the user's
     available capabilities.
     """
     logger.debug("obtain builds status for " + (f"{user.email}" if not all else "all"))
@@ -227,11 +227,11 @@ async def get_status() -> JSONResponse:
 
     Requires enhanced capabilities.
     """
-    inspct = celery_app.control.inspect()
+    inspect = celery_app.control.inspect()
 
-    active = inspct.active()
-    scheduled = inspct.scheduled()
-    reserved = inspct.reserved()
+    active = inspect.active()
+    scheduled = inspect.scheduled()
+    reserved = inspect.reserved()
 
     active_info: list[tuple[str, str, Any]] = []  # pyright: ignore[reportExplicitAny]
     scheduled_info: list[Any] = []  # pyright: ignore[reportExplicitAny]

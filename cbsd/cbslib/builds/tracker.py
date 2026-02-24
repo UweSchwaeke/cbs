@@ -268,7 +268,7 @@ class BuildsTracker:
             try:
                 db_entry = await self._db.get(build_id)
             except BuildsDBError as e:
-                msg = f"fialed to get build '{build_id}' from db: {e}"
+                msg = f"failed to get build '{build_id}' from db: {e}"
                 logger.warning(msg)
                 raise TrackerError(msg) from e
 

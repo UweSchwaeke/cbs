@@ -110,7 +110,7 @@ class BuildsMgr:
         self._init_task = None
 
     async def init(self) -> None:
-        """Perform initialisation tasks."""
+        """Perform initialization tasks."""
         # garbage collect old unfinished builds that may have lingered if we were
         # hard shutdown.
         await self._db.gc()

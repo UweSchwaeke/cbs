@@ -85,7 +85,7 @@ def _get_container_desc(
             parent_name = candidate.parent.name
             parent_m = re.match(rc, parent_name)
             if not parent_m:
-                logger.warning(f"unexpecter malformed version '{parent_name}'")
+                logger.warning(f"unexpected malformed version '{parent_name}'")
                 continue
 
             matched = 0
@@ -96,7 +96,7 @@ def _get_container_desc(
                 if ver_m_val != parent_m_val:
                     # found diverging version part
                     if ver_m_val is not None and parent_m_val is None:
-                        # but the divergene is because the parent directory does not
+                        # but the divergence is because the parent directory does not
                         # have that bit. hence, the parent is a candidate for this
                         # version.
                         break
@@ -109,7 +109,7 @@ def _get_container_desc(
 
             if matched > best_rank:
                 logger.debug(
-                    f"found preffered candidate, rank '{matched}' loc '{candidate}'"
+                    f"found preferred candidate, rank '{matched}' loc '{candidate}'"
                 )
                 best_rank = matched
                 best = candidate

@@ -221,7 +221,7 @@ def cmd_manifest_stage_info(
     pass
 
 
-@cmd_manifest_stage.command("amend", help="Amend metada for a given stage.")
+@cmd_manifest_stage.command("amend", help="Amend metadata for a given stage.")
 @click.option(
     "-m",
     "--manifest",
@@ -276,7 +276,7 @@ def cmd_manifest_stage_amend(
     stage_tags: list[str],
 ) -> None:
     if not author_name and not author_email and not stage_tags:
-        perror("no paramenters were specified to amend stage")
+        perror("no parameters were specified to amend stage")
         sys.exit(errno.EINVAL)
 
     try:
