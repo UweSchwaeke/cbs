@@ -88,7 +88,7 @@ class Users:
                 return user.token
 
             token = token_create(email)
-            logger.debug(f"created token for user '{email}': {token}")
+            logger.debug(f"created token for user '{email}'")
 
             self._tokens_db[token.token.get_secret_value()] = token
             self._users_db[email] = User(email=email, name=name, token=token)
