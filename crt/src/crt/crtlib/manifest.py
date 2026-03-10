@@ -21,17 +21,7 @@ from typing import cast
 
 import pydantic
 from cbscore.versions.utils import parse_version
-
-from crt.crtlib.apply import ApplyError, apply_manifest
-from crt.crtlib.errors import CRTError
-from crt.crtlib.errors.manifest import (
-    MalformedManifestError,
-    ManifestError,
-    ManifestExistsError,
-    NoSuchManifestError,
-)
-from crt.crtlib.errors.stages import MissingStagePatchError
-from crt.crtlib.git_utils import (
+from shell.git import (
     GitError,
     GitFetchError,
     GitFetchHeadNotFoundError,
@@ -44,6 +34,16 @@ from crt.crtlib.git_utils import (
     git_push,
     git_status,
 )
+
+from crt.crtlib.apply import ApplyError, apply_manifest
+from crt.crtlib.errors import CRTError
+from crt.crtlib.errors.manifest import (
+    MalformedManifestError,
+    ManifestError,
+    ManifestExistsError,
+    NoSuchManifestError,
+)
+from crt.crtlib.errors.stages import MissingStagePatchError
 from crt.crtlib.logger import logger as parent_logger
 from crt.crtlib.models.common import ManifestPatchEntry
 from crt.crtlib.models.manifest import ReleaseManifest
@@ -85,9 +85,9 @@ def _prepare_repo(
 
     try:
         base_remote_uri = f"github.com/{base_remote_name}"
-        _ = git_prepare_remote(repo_path, base_remote_uri, base_remote_name, token)
+        git_prepare_remote(repo_path, base_remote_uri, base_remote_name, token)
         push_remote_uri = f"github.com/{push_remote_name}"
-        _ = git_prepare_remote(repo_path, push_remote_uri, push_remote_name, token)
+        git_prepare_remote(repo_path, push_remote_uri, push_remote_name, token)
     except GitError as e:
         raise ManifestError(uuid=manifest_uuid, msg=str(e)) from None
 

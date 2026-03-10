@@ -1,0 +1,16 @@
+[project]
+name = "shell"
+version = "0.1.0"
+description = "common interfacte for shell access"
+readme = "README.md"
+authors = [
+    { name = "Uwe Schwaeke", email = "uwe.schwaeke@clyso.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "gitpython>=3.1.44",
+]
+
+[build-system]
+requires = ["uv_build>=0.10.2,<0.11.0"]
+build-backend = "uv_build"

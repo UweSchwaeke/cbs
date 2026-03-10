@@ -20,25 +20,26 @@ from typing import cast
 import click
 import rich.box
 from cbscore.versions.utils import parse_version
-from git import GitError
 from rich.padding import Padding
 from rich.table import Table
-
-from crt.cmds._common import CRTExitError, CRTProgress
-from crt.crtlib.errors.manifest import NoSuchManifestError
-from crt.crtlib.errors.release import NoSuchReleaseError
-from crt.crtlib.git_utils import (
+from shell.git import (
+    GitError,
     GitFetchHeadNotFoundError,
     GitIsTagError,
     git_branch_from,
     git_cleanup_repo,
     git_fetch_ref,
-    git_get_remote_ref,
     git_prepare_remote,
     git_push,
+    git_remote_ref_exists,
+    git_remote_refs,
     git_reset_head,
     git_tag,
 )
+
+from crt.cmds._common import CRTExitError, CRTProgress
+from crt.crtlib.errors.manifest import NoSuchManifestError
+from crt.crtlib.errors.release import NoSuchReleaseError
 from crt.crtlib.manifest import load_manifest_by_name_or_uuid
 from crt.crtlib.models.release import Release
 from crt.crtlib.release import load_release, release_exists, store_release
@@ -74,11 +75,9 @@ def _prepare_release_repo(
         raise _ExitError(errno.ENOTRECOVERABLE) from e
 
     try:
-        _ = git_prepare_remote(
-            ceph_repo_path, f"github.com/{src_repo}", src_repo, token
-        )
+        git_prepare_remote(ceph_repo_path, f"github.com/{src_repo}", src_repo, token)
         if src_repo != dst_repo:
-            _ = git_prepare_remote(
+            git_prepare_remote(
                 ceph_repo_path, f"github.com/{dst_repo}", dst_repo, token
             )
     except GitError as e:
@@ -94,7 +93,7 @@ def _prepare_release_branches(
     dst_branch: str,
 ) -> None:
     try:
-        if git_get_remote_ref(ceph_repo_path, dst_branch, dst_repo):
+        if git_remote_ref_exists(ceph_repo_path, dst_branch, dst_repo):
             perror(f"destination branch '{dst_branch}' already exists in '{dst_repo}'")
             sys.exit(errno.EEXIST)
     except GitError as e:
@@ -288,7 +287,7 @@ def cmd_release_start(
     progress.done_task()
 
     progress.new_task("prepare release branches")
-    if git_get_remote_ref(ceph_repo_path, f"release/{release_name}", dst_repo):
+    if git_remote_ref_exists(ceph_repo_path, f"release/{release_name}", dst_repo):
         progress.stop_error()
         perror(f"release '{release_name}' already marked released in '{dst_repo}'")
         sys.exit(errno.EEXIST)
@@ -408,9 +407,7 @@ def cmd_release_list(
     progress.new_task("prepare remote")
 
     try:
-        remote = git_prepare_remote(
-            ceph_repo_path, f"github.com/{dst_repo}", dst_repo, gh_token
-        )
+        git_prepare_remote(ceph_repo_path, f"github.com/{dst_repo}", dst_repo, gh_token)
     except GitError as e:
         perror(f"unable to prepare remote repository '{dst_repo}': {e}")
         progress.stop_error()
@@ -422,9 +419,8 @@ def cmd_release_list(
     remote_releases: list[str] = []
     remote_base_releases: list[str] = []
     releases_meta: dict[str, Release | None] = {}
-
-    for r in remote.refs:
-        ref_name = r.name[len(dst_repo) + 1 :]
+    for name in git_remote_refs(ceph_repo_path, dst_repo):
+        ref_name = name[len(dst_repo) + 1 :]
         m = re.match(r"(release|release-base)/((?:ces|ccs)-.+)", ref_name)
         if not m:
             continue

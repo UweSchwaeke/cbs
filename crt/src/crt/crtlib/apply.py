@@ -17,17 +17,19 @@ from datetime import datetime as dt
 from pathlib import Path
 from typing import override
 
-import git
-
-from crt.crtlib.git_utils import (
+from shell.git import (
     SHA,
     GitAMApplyError,
+    GitError,
     git_am_abort,
     git_am_apply,
+    git_branch_delete,
+    git_checkout_submodule_ref,
     git_cleanup_repo,
-    git_get_local_head,
     git_prepare_remote,
+    git_prepare_repo,
 )
+
 from crt.crtlib.logger import logger as parent_logger
 from crt.crtlib.models.common import ManifestPatchEntry
 from crt.crtlib.models.manifest import ReleaseManifest
@@ -58,86 +60,6 @@ class ApplyConflictError(ApplyError):
         self.conflict_files = files
 
 
-def _update_submodules(repo_path: Path) -> None:
-    logger.debug("update submodules")
-    repo = git.Repo(repo_path)
-    try:
-        repo.git.execute(  # pyright: ignore[reportCallIssue]
-            ["git", "submodule", "update", "--init", "--recursive"],
-            as_process=False,
-            with_stdout=True,
-        )
-    except Exception as e:
-        msg = f"unable to update repository's submodules: {e}"
-        logger.error(msg)
-        raise ApplyError(msg=msg) from None
-
-
-def _checkout_ref(repo_path: Path, from_ref: str, branch_name: str) -> git.Head:
-    logger.debug(f"checkout ref '{from_ref}' to '{branch_name}'")
-    repo = git.Repo(repo_path)
-    if head := git_get_local_head(repo_path, branch_name):
-        logger.debug(f"branch '{branch_name}' already exists, simply checkout")
-        repo.head.reference = head
-        _ = repo.head.reset(index=True, working_tree=True)
-        return head
-
-    assert branch_name not in repo.heads
-    try:
-        new_head = repo.create_head(branch_name, from_ref)
-    except Exception:
-        msg = f"unable to create new head '{branch_name}' " + f"from '{from_ref}'"
-        logger.exception(msg)
-        raise ApplyError(msg=msg) from None
-
-    repo.head.reference = new_head
-    _ = repo.head.reset(index=True, working_tree=True)
-
-    try:
-        git_cleanup_repo(repo_path)
-        _update_submodules(repo_path)
-    except Exception as e:
-        msg = f"unable to clean up repo state after checkout: {e}"
-        logger.error(msg)
-        raise ApplyError(msg=msg) from None
-
-    return new_head
-
-
-def _prepare_repo(repo_path: Path):
-    repo = git.Repo(repo_path)
-
-    def _check_repo() -> None:
-        logger.debug("check repo's config user and email")
-        for what in ["name", "email"]:
-            try:
-                res = repo.git.execute(
-                    ["git", "config", f"user.{what}"],
-                    with_extended_output=False,
-                    as_process=False,
-                    stdout_as_string=True,
-                )
-            except Exception:
-                msg = f"error obtaining repository's user's {what}"
-                logger.error(msg)
-                raise ApplyError(msg=msg) from None
-
-            if not res:
-                msg = f"user's {what} not set for repository"
-                logger.error(msg)
-                raise ApplyError(msg=msg)
-
-    def _cleanup_repo() -> None:
-        git_cleanup_repo(repo_path)
-        repo.head.reference = repo.heads.main
-        _ = repo.index.reset(index=True, working_tree=True)
-
-    # propagate exceptions
-    _check_repo()
-    _cleanup_repo()
-    _update_submodules(repo_path)
-
-
 def apply_manifest(
     manifest: ReleaseManifest,
     ceph_repo_path: Path,
@@ -147,8 +69,6 @@ def apply_manifest(
     *,
     no_cleanup: bool = False,
 ) -> tuple[bool, list[ManifestPatchEntry], list[ManifestPatchEntry]]:
-    ceph_repo = git.Repo(ceph_repo_path)
-
     logger.info(f"apply manifest '{manifest.release_uuid}' to branch '{target_branch}'")
 
     def _cleanup(*, abort_apply: bool = False) -> None:
@@ -157,8 +77,8 @@ def apply_manifest(
             git_am_abort(ceph_repo_path)
 
         git_cleanup_repo(ceph_repo_path)
-        ceph_repo.head.reference = ceph_repo.heads.main
-        ceph_repo.git.branch(["-D", target_branch])  # pyright: ignore[reportAny]
+
+        git_branch_delete(ceph_repo_path, target_branch)
 
     def _apply_patches(
         patches: list[ManifestPatchEntry],
@@ -189,18 +109,18 @@ def apply_manifest(
         return (added, skipped)
 
     try:
-        _prepare_repo(ceph_repo_path)
+        git_prepare_repo(ceph_repo_path)
         repo_name = f"{manifest.base_ref_org}/{manifest.base_ref_repo}"
-        _ = git_prepare_remote(
-            ceph_repo_path, f"github.com/{repo_name}", repo_name, token
-        )
-    except ApplyError as e:
+        git_prepare_remote(ceph_repo_path, f"github.com/{repo_name}", repo_name, token)
+    except GitError as e:
         logger.error(e)
-        raise e from None
+        raise ApplyError(msg=e.msg) from None
 
     try:
-        _branch = _checkout_ref(ceph_repo_path, manifest.base_ref, target_branch)
-    except ApplyError as e:
+        _branch = git_checkout_submodule_ref(
+            ceph_repo_path, manifest.base_ref, target_branch
+        )
+    except GitError as e:
         msg = f"unable to apply manifest patchsets: {e}"
         logger.error(msg)
         if not no_cleanup:

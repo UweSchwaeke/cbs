@@ -12,10 +12,15 @@ dependencies = [
     "pydantic>=2.10.6",
     "rich>=14.0.0",
     "types-boto3[s3]==1.35.81",
+    "shell"
 ]
+
+[tool.uv.sources]
+shell = { workspace = true }
 
 [project.scripts]
 crt = "crt.cmds.crt:cmd_crt"
+
 
 [build-system]
 requires = ["uv_build>=0.9.1,<0.10.0"]

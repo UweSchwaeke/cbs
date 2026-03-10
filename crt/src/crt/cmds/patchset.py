@@ -26,6 +26,14 @@ import rich.box
 from rich.console import Group, RenderableType
 from rich.padding import Padding
 from rich.table import Table
+from shell.git import (
+    SHA,
+    git_branch_delete,
+    git_fetch_ref,
+    git_get_patch_sha_title,
+    git_patches_in_interval,
+    git_prepare_remote,
+)
 
 from crt.cmds import (
     Ctx,
@@ -41,13 +49,6 @@ from crt.cmds import logger as parent_logger
 from crt.cmds._common import CRTProgress
 from crt.crtlib.errors.patchset import (
     MalformedPatchSetError,
-)
-from crt.crtlib.git_utils import (
-    SHA,
-    git_branch_delete,
-    git_get_patch_sha_title,
-    git_patches_in_interval,
-    git_prepare_remote,
 )
 from crt.crtlib.models.common import (
     AuthorData,
@@ -551,7 +552,7 @@ def cmd_patchset_add(
     # the right shas
     progress.new_task("prepare remote")
     try:
-        remote = git_prepare_remote(
+        git_prepare_remote(
             ceph_repo_path, f"github.com/{gh_repo}", gh_repo, ctx.github_token
         )
     except Exception as e:
@@ -565,7 +566,7 @@ def cmd_patchset_add(
     seq = dt.now(datetime.UTC).strftime("%Y%m%d%H%M%S")
     dst_branch = f"patchset/branch/{gh_repo.replace('/', '--')}--{patches_branch}-{seq}"
     try:
-        _ = remote.fetch(refspec=f"{patches_branch}:{dst_branch}")
+        _ = git_fetch_ref(ceph_repo_path, patches_branch, dst_branch, gh_repo)
     except Exception as e:
         progress.stop_error()
         perror(f"unable to fetch branch '{patches_branch}': {e}")

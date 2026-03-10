@@ -18,12 +18,12 @@ from collections.abc import Callable
 from pathlib import Path
 
 import click
+from shell.git import GitError, git_prepare_remote, git_revparse
 
 from crt.cmds import Ctx, pass_ctx, perror, psuccess, pwarn, with_patches_repo_path
 from crt.cmds import logger as parent_logger
 from crt.crtlib.apply import ApplyError, patches_apply_to_manifest
 from crt.crtlib.errors.manifest import MalformedManifestError, NoSuchManifestError
-from crt.crtlib.git_utils import GitError, git_prepare_remote, git_revparse
 from crt.crtlib.manifest import load_manifest_by_name_or_uuid, store_manifest
 from crt.crtlib.patch import (
     PatchError,
@@ -163,7 +163,7 @@ def cmd_patch_add(
 
     # update remote repo, maybe patches are not yet in the current repo state
     try:
-        _ = git_prepare_remote(
+        git_prepare_remote(
             src_ceph_repo_path,
             f"github.com/{src_gh_repo}",
             src_gh_repo,

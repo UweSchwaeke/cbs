@@ -15,141 +15,31 @@ import logging
 import re
 import sys
 import tempfile
+from collections.abc import Generator
 from pathlib import Path
-from typing import cast, override
+from typing import cast
 
 import git
 
-from crt.crtlib.errors import CRTError
-from crt.crtlib.logger import logger as parent_logger
+from shell.git.exceptions import (
+    GitAMApplyError,
+    GitCherryPickConflictError,
+    GitCherryPickError,
+    GitCreateHeadExistsError,
+    GitEmptyPatchDiffError,
+    GitError,
+    GitFetchError,
+    GitFetchHeadNotFoundError,
+    GitHeadNotFoundError,
+    GitIsTagError,
+    GitMissingBranchError,
+    GitMissingRemoteError,
+    GitPatchDiffError,
+    GitPushError,
+)
+from shell.git.types import SHA
 
-logger = parent_logger.getChild("git")
-
-
-SHA = str
-
-
-class GitError(CRTError):
-    @override
-    def __str__(self) -> str:
-        return "git error" + (f": {self.msg}" if self.msg else "")
-
-
-class GitIsTagError(GitError):
-    def __init__(self, tag: str) -> None:
-        super().__init__(msg=tag)
-
-    @override
-    def __str__(self) -> str:
-        return self.with_maybe_msg("found unexpected tag")
-
-
-class GitPatchDiffError(GitError):
-    @override
-    def __str__(self) -> str:
-        return "patches diff error" + (f": {self.msg}" if self.msg else "")
-
-
-class GitEmptyPatchDiffError(GitPatchDiffError):
-    pass
-
-
-class GitCherryPickError(GitError):
-    @override
-    def __str__(self) -> str:
-        return "cherry-pick error" + (f": {self.msg}" if self.msg else "")
-
-
-class GitCherryPickConflictError(GitCherryPickError):
-    sha: SHA
-    conflicts: list[str]
-
-    def __init__(self, sha: SHA, files: list[str] | None = None) -> None:
-        super().__init__(msg=f"conflict occurred on sha '{sha}'")
-        self.sha = sha
-        self.conflicts = files if files else []
-
-
-class GitAMApplyError(GitError):
-    pass
-
-
-class GitMissingRemoteError(GitError):
-    remote_name: str
-
-    def __init__(self, remote_name: str) -> None:
-        super().__init__()
-        self.remote_name = remote_name
-
-    @override
-    def __str__(self) -> str:
-        return f"missing remote '{self.remote_name}'"
-
-
-class GitMissingBranchError(GitError):
-    def __init__(self, branch_name: str) -> None:
-        super().__init__(msg=branch_name)
-
-    @override
-    def __str__(self) -> str:
-        return self.with_maybe_msg("missing branch")
-
-
-class GitCreateHeadExistsError(GitError):
-    def __init__(self, name: str) -> None:
-        super().__init__(msg=name)
-
-    @override
-    def __str__(self) -> str:
-        return self.with_maybe_msg("head already exists")
-
-
-class GitHeadNotFoundError(GitError):
-    def __init__(self, name: str) -> None:
-        super().__init__(msg=name)
-
-    @override
-    def __str__(self) -> str:
-        return self.with_maybe_msg("head not found")
-
-
-class GitFetchError(GitError):
-    remote_name: str
-    from_ref: str
-    to_ref: str
-
-    def __init__(self, remote_name: str, from_ref: str, to_ref: str) -> None:
-        super().__init__()
-        self.remote_name = remote_name
-        self.from_ref = from_ref
-        self.to_ref = to_ref
-
-    @override
-    def __str__(self) -> str:
-        return (
-            f"failed fetching from remote '{self.remote_name}': "
-            + f"from '{self.from_ref}' to '{self.to_ref}'"
-        )
-
-
-class GitFetchHeadNotFoundError(GitFetchError):
-    def __init__(self, remote_name: str, head: str) -> None:
-        super().__init__(remote_name, head, "")
-
-    @override
-    def __str__(self) -> str:
-        return f"head '{self.from_ref}' not found in remote '{self.remote_name}'"
-
-
-class GitPushError(GitError):
-    def __init__(self, branch: str, dst_branch: str, remote_name: str) -> None:
-        super().__init__(
-            msg=f"from branch '{branch}' to '{dst_branch}' on remote '{remote_name}'"
-        )
-
-    @override
-    def __str__(self) -> str:
-        return self.with_maybe_msg("unable to push")
+logger = logging.getLogger(__name__)
 
 
 def git_check_patches_diff(
@@ -360,7 +250,7 @@ def git_cleanup_repo(repo_path: Path) -> None:
 
 def git_prepare_remote(
     repo_path: Path, remote_uri: str, remote_name: str, token: str
-) -> git.Remote:
+) -> None:
     logger.info(f"prepare remote '{remote_name}' uri '{remote_uri}'")
 
     repo = git.Repo(repo_path)
@@ -379,8 +269,6 @@ def git_prepare_remote(
         logger.error(e.stderr)
         raise GitError(msg=f"unable to update remote '{remote_name}'") from None
 
-    return remote
-
 
 def _get_remote_ref_name(
     remote_name: str, remote_ref: str, *, ref_name: str | None = None
@@ -395,9 +283,7 @@ def _get_remote_ref_name(
     return None
 
 
-def git_get_remote_ref(
-    repo_path: Path, ref_name: str, remote_name: str
-) -> git.RemoteReference | None:
+def git_remote_ref_exists(repo_path: Path, ref_name: str, remote_name: str) -> bool:
     repo = git.Repo(repo_path)
 
     try:
@@ -408,9 +294,9 @@ def git_get_remote_ref(
 
     for ref in remote.refs:
         if _get_remote_ref_name(remote_name, ref.name, ref_name=ref_name):
-            return ref
+            return True
 
-    return None
+    return False
 
 
 def git_pull_ref(repo_path: Path, from_ref: str, to_ref: str, remote_name: str) -> bool:
@@ -418,7 +304,7 @@ def git_pull_ref(repo_path: Path, from_ref: str, to_ref: str, remote_name: str) 
     if repo.active_branch.name != to_ref:
         return False
 
-    if not git_get_remote_ref(repo_path, from_ref, remote_name):
+    if not git_remote_ref_exists(repo_path, from_ref, remote_name):
         logger.warning(f"ref '{from_ref}' not found in remote '{remote_name}'")
         return False
 
@@ -442,7 +328,7 @@ def _get_tag(repo_path: Path, tag_name: str) -> git.TagReference | None:
     return None
 
 
-def git_get_local_head(repo_path: Path, name: str) -> git.Head | None:
+def _git_get_local_head(repo_path: Path, name: str) -> git.Head | None:
     repo = git.Repo(repo_path)
     for head in repo.heads:
         if head.name == name:
@@ -454,7 +340,7 @@ def git_reset_head(repo_path: Path, new_head: str) -> None:
     """Reset current checked out head to `new_head`."""
     repo = git.Repo(repo_path)
 
-    head = git_get_local_head(repo_path, new_head)
+    head = _git_get_local_head(repo_path, new_head)
     if not head:
         msg = f"unexpected missing local head '{new_head}'"
         logger.error(msg)
@@ -471,7 +357,7 @@ def git_branch_from(repo_path: Path, src_ref: str, dst_branch: str) -> None:
     repo = git.Repo(repo_path)
     logger.debug(f"repo active branch: {repo.active_branch}")
 
-    if git_get_local_head(repo_path, dst_branch):
+    if _git_get_local_head(repo_path, dst_branch):
         msg = f"unable to create branch '{dst_branch}', already exists"
         logger.error(msg)
         raise GitCreateHeadExistsError(dst_branch)
@@ -516,7 +402,7 @@ def git_fetch_ref(
         raise GitIsTagError(from_ref)
 
     # check whether 'from_ref' is a remote head
-    if not git_get_remote_ref(repo_path, from_ref, remote_name):
+    if not git_remote_ref_exists(repo_path, from_ref, remote_name):
         logger.warning(f"unable to find ref '{from_ref}' in remote '{remote_name}'")
         raise GitFetchHeadNotFoundError(remote_name, from_ref)
 
@@ -588,7 +474,7 @@ def git_checkout_ref(
 
         if target_branch and head.name != target_branch:
             # checkout 'head' to a new branch
-            if git_get_local_head(repo_path, target_branch):
+            if _git_get_local_head(repo_path, target_branch):
                 raise GitCreateHeadExistsError(target_branch)
             head = repo.create_head(target_branch, head)
 
@@ -603,7 +489,7 @@ def git_checkout_ref(
     target_branch = to_branch if to_branch else ref
 
     # check if 'ref' exists as a branch locally
-    if head := git_get_local_head(repo_path, target_branch):
+    if head := _git_get_local_head(repo_path, target_branch):
         _checkout_head(head, target_branch=target_branch)
         return
 
@@ -665,7 +551,7 @@ def git_push(
 ) -> tuple[bool, list[str], list[str]]:
     dst_branch = branch_to if branch_to else branch
 
-    head = git_get_local_head(repo_path, branch)
+    head = _git_get_local_head(repo_path, branch)
     if not head:
         logger.error(f"unable to find branch '{branch}' to push")
         raise GitHeadNotFoundError(branch)
@@ -793,6 +679,100 @@ def git_format_patch(repo_path: Path, rev: SHA, *, base_rev: SHA | None = None) 
         raise GitError(msg=msg) from None
 
     return res
+
+
+def git_update_submodules(repo_path: Path) -> None:
+    logger.debug("update submodules")
+    repo = git.Repo(repo_path)
+    try:
+        repo.git.execute(  # pyright: ignore[reportCallIssue]
+            ["git", "submodule", "update", "--init", "--recursive"],
+            as_process=False,
+            with_stdout=True,
+        )
+    except Exception as e:
+        msg = f"unable to update repository's submodules: {e}"
+        logger.error(msg)
+        raise GitError(msg=msg) from None
+
+
+def git_checkout_submodule_ref(
+    repo_path: Path, from_ref: str, branch_name: str
+) -> git.Head:
+    logger.debug(f"checkout ref '{from_ref}' to '{branch_name}'")
+    repo = git.Repo(repo_path)
+
+    if head := _git_get_local_head(repo_path, branch_name):
+        logger.debug(f"branch '{branch_name}' already exists, simply checkout")
+        repo.head.reference = head
+        _ = repo.head.reset(index=True, working_tree=True)
+        return head
+
+    assert branch_name not in repo.heads
+    try:
+        new_head = repo.create_head(branch_name, from_ref)
+    except Exception:
+        msg = f"unable to create new head '{branch_name}' " + f"from '{from_ref}'"
+        logger.exception(msg)
+        raise GitError(msg=msg) from None
+
+    repo.head.reference = new_head
+    _ = repo.head.reset(index=True, working_tree=True)
+
+    try:
+        git_cleanup_repo(repo_path)
+        git_update_submodules(repo_path)
+    except Exception as e:
+        msg = f"unable to clean up repo state after checkout: {e}"
+        logger.error(msg)
+        raise GitError(msg=msg) from None
+
+    return new_head
+
+
+def git_prepare_repo(repo_path: Path):
+    repo = git.Repo(repo_path)
+
+    def _check_repo() -> None:
+        logger.debug("check repo's config user and email")
+        for what in ["name", "email"]:
+            try:
+                res = repo.git.execute(
+                    ["git", "config", f"user.{what}"],
+                    with_extended_output=False,
+                    as_process=False,
+                    stdout_as_string=True,
+                )
+            except Exception:
+                msg = f"error obtaining repository's user's {what}"
+                logger.error(msg)
+                raise GitError(msg=msg) from None
+
+            if not res:
+                msg = f"user's {what} not set for repository"
+                logger.error(msg)
+                raise GitError(msg=msg)
+
+    def _cleanup_repo() -> None:
+        git_cleanup_repo(repo_path)
+        repo.head.reference = repo.heads.main
+        _ = repo.index.reset(index=True, working_tree=True)
+
+    # propagate exceptions
+    _check_repo()
+    _cleanup_repo()
+    git_update_submodules(repo_path)
+
+
+def git_remote_refs(repo_path: Path, remote_name: str) -> Generator[str]:
+    repo = git.Repo(repo_path)
+    try:
+        remote = repo.remote(remote_name)
+        for r in remote.refs:
+            yield r.name
+    except ValueError:
+        logger.error(f"remote '{remote_name}' not found")
+        raise GitMissingRemoteError(remote_name) from None
 
 
 if __name__ == "__main__":
