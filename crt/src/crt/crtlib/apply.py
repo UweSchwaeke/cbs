@@ -13,6 +13,7 @@
 
 
 import datetime
+import logging
 from datetime import datetime as dt
 from pathlib import Path
 from typing import override
@@ -30,12 +31,11 @@ from shell.git import (
     git_prepare_repo,
 )
 
-from crt.crtlib.logger import logger as parent_logger
 from crt.crtlib.models.common import ManifestPatchEntry
 from crt.crtlib.models.manifest import ReleaseManifest
 from crt.crtlib.patch import PatchExistsError
 
-logger = parent_logger.getChild("apply")
+logger = logging.getLogger(__name__)
 
 
 class ApplyError(Exception):

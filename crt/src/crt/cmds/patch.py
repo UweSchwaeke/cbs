@@ -12,6 +12,7 @@
 # GNU General Public License for more details.
 
 import errno
+import logging
 import re
 import sys
 from collections.abc import Callable
@@ -21,7 +22,6 @@ import click
 from shell.git import GitError, git_prepare_remote, git_revparse
 
 from crt.cmds import Ctx, pass_ctx, perror, psuccess, pwarn, with_patches_repo_path
-from crt.cmds import logger as parent_logger
 from crt.crtlib.apply import ApplyError, patches_apply_to_manifest
 from crt.crtlib.errors.manifest import MalformedManifestError, NoSuchManifestError
 from crt.crtlib.manifest import load_manifest_by_name_or_uuid, store_manifest
@@ -30,7 +30,7 @@ from crt.crtlib.patch import (
     patch_add,
 )
 
-logger = parent_logger.getChild("patches")
+logger = logging.getLogger("patches")
 
 
 def _cmd_validate_version_wrapper(

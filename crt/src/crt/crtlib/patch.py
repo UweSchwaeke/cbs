@@ -12,6 +12,7 @@
 # GNU General Public License for more details.
 
 
+import logging
 import re
 from datetime import datetime as dt
 from pathlib import Path
@@ -20,12 +21,11 @@ from typing import cast
 from shell.git import SHA, GitError, git_format_patch, git_patch_id
 
 from crt.crtlib.errors import CRTError
-from crt.crtlib.logger import logger as parent_logger
 from crt.crtlib.models.common import AuthorData
 from crt.crtlib.models.patch import PatchInfo, PatchMeta
 from crt.crtlib.utils import split_version_into_paths
 
-logger = parent_logger.getChild("patch")
+logger = logging.getLogger(__name__)
 
 
 class PatchError(CRTError):

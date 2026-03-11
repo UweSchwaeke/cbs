@@ -16,10 +16,6 @@ from datetime import datetime as dt
 
 import pydantic
 
-from . import logger as parent_logger
-
-logger = parent_logger.getChild("release")
-
 
 class Release(pydantic.BaseModel):
     name: str
