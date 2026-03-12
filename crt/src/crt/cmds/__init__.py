@@ -33,10 +33,12 @@ logger = parent_logger.getChild("cmds")
 class Ctx:
     github_token: str | None
     patches_repo_path: Path | None
+    run_locally: bool
 
     def __init__(self) -> None:
         self.github_token = None
         self.patches_repo_path = None
+        self.run_locally = False
 
 
 pass_ctx = click.make_pass_decorator(Ctx, ensure=True)
