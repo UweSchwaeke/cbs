@@ -59,8 +59,6 @@ def token_create(user: str) -> Token:
 
 def token_decode(token: str) -> TokenInfo:
     """Decode the provided token."""
-    logger.debug(f"decode token: {token}")
-
     config = get_config()
     assert config.server, "unexpected server config missing"
     key = pyseto.Key.new(
