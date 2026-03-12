@@ -12,11 +12,11 @@ dependencies = [
     "pydantic>=2.10.6",
     "rich>=14.0.0",
     "types-boto3[s3]==1.35.81",
-    "shell"
+    "cbscommon"
 ]
 
 [tool.uv.sources]
-shell = { workspace = true }
+cbscommon = { workspace = true }
 
 [project.scripts]
 crt = "crt.cmds.crt:cmd_crt"

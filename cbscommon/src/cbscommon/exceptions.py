@@ -2,7 +2,7 @@ import errno
 from typing import override
 
 
-class ShellError(Exception):
+class CBSCommonError(Exception):
     msg: str | None
     ec: int | None
 
@@ -17,7 +17,7 @@ class ShellError(Exception):
             errno.errorcode[self.ec] if self.ec and self.ec in errno.errorcode else None
         )
         return (
-            "Shell error"
+            "CBSCommon error"
             + (f" ({ec_name})" if ec_name else "")
             + (f": {self.msg}" if self.msg else "")
         )

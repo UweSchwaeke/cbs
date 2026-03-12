@@ -9,12 +9,12 @@ resolution-markers = [
 [manifest]
 members = [
     "cbc",
+    "cbscommon",
     "cbscore",
     "cbsd",
     "cbsdcore",
     "clyso-cbs",
     "crt",
-    "shell",
 ]
 
 [[package]]
@@ -368,6 +368,17 @@ requires-dist = [
 dev = [{ name = "pyinstaller", specifier = ">=6.18.0" }]
 
 [[package]]
+name = "cbscommon"
+version = "0.1.0"
+source = { editable = "cbscommon" }
+dependencies = [
+    { name = "gitpython" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "gitpython", specifier = ">=3.1.44" }]
+
+[[package]]
 name = "cbscore"
 version = "1.0.1"
 source = { editable = "cbscore" }
@@ -699,24 +710,24 @@ version = "0.1.0"
 source = { editable = "crt" }
 dependencies = [
     { name = "boto3" },
+    { name = "cbscommon" },
     { name = "click" },
     { name = "gitpython" },
     { name = "httpx" },
     { name = "pydantic" },
     { name = "rich" },
-    { name = "shell" },
     { name = "types-boto3", extra = ["s3"] },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "boto3", specifier = "==1.35.81" },
+    { name = "cbscommon", editable = "cbscommon" },
     { name = "click", specifier = ">=8.1.8" },
     { name = "gitpython", specifier = ">=3.1.44" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "pydantic", specifier = ">=2.10.6" },
     { name = "rich", specifier = ">=14.0.0" },
-    { name = "shell", editable = "shell" },
     { name = "types-boto3", extras = ["s3"], specifier = "==1.35.81" },
 ]
 
@@ -1611,11 +1622,6 @@ sdist = { url = "https://files.pythonhosted.org/packages/82/f3/748f4d6f65d1756b9
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e1/c6/76dc613121b793286a3f91621d7b75a2b493e0390ddca50f11993eadf192/setuptools-82.0.0-py3-none-any.whl", hash = "sha256:70b18734b607bd1da571d097d236cfcfacaf01de45717d59e6e04b96877532e0", size = 1003468, upload-time = "2026-02-08T15:08:38.723Z" },
 ]
-
-[[package]]
-name = "shell"
-version = "0.1.0"
-source = { editable = "shell" }
 
 [[package]]
 name = "six"

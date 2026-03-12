@@ -21,7 +21,7 @@ from typing import cast
 
 import git
 
-from shell.git.exceptions import (
+from cbscommon.git.exceptions import (
     GitAMApplyError,
     GitCherryPickConflictError,
     GitCherryPickError,
@@ -37,7 +37,7 @@ from shell.git.exceptions import (
     GitPatchDiffError,
     GitPushError,
 )
-from shell.git.types import SHA
+from cbscommon.git.types import SHA
 
 logger = logging.getLogger(__name__)
 

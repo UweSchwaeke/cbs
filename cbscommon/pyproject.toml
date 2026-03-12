@@ -1,7 +1,7 @@
 [project]
-name = "shell"
+name = "cbscommon"
 version = "0.1.0"
-description = "common interfacte for shell access"
+description = "common interface for tools like git"
 readme = "README.md"
 authors = [
     { name = "Uwe Schwaeke", email = "uwe.schwaeke@clyso.com" }

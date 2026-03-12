@@ -1,10 +1,10 @@
 from typing import override
 
-from shell.exceptions import ShellError
-from shell.git.types import SHA
+from cbscommon.exceptions import CBSCommonError
+from cbscommon.git.types import SHA
 
 
-class GitError(ShellError):
+class GitError(CBSCommonError):
     @override
     def __str__(self) -> str:
         return "git error" + (f": {self.msg}" if self.msg else "")
