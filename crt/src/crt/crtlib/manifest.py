@@ -27,7 +27,14 @@ from cbscommon.git import (
     GitFetchHeadNotFoundError,
     GitIsTagError,
     GitPushError,
-)  # Git exceptions are now imported from cbscommon.git
+    git_branch_from,
+    git_checkout_ref,
+    git_cleanup_repo,
+    git_fetch_ref,
+    git_prepare_remote,
+    git_push,
+    git_status,
+)  # Git exceptions and functions are now imported from cbscommon.git
 from cbscore.versions.utils import parse_version
 
 from crt.crtlib.apply import ApplyError, apply_manifest
@@ -39,15 +46,6 @@ from crt.crtlib.errors.manifest import (
     NoSuchManifestError,
 )
 from crt.crtlib.errors.stages import MissingStagePatchError
-from crt.crtlib.git_utils import (
-    git_branch_from,
-    git_checkout_ref,
-    git_cleanup_repo,
-    git_fetch_ref,
-    git_prepare_remote,
-    git_push,
-    git_status,
-)
 from crt.crtlib.logger import logger as parent_logger
 from crt.crtlib.models.common import ManifestPatchEntry
 from crt.crtlib.models.manifest import ReleaseManifest

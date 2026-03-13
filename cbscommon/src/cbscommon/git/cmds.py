@@ -1,28 +1,16 @@
-# crt - utils
-# Copyright (C) 2025  Clyso GmbH
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (c) 2026 Clyso GmbH
+
 
 import logging
 import re
-import sys
 import tempfile
 from pathlib import Path
 from typing import cast
 
 import git
 
-# cbscommon.git contains shared git types and exceptions
-from cbscommon.git import (
-    SHA,
+from cbscommon.git.exceptions import (
     GitAMApplyError,
     GitCherryPickConflictError,
     GitCherryPickError,
@@ -38,10 +26,9 @@ from cbscommon.git import (
     GitPatchDiffError,
     GitPushError,
 )
+from cbscommon.git.types import SHA
 
-from crt.crtlib.logger import logger as parent_logger
-
-logger = parent_logger.getChild("git")
+logger = logging.getLogger("cbscommon.git")
 
 
 def git_check_patches_diff(
@@ -714,48 +701,3 @@ def git_tag_exists_in_remote(repo_path: Path, remote_name: str, tag_name: str) -
         msg = f"unable to execute git ls-remote --tags {remote_name} refs/tags/{tag_name}: {e}"
         logger.error(msg)
         raise GitError(msg) from None
-
-
-if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("error: missing repo path argument")
-        sys.exit(1)
-
-    logger.setLevel(logging.DEBUG)
-
-    repo_path = Path(sys.argv[1])
-
-    print("checkout refs")
-    try:
-        git_checkout_ref(repo_path, "foobar")
-    except Exception as e:
-        print(f"error getting 'foobar': {e}")
-
-    try:
-        git_checkout_ref(
-            repo_path, "main", update_from_remote=True, remote_name="clyso/ceph"
-        )
-    except Exception as e:
-        print(f"error getting 'foobar': {e}")
-
-    try:
-        git_checkout_ref(
-            repo_path,
-            "tentacle",
-            update_from_remote=True,
-            remote_name="clyso/ceph",
-        )
-    except Exception as e:
-        print(f"error getting 'tentacle': {e}")
-
-    try:
-        git_checkout_ref(
-            repo_path,
-            "v18.2.7",
-            to_branch="test-v18.2.7",
-            remote_name="ceph/ceph",
-            update_from_remote=True,
-            fetch_if_not_exists=True,
-        )
-    except Exception as e:
-        print(f"error checking out 'v18.2.7' to 'test-v18.2.7': {e}")

@@ -22,20 +22,18 @@ from cbscommon.git import (
     GitEmptyPatchDiffError,
     GitError,
     GitPatchDiffError,
-)  # Git exceptions are now imported from cbscommon.git
+    git_branch_delete,
+    git_branch_from,
+    git_check_patches_diff,
+    git_format_patch,
+    git_prepare_remote,
+)  # Git exceptions and functions are now imported from cbscommon.git
 
 from crt.crtlib.errors.patchset import (
     MalformedPatchSetError,
     NoSuchPatchSetError,
     PatchSetCheckError,
     PatchSetError,
-)
-from crt.crtlib.git_utils import (
-    git_branch_delete,
-    git_branch_from,
-    git_check_patches_diff,
-    git_format_patch,
-    git_prepare_remote,
 )
 from crt.crtlib.logger import logger as parent_logger
 from crt.crtlib.models.common import ManifestPatchEntry

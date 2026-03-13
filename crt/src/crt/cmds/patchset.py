@@ -26,7 +26,12 @@ import rich.box
 from cbscommon.git import (
     SHA,
     GitError,
-)  # Git types and exceptions are now imported from cbscommon.git
+    git_branch_delete,
+    git_branch_from,
+    git_get_patch_sha_title,
+    git_patches_in_interval,
+    git_prepare_remote,
+)  # Git types, exceptions and functions are now imported from cbscommon.git
 from rich.console import Group, RenderableType
 from rich.padding import Padding
 from rich.table import Table
@@ -45,13 +50,6 @@ from crt.cmds import logger as parent_logger
 from crt.cmds._common import CRTProgress
 from crt.crtlib.errors.patchset import (
     MalformedPatchSetError,
-)
-from crt.crtlib.git_utils import (
-    git_branch_delete,
-    git_branch_from,
-    git_get_patch_sha_title,
-    git_patches_in_interval,
-    git_prepare_remote,
 )
 from crt.crtlib.models.common import (
     AuthorData,

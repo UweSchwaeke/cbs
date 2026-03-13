@@ -20,10 +20,11 @@ from typing import cast
 from cbscommon.git import (
     SHA,
     GitError,
-)  # Git types and exceptions are now imported from cbscommon.git
+    git_format_patch,
+    git_patch_id,
+)  # Git types, exceptions and functions are now imported from cbscommon.git
 
 from crt.crtlib.errors import CRTError
-from crt.crtlib.git_utils import git_format_patch, git_patch_id
 from crt.crtlib.logger import logger as parent_logger
 from crt.crtlib.models.common import AuthorData
 from crt.crtlib.models.patch import PatchInfo, PatchMeta
