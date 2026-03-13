@@ -20,6 +20,14 @@ from pathlib import Path
 from typing import cast
 
 import pydantic
+from cbscommon.git import (
+    GitCreateHeadExistsError,
+    GitError,
+    GitFetchError,
+    GitFetchHeadNotFoundError,
+    GitIsTagError,
+    GitPushError,
+)  # Git exceptions are now imported from cbscommon.git
 from cbscore.versions.utils import parse_version
 
 from crt.crtlib.apply import ApplyError, apply_manifest
@@ -32,12 +40,6 @@ from crt.crtlib.errors.manifest import (
 )
 from crt.crtlib.errors.stages import MissingStagePatchError
 from crt.crtlib.git_utils import (
-    GitCreateHeadExistsError,
-    GitError,
-    GitFetchError,
-    GitFetchHeadNotFoundError,
-    GitIsTagError,
-    GitPushError,
     git_branch_from,
     git_checkout_ref,
     git_cleanup_repo,

@@ -19,6 +19,10 @@ from typing import cast
 
 import click
 import rich.box
+from cbscommon.git import (
+    GitFetchHeadNotFoundError,
+    GitIsTagError,
+)  # Git exceptions are now imported from cbscommon.git
 from cbscore.versions.utils import parse_version
 from git import GitError
 from rich.padding import Padding
@@ -28,8 +32,6 @@ from crt.cmds._common import CRTExitError, CRTProgress
 from crt.crtlib.errors.manifest import NoSuchManifestError
 from crt.crtlib.errors.release import NoSuchReleaseError
 from crt.crtlib.git_utils import (
-    GitFetchHeadNotFoundError,
-    GitIsTagError,
     git_branch_from,
     git_cleanup_repo,
     git_fetch_ref,

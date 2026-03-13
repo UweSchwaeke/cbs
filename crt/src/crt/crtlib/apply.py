@@ -18,10 +18,12 @@ from pathlib import Path
 from typing import override
 
 import git
-from cbscommon.git import SHA  # SHA is now imported from cbscommon.git
+from cbscommon.git import (
+    SHA,
+    GitAMApplyError,
+)  # Git types and exceptions are now imported from cbscommon.git
 
 from crt.crtlib.git_utils import (
-    GitAMApplyError,
     git_am_abort,
     git_am_apply,
     git_cleanup_repo,

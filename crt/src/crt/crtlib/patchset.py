@@ -18,6 +18,11 @@ from datetime import datetime as dt
 from pathlib import Path
 
 import pydantic
+from cbscommon.git import (
+    GitEmptyPatchDiffError,
+    GitError,
+    GitPatchDiffError,
+)  # Git exceptions are now imported from cbscommon.git
 
 from crt.crtlib.errors.patchset import (
     MalformedPatchSetError,
@@ -26,9 +31,6 @@ from crt.crtlib.errors.patchset import (
     PatchSetError,
 )
 from crt.crtlib.git_utils import (
-    GitEmptyPatchDiffError,
-    GitError,
-    GitPatchDiffError,
     git_branch_delete,
     git_branch_from,
     git_check_patches_diff,
