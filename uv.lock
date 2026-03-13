@@ -9,6 +9,7 @@ resolution-markers = [
 [manifest]
 members = [
     "cbc",
+    "cbscommon",
     "cbscore",
     "cbsd",
     "cbsdcore",
@@ -367,6 +368,11 @@ requires-dist = [
 dev = [{ name = "pyinstaller", specifier = ">=6.18.0" }]
 
 [[package]]
+name = "cbscommon"
+version = "0.1.0"
+source = { editable = "cbscommon" }
+
+[[package]]
 name = "cbscore"
 version = "1.0.1"
 source = { editable = "cbscore" }
@@ -706,6 +712,7 @@ version = "0.1.0"
 source = { editable = "crt" }
 dependencies = [
     { name = "boto3" },
+    { name = "cbscommon" },
     { name = "click" },
     { name = "gitpython" },
     { name = "httpx" },
@@ -717,6 +724,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "boto3", specifier = "==1.35.81" },
+    { name = "cbscommon", editable = "cbscommon" },
     { name = "click", specifier = ">=8.1.8" },
     { name = "gitpython", specifier = ">=3.1.44" },
     { name = "httpx", specifier = ">=0.28.1" },
