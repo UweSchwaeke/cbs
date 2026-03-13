@@ -2,14 +2,12 @@
 # Copyright (c) 2026 Clyso GmbH
 
 
-from .cmds import git_abort_cherry_pick as git_abort_cherry_pick
 from .cmds import git_am_abort as git_am_abort
 from .cmds import git_am_apply as git_am_apply
 from .cmds import git_branch_delete as git_branch_delete
 from .cmds import git_branch_from as git_branch_from
 from .cmds import git_check_patches_diff as git_check_patches_diff
 from .cmds import git_checkout_ref as git_checkout_ref
-from .cmds import git_cherry_pick as git_cherry_pick
 from .cmds import git_cleanup_repo as git_cleanup_repo
 from .cmds import git_fetch_ref as git_fetch_ref
 from .cmds import git_format_patch as git_format_patch
@@ -19,7 +17,6 @@ from .cmds import git_get_remote_ref as git_get_remote_ref
 from .cmds import git_patch_id as git_patch_id
 from .cmds import git_patches_in_interval as git_patches_in_interval
 from .cmds import git_prepare_remote as git_prepare_remote
-from .cmds import git_pull_ref as git_pull_ref
 from .cmds import git_push as git_push
 from .cmds import git_remote as git_remote
 from .cmds import git_reset_head as git_reset_head
