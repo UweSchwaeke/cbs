@@ -170,7 +170,7 @@ def git_status(repo_path: Path) -> list[tuple[str, str]]:
     return status_lst
 
 
-def git_cherry_pick(repo_path: Path, sha: SHA) -> None:
+def _git_cherry_pick(repo_path: Path, sha: SHA) -> None:  # pyright: ignore[reportUnusedFunction]
     repo = git.Repo(repo_path)
 
     try:
@@ -189,7 +189,7 @@ def git_cherry_pick(repo_path: Path, sha: SHA) -> None:
         raise GitCherryPickError(msg=msg) from None
 
 
-def git_abort_cherry_pick(repo_path: Path) -> None:
+def _git_abort_cherry_pick(repo_path: Path) -> None:  # pyright: ignore[reportUnusedFunction]
     repo = git.Repo(repo_path)
 
     try:
@@ -305,7 +305,9 @@ def git_get_remote_ref(
     return None
 
 
-def git_pull_ref(repo_path: Path, from_ref: str, to_ref: str, remote_name: str) -> bool:
+def _git_pull_ref(
+    repo_path: Path, from_ref: str, to_ref: str, remote_name: str
+) -> bool:
     repo = git.Repo(repo_path)
     if repo.active_branch.name != to_ref:
         return False
@@ -400,7 +402,7 @@ def git_fetch_ref(
 
     if repo.active_branch.name == to_ref:
         logger.warning(f"checked out branch is '{to_ref}', pull instead.")
-        return git_pull_ref(repo_path, from_ref, to_ref, remote_name)
+        return _git_pull_ref(repo_path, from_ref, to_ref, remote_name)
 
     # check whether 'from_ref' is a tag
     if _get_tag(repo_path, from_ref):
