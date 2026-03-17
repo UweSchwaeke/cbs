@@ -11,7 +11,6 @@
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
 
-import abc
 import asyncio
 import os
 import re
@@ -23,6 +22,8 @@ from io import StringIO
 from pathlib import Path
 from typing import Any, override
 
+from cbscommon.git import CmdArgs, MaybeSecure, SecureArg
+
 from cbscore.errors import CESError
 from cbscore.logger import logger as root_logger
 
@@ -33,13 +34,6 @@ class CommandError(CESError):
     @override
     def __str__(self) -> str:
         return "Command error" + f": {self.msg}" if self.msg else ""
-
-
-class SecureArg(abc.ABC):
-    @property
-    @abc.abstractmethod
-    def value(self) -> str:
-        pass
 
 
 class Password(SecureArg):
@@ -107,10 +101,6 @@ class SecureURL(SecureArg):
 
     def _get_value(self, v: str | SecureArg) -> str:
         return v if isinstance(v, str) else v.value
-
-
-MaybeSecure = str | SecureArg
-CmdArgs = list[MaybeSecure]
 
 
 def get_maybe_secure_arg(value: MaybeSecure) -> str:

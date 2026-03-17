@@ -18,9 +18,9 @@ import secrets
 import shutil
 from pathlib import Path
 
-from cbscommon.git import GitConfigNotSetError, GitError
+from cbscommon.git import CmdArgs, GitConfigNotSetError, GitError, MaybeSecure
 
-from cbscore.utils import CmdArgs, MaybeSecure, async_run_cmd
+from cbscore.utils import async_run_cmd
 from cbscore.utils import logger as parent_logger
 
 logger = parent_logger.getChild("git")

@@ -3,4 +3,16 @@
 
 
 # SHA type was moved from crt.crtlib.git_utils
+import abc
+
+
+class SecureArg(abc.ABC):
+    @property
+    @abc.abstractmethod
+    def value(self) -> str:
+        pass
+
+
 SHA = str
+MaybeSecure = str | SecureArg
+CmdArgs = list[MaybeSecure]

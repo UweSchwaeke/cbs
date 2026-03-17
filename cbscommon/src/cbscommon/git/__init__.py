@@ -42,3 +42,6 @@ from ._exceptions import GitMissingRemoteError as GitMissingRemoteError
 from ._exceptions import GitPatchDiffError as GitPatchDiffError
 from ._exceptions import GitPushError as GitPushError
 from ._types import SHA as SHA
+from ._types import CmdArgs as CmdArgs
+from ._types import MaybeSecure as MaybeSecure
+from ._types import SecureArg as SecureArg
