@@ -20,6 +20,7 @@ from datetime import datetime as dt
 from pathlib import Path
 
 import pydantic
+from cbscommon.git import GitError
 
 from cbscore.builder import BuilderError
 from cbscore.builder import logger as parent_logger
@@ -220,7 +221,7 @@ async def prepare_components(
                     git_repos_path,
                     comp.name,
                 )
-        except git.GitError as e:
+        except GitError as e:
             msg = f"error cloning '{comp.repo}' to '{git_repos_path}': {e}"
             logger.error(msg)
             raise BuilderError(msg) from e
@@ -242,7 +243,7 @@ async def prepare_components(
                 ref,
                 git_worktrees_path / comp.name,
             )
-        except git.GitError as e:
+        except GitError as e:
             msg = f"unable to checkout ref '{ref}' in repository at '{repo}': {e}"
             logger.exception(msg)
             raise BuilderError(msg) from e
@@ -268,7 +269,7 @@ async def prepare_components(
             logger.info(f"applying patch from '{patch_path}'")
             try:
                 await git.git_apply(repo, patch_path)
-            except git.GitError as e:
+            except GitError as e:
                 msg = f"unable to apply patch from '{patch_path}' to '{repo}': {e}"
                 logger.exception(msg)
                 raise BuilderError(msg) from e
@@ -301,7 +302,7 @@ async def prepare_components(
         """
         try:
             sha1 = await git.git_get_sha1(worktree_path)
-        except (git.GitError, Exception) as e:
+        except (GitError, Exception) as e:
             msg = f"error obtaining SHA1 for worktree '{worktree_path}': {e}"
             logger.error(msg)
             raise BuilderError(msg) from e
@@ -425,7 +426,7 @@ async def cleanup_components(components: dict[str, BuildComponentInfo]) -> None:
         logger.info(f"cleanup component '{comp_name}'")
         try:
             await git.git_remove_worktree(comp.repo_path, comp.worktree_path)
-        except git.GitError as e:
+        except GitError as e:
             logger.warning(
                 f"unable to cleanup component '{comp_name}' at "
                 + f"'{comp.worktree_path}' and '{comp.repo_path}': {e}"

@@ -29,6 +29,7 @@ from ._cmds import git_update_submodules as git_update_submodules
 from ._exceptions import GitAMApplyError as GitAMApplyError
 from ._exceptions import GitCherryPickConflictError as GitCherryPickConflictError
 from ._exceptions import GitCherryPickError as GitCherryPickError
+from ._exceptions import GitConfigNotSetError as GitConfigNotSetError
 from ._exceptions import GitCreateHeadExistsError as GitCreateHeadExistsError
 from ._exceptions import GitEmptyPatchDiffError as GitEmptyPatchDiffError
 from ._exceptions import GitError as GitError

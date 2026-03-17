@@ -2,6 +2,7 @@
 # Copyright (c) 2026 Clyso GmbH
 
 
+import errno
 from typing import override
 
 from cbscommon.exceptions import CBSCommonError
@@ -129,3 +130,8 @@ class GitPushError(GitError):
     @override
     def __str__(self) -> str:
         return self.with_maybe_msg("unable to push")
+
+
+class GitConfigNotSetError(GitError):
+    def __init__(self, what: str) -> None:
+        super().__init__(f"{what} not set in config", ec=errno.ENOENT)

@@ -17,30 +17,13 @@ import re
 import secrets
 import shutil
 from pathlib import Path
-from typing import override
 
-from cbscore.errors import CESError
+from cbscommon.git import GitConfigNotSetError, GitError
+
 from cbscore.utils import CmdArgs, MaybeSecure, async_run_cmd
 from cbscore.utils import logger as parent_logger
 
 logger = parent_logger.getChild("git")
-
-
-class GitError(CESError):
-    retcode: int
-
-    def __init__(self, retcode: int, msg: str) -> None:
-        super().__init__(msg)
-        self.retcode = retcode
-
-    @override
-    def __str__(self) -> str:
-        return f"git error: {self.msg} (retcode: {self.retcode})"
-
-
-class GitConfigNotSetError(GitError):
-    def __init__(self, what: str) -> None:
-        super().__init__(errno.ENOENT, f"{what} not set in config")
 
 
 async def run_git(args: CmdArgs, *, path: Path | None = None) -> str:
@@ -61,11 +44,11 @@ async def run_git(args: CmdArgs, *, path: Path | None = None) -> str:
     except Exception as e:
         msg = f"unexpected error running command: {e}"
         logger.error(msg)
-        raise GitError(errno.ENOTRECOVERABLE, msg) from e
+        raise GitError(msg, ec=errno.ENOTRECOVERABLE) from e
 
     if rc != 0:
         logger.error(f"unable to obtain result from git '{args}': {stderr}")
-        raise GitError(rc, stderr)
+        raise GitError(stderr, ec=rc)
 
     return stdout
 
@@ -92,7 +75,7 @@ async def get_git_repo_root() -> Path:
     val = await run_git(["rev-parse", "--show-toplevel"])
     if len(val) == 0:
         logger.error("unable to obtain toplevel git directory path")
-        raise GitError(errno.ENOENT, "top-level git directory not found")
+        raise GitError("top-level git directory not found", ec=errno.ENOENT)
 
     return Path(val.strip())
 
@@ -129,8 +112,8 @@ async def get_git_modified_paths(
     except GitError as e:
         logger.error(f"error: unable to obtain latest patch: {e}")
         raise GitError(
-            errno.ENOTRECOVERABLE,
             f"unable to obtain patches between {base_sha} and {ref}",
+            ec=errno.ENOTRECOVERABLE,
         ) from e
 
     if len(val) == 0:
@@ -166,7 +149,8 @@ async def get_git_modified_paths(
                     f"unexpected action '{action}' on '{target}', line: '{line}'"
                 )
                 raise GitError(
-                    errno.ENOTRECOVERABLE, f"unexpected action '{action}' on '{target}'"
+                    f"unexpected action '{action}' on '{target}'",
+                    ec=errno.ENOTRECOVERABLE,
                 )
 
     return descs_modified, descs_deleted
@@ -187,7 +171,7 @@ async def _clone(repo: MaybeSecure, dest_path: Path) -> None:
     except GitError as e:
         msg = f"unable to clone '{repo}' to '{dest_path}': {e}"
         logger.error(msg)
-        raise GitError(errno.ENOTRECOVERABLE, msg) from e
+        raise GitError(msg, ec=errno.ENOTRECOVERABLE) from e
 
 
 async def _update(repo: MaybeSecure, repo_path: Path) -> None:
@@ -198,7 +182,7 @@ async def _update(repo: MaybeSecure, repo_path: Path) -> None:
     except GitError as e:
         msg = f"unable to update '{repo_path}': {e}'"
         logger.error(msg)
-        raise GitError(errno.ENOTRECOVERABLE, msg) from e
+        raise GitError(msg, ec=errno.ENOTRECOVERABLE) from e
 
 
 async def git_checkout(repo_path: Path, ref: str, worktrees_base_path: Path) -> Path:
@@ -215,7 +199,7 @@ async def git_checkout(repo_path: Path, ref: str, worktrees_base_path: Path) -> 
     except Exception as e:
         msg = f"unable to create worktrees base path at '{worktrees_base_path}': {e}"
         logger.error(msg)
-        raise GitError(errno.ENOTRECOVERABLE, msg) from e
+        raise GitError(msg, ec=errno.ENOTRECOVERABLE) from e
 
     worktree_rnd_suffix = secrets.token_hex(5)
     worktree_name = ref.replace("/", "--") + f".{worktree_rnd_suffix}"
@@ -239,7 +223,7 @@ async def git_checkout(repo_path: Path, ref: str, worktrees_base_path: Path) -> 
     except GitError as e:
         msg = f"unable to checkout ref '{ref}' in repository '{repo_path}': {e}"
         logger.error(msg)
-        raise GitError(errno.ENOTRECOVERABLE, msg) from e
+        raise GitError(msg, ec=errno.ENOTRECOVERABLE) from e
 
     return worktree_path
 
@@ -255,7 +239,7 @@ async def git_remove_worktree(repo_path: Path, worktree_path: Path) -> None:
     except GitError as e:
         msg = f"unable to remove worktree at '{worktree_path}': {e}"
         logger.error(msg)
-        raise GitError(errno.ENOTRECOVERABLE, msg) from e
+        raise GitError(msg, ec=errno.ENOTRECOVERABLE) from e
 
 
 async def git_fetch(
@@ -274,7 +258,7 @@ async def git_fetch(
     except GitError as e:
         msg = f"unable to fetch '{from_ref}' from '{remote}' to '{to_branch}': {e}"
         logger.exception(msg)
-        raise GitError(errno.ENOTRECOVERABLE, msg) from e
+        raise GitError(msg, ec=errno.ENOTRECOVERABLE) from e
 
 
 async def git_pull(
@@ -299,7 +283,7 @@ async def git_pull(
     except GitError as e:
         msg = f"unable to pull from '{remote}': {e}"
         logger.exception(msg)
-        raise GitError(errno.ENOTRECOVERABLE, msg) from e
+        raise GitError(msg, ec=errno.ENOTRECOVERABLE) from e
 
 
 async def git_cherry_pick(
@@ -319,7 +303,7 @@ async def git_cherry_pick(
     except GitError as e:
         msg = f"unable to cherry-pick '{commit_to_pick}': {e}"
         logger.exception(msg)
-        raise GitError(errno.ENOTRECOVERABLE, msg) from e
+        raise GitError(msg, ec=errno.ENOTRECOVERABLE) from e
 
 
 async def git_clone(repo: MaybeSecure, base_path: Path, repo_name: str) -> Path:
@@ -339,7 +323,7 @@ async def git_clone(repo: MaybeSecure, base_path: Path, repo_name: str) -> Path:
         except Exception as e:
             msg = f"unable to create base path at '{base_path}': {e}"
             logger.error(msg)
-            raise GitError(errno.ENOTRECOVERABLE, msg) from e
+            raise GitError(msg, ec=errno.ENOTRECOVERABLE) from e
 
     dest_path = base_path / f"{repo_name}.git"
 
@@ -354,7 +338,7 @@ async def git_clone(repo: MaybeSecure, base_path: Path, repo_name: str) -> Path:
             except Exception as e:
                 msg = f"unable to remove invalid git repository at '{dest_path}': {e}"
                 logger.error(msg)
-                raise GitError(errno.ENOTRECOVERABLE, msg) from e
+                raise GitError(msg, ec=errno.ENOTRECOVERABLE) from e
 
         # propagate exception to caller
         await _update(repo, dest_path)
@@ -372,7 +356,7 @@ async def git_apply(repo_path: Path, patch_path: Path) -> None:
     except GitError as e:
         msg = f"error applying patch '{patch_path}' to '{repo_path}': {e}"
         logger.exception(msg)
-        raise GitError(errno.ENOTRECOVERABLE, msg) from e
+        raise GitError(msg, ec=errno.ENOTRECOVERABLE) from e
     pass
 
 
@@ -382,7 +366,7 @@ async def git_get_sha1(repo_path: Path) -> str:
     if len(val) == 0:
         msg = f"unable to obtain current SHA1 on repository '{repo_path}"
         logger.error(msg)
-        raise GitError(errno.ENOTRECOVERABLE, msg)
+        raise GitError(msg, ec=errno.ENOTRECOVERABLE)
 
     return val.strip()
 
@@ -396,6 +380,6 @@ async def git_get_current_branch(repo_path: Path) -> str:
             + f"name on repository '{repo_path}'"
         )
         logger.error(msg)
-        raise GitError(errno.ENOTRECOVERABLE, msg)
+        raise GitError(msg, ec=errno.ENOTRECOVERABLE)
 
     return val.strip()

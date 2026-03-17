@@ -17,6 +17,7 @@ import sys
 from pathlib import Path
 
 import click
+from cbscommon.git import GitError
 
 from cbscore.cmds import logger as parent_logger
 from cbscore.cmds import with_config
@@ -25,7 +26,7 @@ from cbscore.errors import CESError, MalformedVersionError, NoSuchVersionError
 from cbscore.images.desc import get_image_desc
 from cbscore.releases import ReleaseError
 from cbscore.releases.s3 import list_releases
-from cbscore.utils.git import GitError, get_git_repo_root, get_git_user
+from cbscore.utils.git import get_git_repo_root, get_git_user
 from cbscore.utils.secrets import SecretsMgrError
 from cbscore.utils.secrets.mgr import SecretsMgr
 from cbscore.versions.create import version_create_helper
