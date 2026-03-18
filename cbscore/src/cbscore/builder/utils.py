@@ -13,12 +13,11 @@
 
 from pathlib import Path
 
-from cbscommon.git import CmdArgs
-
+from cbscommon import CmdArgs, async_run_cmd
 from cbscore.builder import BuilderError, MissingScriptError
 from cbscore.builder import logger as parent_logger
 from cbscore.core.component import CoreComponentLoc
-from cbscore.utils import CommandError, async_run_cmd
+from cbscore.utils import CommandError
 
 logger = parent_logger.getChild("utils")
 

@@ -20,12 +20,13 @@ import re
 
 import pydantic
 
+from cbscommon import CmdArgs, Password
 from cbscore.errors import CESError, UnknownRepositoryError
 from cbscore.images import get_image_name
 from cbscore.images import logger as parent_logger
 from cbscore.images.errors import ImageNotFoundError, SkopeoError
 from cbscore.images.signing import sign
-from cbscore.utils import CmdArgs, Password, run_cmd
+from cbscore.utils import run_cmd
 from cbscore.utils.containers import get_container_image_base_uri
 from cbscore.utils.secrets import SecretsMgrError
 from cbscore.utils.secrets.mgr import SecretsMgr

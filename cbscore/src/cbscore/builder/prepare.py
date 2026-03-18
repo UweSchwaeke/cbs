@@ -20,13 +20,14 @@ from datetime import datetime as dt
 from pathlib import Path
 
 import pydantic
-from cbscommon.git import GitError
+from cbscommon.git import GitError, git_clone
 
+from cbscommon import async_run_cmd, git
 from cbscore.builder import BuilderError
 from cbscore.builder import logger as parent_logger
 from cbscore.builder.utils import get_component_version
 from cbscore.core.component import CoreComponentLoc
-from cbscore.utils import CommandError, async_run_cmd, git
+from cbscore.utils import CommandError
 from cbscore.utils.secrets.mgr import SecretsMgr
 from cbscore.versions.desc import VersionComponent
 from cbscore.versions.utils import get_major_version, get_minor_version
@@ -216,7 +217,7 @@ async def prepare_components(
         start = dt.now(tz=datetime.UTC)
         try:
             with secrets.git_url_for(comp.repo) as comp_url:
-                cloned_path = await git.git_clone(
+                cloned_path = await git_clone(
                     comp_url,
                     git_repos_path,
                     comp.name,

@@ -24,10 +24,10 @@ from typing import override
 
 import aiofiles
 
+from cbscommon import AsyncRunCmdOutCallback
 from cbscore.config import Config, ConfigError, LoggingConfig
 from cbscore.errors import CESError
 from cbscore.logger import logger as root_logger
-from cbscore.utils import AsyncRunCmdOutCallback
 from cbscore.utils.podman import PodmanError, podman_run, podman_stop
 from cbscore.utils.secrets import SecretsError
 from cbscore.versions.desc import VersionDescriptor
