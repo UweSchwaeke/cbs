@@ -64,6 +64,7 @@ class Builder:
     ccache_path: Path | None
     skip_build: bool
     force: bool
+    tls_verify: bool
 
     def __init__(
         self,
@@ -72,6 +73,7 @@ class Builder:
         *,
         skip_build: bool = False,
         force: bool = False,
+        tls_verify: bool = True
     ) -> None:
         self.desc = desc
         self.config = config
@@ -82,6 +84,7 @@ class Builder:
         self.ccache_path = config.paths.ccache
         self.skip_build = skip_build
         self.force = force
+        self.tls_verify = tls_verify
 
         try:
             vault_config = self.config.get_vault_config()
@@ -109,7 +112,7 @@ class Builder:
             raise BuilderError(msg=msg) from e
 
         container_img_uri = get_container_canonical_uri(self.desc)
-        if skopeo_image_exists(container_img_uri, self.secrets):
+        if skopeo_image_exists(container_img_uri, self.secrets, tls_verify=self.tls_verify):
             logger.info(f"image '{container_img_uri}' already exists -- do not build!")
             return
         else:
