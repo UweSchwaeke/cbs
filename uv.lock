@@ -385,6 +385,7 @@ source = { editable = "cbscore" }
 dependencies = [
     { name = "aioboto3" },
     { name = "aiofiles" },
+    { name = "cbscommon" },
     { name = "click" },
     { name = "hvac" },
     { name = "pydantic" },
@@ -396,6 +397,7 @@ dependencies = [
 requires-dist = [
     { name = "aioboto3", specifier = "==13.3.0" },
     { name = "aiofiles", specifier = ">=25.1.0" },
+    { name = "cbscommon", editable = "cbscommon" },
     { name = "click", specifier = ">=8.1.8" },
     { name = "hvac", specifier = ">=2.3.0" },
     { name = "pydantic", specifier = ">=2.11.6" },

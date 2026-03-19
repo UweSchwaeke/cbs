@@ -12,10 +12,12 @@
 # GNU General Public License for more details.
 
 
+from cbscommon.process.types import CmdArgs
+
 from cbscore.core.component import CoreComponentLoc
 from cbscore.releases import ReleaseError
 from cbscore.releases import logger as parent_logger
-from cbscore.utils import CmdArgs, CommandError, async_run_cmd
+from cbscore.utils import CommandError, async_run_cmd
 
 logger = parent_logger.getChild("utils")
 

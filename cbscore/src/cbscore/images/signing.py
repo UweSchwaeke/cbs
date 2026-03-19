@@ -14,10 +14,11 @@
 import os
 from typing import override
 
+from cbscommon.process.types import CmdArgs
+
 from cbscore.errors import CESError
 from cbscore.images import logger as parent_logger
 from cbscore.utils import (
-    CmdArgs,
     CommandError,
     PasswordArg,
     async_run_cmd,

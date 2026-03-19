@@ -19,11 +19,11 @@ from datetime import datetime as dt
 from pathlib import Path
 from typing import override
 
+from cbscommon.process.types import AsyncRunCmdOutCallback, CmdArgs
+
 from cbscore.errors import CESError
 from cbscore.images.signing import SigningError, async_sign
 from cbscore.utils import (
-    AsyncRunCmdOutCallback,
-    CmdArgs,
     CommandError,
     Password,
     async_run_cmd,

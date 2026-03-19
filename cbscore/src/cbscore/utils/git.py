@@ -19,8 +19,10 @@ import shutil
 from pathlib import Path
 from typing import override
 
+from cbscommon.process.types import CmdArgs, MaybeSecure
+
 from cbscore.errors import CESError
-from cbscore.utils import CmdArgs, MaybeSecure, async_run_cmd
+from cbscore.utils import async_run_cmd
 from cbscore.utils import logger as parent_logger
 
 logger = parent_logger.getChild("git")
