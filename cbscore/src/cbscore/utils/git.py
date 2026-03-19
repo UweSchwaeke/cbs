@@ -18,40 +18,13 @@ import secrets
 import shutil
 from pathlib import Path
 
+from cbscommon.git.cmds import run_git
 from cbscommon.git.exceptions import GitConfigNotSetError, GitError
-from cbscommon.process.cmds import async_run_cmd
 from cbscommon.process.types import CmdArgs, MaybeSecure
 
 from cbscore.utils import logger as parent_logger
 
 logger = parent_logger.getChild("git")
-
-
-async def run_git(args: CmdArgs, *, path: Path | None = None) -> str:
-    """
-    Run a git command within the repository.
-
-    If `path` is provided, run the command in `path`. Otherwise, run in the current
-    directory.
-    """
-    cmd: CmdArgs = ["git"]
-    if path is not None:
-        cmd.extend(["-C", path.resolve().as_posix()])
-
-    cmd.extend(args)
-    logger.debug(f"run {cmd}")
-    try:
-        rc, stdout, stderr = await async_run_cmd(cmd)
-    except Exception as e:
-        msg = f"unexpected error running command: {e}"
-        logger.error(msg)
-        raise GitError(msg, ec=errno.ENOTRECOVERABLE) from e
-
-    if rc != 0:
-        logger.error(f"unable to obtain result from git '{args}': {stderr}")
-        raise GitError(stderr, ec=rc)
-
-    return stdout
 
 
 async def get_git_user() -> tuple[str, str]:

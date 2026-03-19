@@ -2,6 +2,7 @@
 # Copyright (c) 2026 Clyso GmbH
 
 
+import errno
 import logging
 import re
 import tempfile
@@ -10,6 +11,9 @@ from pathlib import Path
 from typing import cast
 
 import git
+
+from cbscommon.process.cmds import async_run_cmd
+from cbscommon.process.types import CmdArgs
 
 from .exceptions import (
     GitAMApplyError,
@@ -761,3 +765,30 @@ def git_update_submodules(repo_path: Path) -> None:
 def git_local_head_exists(repo_path: Path, name: str) -> bool:
     repo = git.Repo(repo_path)
     return name in repo.heads
+
+
+async def run_git(args: CmdArgs, *, path: Path | None = None) -> str:
+    """
+    Run a git command within the repository.
+
+    If `path` is provided, run the command in `path`. Otherwise, run in the current
+    directory.
+    """
+    cmd: CmdArgs = ["git"]
+    if path is not None:
+        cmd.extend(["-C", path.resolve().as_posix()])
+
+    cmd.extend(args)
+    logger.debug(f"run {cmd}")
+    try:
+        rc, stdout, stderr = await async_run_cmd(cmd)
+    except Exception as e:
+        msg = f"unexpected error running command: {e}"
+        logger.error(msg)
+        raise GitError(msg, ec=errno.ENOTRECOVERABLE) from e
+
+    if rc != 0:
+        logger.error(f"unable to obtain result from git '{args}': {stderr}")
+        raise GitError(stderr, ec=rc)
+
+    return stdout
