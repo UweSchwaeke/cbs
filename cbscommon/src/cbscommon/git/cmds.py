@@ -177,34 +177,6 @@ def git_status(repo_path: Path) -> list[tuple[str, str]]:
     return status_lst
 
 
-def _git_cherry_pick(repo_path: Path, sha: SHA) -> None:  # pyright: ignore[reportUnusedFunction]
-    repo = git.Repo(repo_path)
-
-    try:
-        repo.git.cherry_pick(["-x", "-s", sha])  # pyright: ignore[reportAny]
-    except git.CommandError as e:
-        msg = f"unable to cherry-pick patch sha '{sha}'"
-        logger.error(msg)
-
-        status_files = git_status(repo_path)
-        conflicts: list[str] = [f for s, f in status_files if s == "UU"]
-
-        if conflicts:
-            raise GitCherryPickConflictError(sha, conflicts) from None
-
-        logger.error(e.stderr)
-        raise GitCherryPickError(msg=msg) from None
-
-
-def _git_abort_cherry_pick(repo_path: Path) -> None:  # pyright: ignore[reportUnusedFunction]
-    repo = git.Repo(repo_path)
-
-    try:
-        _ = repo.git.cherry_pick("--abort")  # pyright: ignore[reportAny]
-    except git.CommandError as e:
-        logger.error(f"found error aborting cherry-pick: {e.stderr}")
-
-
 def git_am_apply(repo_path: Path, patch_path: Path) -> None:
     repo = git.Repo(repo_path)
 
@@ -770,7 +742,7 @@ def git_local_head_exists(repo_path: Path, name: str) -> bool:
     return name in repo.heads
 
 
-async def run_git(args: CmdArgs, *, path: Path | None = None) -> str:
+async def _run_git(args: CmdArgs, *, path: Path | None = None) -> str:
     """
     Run a git command within the repository.
 
@@ -801,7 +773,7 @@ async def get_git_user() -> tuple[str, str]:
     """Obtain the current repository's git user and email, returned as a tuple."""
 
     async def _run_git_config_for(v: str) -> str:
-        val = await run_git(["config", v])
+        val = await _run_git(["config", v])
         if len(val) == 0:
             logger.error(f"'{v}' not set in git config")
             raise GitConfigNotSetError(v)
@@ -816,7 +788,7 @@ async def get_git_user() -> tuple[str, str]:
 
 async def get_git_repo_root() -> Path:
     """Obtain the root of the current git repository."""
-    val = await run_git(["rev-parse", "--show-toplevel"])
+    val = await _run_git(["rev-parse", "--show-toplevel"])
     if len(val) == 0:
         logger.error("unable to obtain toplevel git directory path")
         raise GitError("top-level git directory not found", ec=errno.ENOENT)
@@ -824,86 +796,10 @@ async def get_git_repo_root() -> Path:
     return Path(val.strip())
 
 
-async def get_git_modified_paths(
-    base_sha: str,
-    ref: str,
-    *,
-    in_repo_path: str | None = None,
-    repo_path: Path | None = None,
-) -> tuple[list[Path], list[Path]]:
-    """
-    Obtain all modifications since `ref` on the repository.
-
-    If `path` is specified, perform the action within the context of `path`. Otherwise,
-    on the git repository existing in current directory.
-    """
-    try:
-        cmd: CmdArgs = [
-            "diff-tree",
-            "--diff-filter=ACDMR",
-            "--ignore-all-space",
-            "--no-commit-id",
-            "--name-status",
-            "-r",
-            base_sha,
-            ref,
-        ]
-
-        if in_repo_path:
-            cmd.extend(["--", in_repo_path])
-
-        val = await run_git(cmd, path=repo_path)
-    except GitError as e:
-        logger.error(f"error: unable to obtain latest patch: {e}")
-        raise GitError(
-            f"unable to obtain patches between {base_sha} and {ref}",
-            ec=errno.ENOTRECOVERABLE,
-        ) from e
-
-    if len(val) == 0:
-        logger.debug(f"no relevant patches found between {base_sha} and {ref}")
-        return [], []
-
-    descs_deleted: list[Path] = []
-    descs_modified: list[Path] = []
-
-    lines = val.splitlines()
-    regex = (
-        re.compile(rf"^\s*([ACDMR])\s+({repo_path}.*)\s*$")
-        if repo_path is not None
-        else re.compile(r"\s*([ACDMR])\s+([^\s]+)\s*$")
-    )
-    for line in lines:
-        m = re.match(regex, line)
-        if m is None:
-            logger.debug(f"'{line}' does not match")
-            continue
-
-        action = m.group(1)
-        target = m.group(2)
-        logger.debug(f"action: {action}, target: {target}")
-
-        match action:
-            case "D":
-                descs_deleted.append(Path(target))
-            case "A" | "C" | "M" | "R":
-                descs_modified.append(Path(target))
-            case _:
-                logger.error(
-                    f"unexpected action '{action}' on '{target}', line: '{line}'"
-                )
-                raise GitError(
-                    f"unexpected action '{action}' on '{target}'",
-                    ec=errno.ENOTRECOVERABLE,
-                )
-
-    return descs_modified, descs_deleted
-
-
 async def _clone(repo: MaybeSecure, dest_path: Path) -> None:
     """Clones a repository from `repo` to `dest_path`."""
     try:
-        _ = await run_git(
+        _ = await _run_git(
             [
                 "clone",
                 "--mirror",
@@ -921,8 +817,8 @@ async def _clone(repo: MaybeSecure, dest_path: Path) -> None:
 async def _update(repo: MaybeSecure, repo_path: Path) -> None:
     """Update a git repository in `repo_path` from its upstream at `repo`."""
     try:
-        _ = await run_git(["remote", "set-url", "origin", repo], path=repo_path)
-        _ = await run_git(["remote", "update"], path=repo_path)
+        _ = await _run_git(["remote", "set-url", "origin", repo], path=repo_path)
+        _ = await _run_git(["remote", "update"], path=repo_path)
     except GitError as e:
         msg = f"unable to update '{repo_path}': {e}'"
         logger.error(msg)
@@ -951,7 +847,7 @@ async def git_checkout(repo_path: Path, ref: str, worktrees_base_path: Path) -> 
     logger.info(f"checkout ref '{ref}' into worktree at '{worktree_path}'")
 
     try:
-        _ = await run_git(
+        _ = await _run_git(
             [
                 "worktree",
                 "add",
@@ -976,77 +872,13 @@ async def git_remove_worktree(repo_path: Path, worktree_path: Path) -> None:
     """Remove a git worktree at `worktree_path` from repository `repo_path`."""
     logger.info(f"removing worktree at '{worktree_path}' from repository '{repo_path}'")
     try:
-        _ = await run_git(
+        _ = await _run_git(
             ["worktree", "remove", "--force", worktree_path.resolve().as_posix()],
             path=repo_path,
         )
     except GitError as e:
         msg = f"unable to remove worktree at '{worktree_path}': {e}"
         logger.error(msg)
-        raise GitError(msg, ec=errno.ENOTRECOVERABLE) from e
-
-
-async def git_fetch(
-    remote: str, from_ref: str, to_branch: str, *, repo_path: Path | None = None
-) -> None:
-    """
-    Fetch a reference from a remote to a new branch.
-
-    Fetches the reference pointed to by `from_ref` from remote `remote` to a new branch
-    `to_branch`. If `repo_path` is specified, run the command in said path; otherwise,
-    run in current directory.
-    """
-    logger.debug(f"fetch from '{remote}', source: {from_ref}, dest: {to_branch}")
-    try:
-        _ = await run_git(["fetch", remote, f"{from_ref}:{to_branch}"], path=repo_path)
-    except GitError as e:
-        msg = f"unable to fetch '{from_ref}' from '{remote}' to '{to_branch}': {e}"
-        logger.exception(msg)
-        raise GitError(msg, ec=errno.ENOTRECOVERABLE) from e
-
-
-async def git_pull(
-    remote: MaybeSecure,
-    *,
-    from_branch: str | None = None,
-    to_branch: str | None = None,
-    repo_path: Path | None = None,
-) -> None:
-    """Pull commits from `remote`."""
-    logger.debug(f"Pull from '{remote}' (from: {from_branch}, to: {to_branch})")
-    try:
-        cmd: CmdArgs = ["pull", remote]
-        branches: str | None = None
-        if from_branch:
-            branches = from_branch
-            if to_branch:
-                branches = f"{branches}:{to_branch}"
-        if branches:
-            cmd.append(branches)
-        _ = await run_git(cmd, path=repo_path)
-    except GitError as e:
-        msg = f"unable to pull from '{remote}': {e}"
-        logger.exception(msg)
-        raise GitError(msg, ec=errno.ENOTRECOVERABLE) from e
-
-
-async def git_cherry_pick(
-    sha: str, *, sha_end: str | None = None, repo_path: Path | None = None
-) -> None:
-    """
-    Cherry-picks a given SHA to the currently checked out branch.
-
-    If `sha_end` is provided, will cherry-pick the patches `[sha~1, sha_end]`.
-    If `repo_path` is provided, run the command in said repository; otherwise, run
-    in the current directory.
-    """
-    commit_to_pick = sha if not sha_end else f"{sha}~1..{sha_end}"
-    logger.debug(f"cherry-pick commit '{commit_to_pick}'")
-    try:
-        _ = await run_git(["cherry-pick", "-x", commit_to_pick], path=repo_path)
-    except GitError as e:
-        msg = f"unable to cherry-pick '{commit_to_pick}': {e}"
-        logger.exception(msg)
         raise GitError(msg, ec=errno.ENOTRECOVERABLE) from e
 
 
@@ -1096,7 +928,7 @@ async def git_clone(repo: MaybeSecure, base_path: Path, repo_name: str) -> Path:
 async def git_apply(repo_path: Path, patch_path: Path) -> None:
     """Apply a patch onto the repository specified by `repo_path`."""
     try:
-        _ = await run_git(["apply", patch_path.resolve().as_posix()], path=repo_path)
+        _ = await _run_git(["apply", patch_path.resolve().as_posix()], path=repo_path)
     except GitError as e:
         msg = f"error applying patch '{patch_path}' to '{repo_path}': {e}"
         logger.exception(msg)
@@ -1106,7 +938,7 @@ async def git_apply(repo_path: Path, patch_path: Path) -> None:
 
 async def git_get_sha1(repo_path: Path) -> str:
     """For the repository in `repo_path`, obtain its currently checked out SHA1."""
-    val = await run_git(["rev-parse", "HEAD"], path=repo_path)
+    val = await _run_git(["rev-parse", "HEAD"], path=repo_path)
     if len(val) == 0:
         msg = f"unable to obtain current SHA1 on repository '{repo_path}"
         logger.error(msg)
@@ -1115,9 +947,161 @@ async def git_get_sha1(repo_path: Path) -> str:
     return val.strip()
 
 
-async def git_get_current_branch(repo_path: Path) -> str:
+# unused functions
+
+
+def _git_cherry_pick(repo_path: Path, sha: SHA) -> None:  # pyright: ignore[reportUnusedFunction]
+    repo = git.Repo(repo_path)
+
+    try:
+        repo.git.cherry_pick(["-x", "-s", sha])  # pyright: ignore[reportAny]
+    except git.CommandError as e:
+        msg = f"unable to cherry-pick patch sha '{sha}'"
+        logger.error(msg)
+
+        status_files = git_status(repo_path)
+        conflicts: list[str] = [f for s, f in status_files if s == "UU"]
+
+        if conflicts:
+            raise GitCherryPickConflictError(sha, conflicts) from None
+
+        logger.error(e.stderr)
+        raise GitCherryPickError(msg=msg) from None
+
+
+def _git_abort_cherry_pick(repo_path: Path) -> None:  # pyright: ignore[reportUnusedFunction]
+    repo = git.Repo(repo_path)
+
+    try:
+        _ = repo.git.cherry_pick("--abort")  # pyright: ignore[reportAny]
+    except git.CommandError as e:
+        logger.error(f"found error aborting cherry-pick: {e.stderr}")
+
+
+async def _get_git_modified_paths(  # pyright: ignore[reportUnusedFunction]
+    base_sha: str,
+    ref: str,
+    *,
+    in_repo_path: str | None = None,
+    repo_path: Path | None = None,
+) -> tuple[list[Path], list[Path]]:
+    """
+    Obtain all modifications since `ref` on the repository.
+
+    If `path` is specified, perform the action within the context of `path`. Otherwise,
+    on the git repository existing in current directory.
+    """
+    try:
+        cmd: CmdArgs = [
+            "diff-tree",
+            "--diff-filter=ACDMR",
+            "--ignore-all-space",
+            "--no-commit-id",
+            "--name-status",
+            "-r",
+            base_sha,
+            ref,
+        ]
+
+        if in_repo_path:
+            cmd.extend(["--", in_repo_path])
+
+        val = await _run_git(cmd, path=repo_path)
+    except GitError as e:
+        logger.error(f"error: unable to obtain latest patch: {e}")
+        raise GitError(
+            f"unable to obtain patches between {base_sha} and {ref}",
+            ec=errno.ENOTRECOVERABLE,
+        ) from e
+
+    if len(val) == 0:
+        logger.debug(f"no relevant patches found between {base_sha} and {ref}")
+        return [], []
+
+    descs_deleted: list[Path] = []
+    descs_modified: list[Path] = []
+
+    lines = val.splitlines()
+    regex = (
+        re.compile(rf"^\s*([ACDMR])\s+({repo_path}.*)\s*$")
+        if repo_path is not None
+        else re.compile(r"\s*([ACDMR])\s+([^\s]+)\s*$")
+    )
+    for line in lines:
+        m = re.match(regex, line)
+        if m is None:
+            logger.debug(f"'{line}' does not match")
+            continue
+
+        action = m.group(1)
+        target = m.group(2)
+        logger.debug(f"action: {action}, target: {target}")
+
+        match action:
+            case "D":
+                descs_deleted.append(Path(target))
+            case "A" | "C" | "M" | "R":
+                descs_modified.append(Path(target))
+            case _:
+                logger.error(
+                    f"unexpected action '{action}' on '{target}', line: '{line}'"
+                )
+                raise GitError(
+                    f"unexpected action '{action}' on '{target}'",
+                    ec=errno.ENOTRECOVERABLE,
+                )
+
+    return descs_modified, descs_deleted
+
+
+async def _git_pull(  # pyright: ignore[reportUnusedFunction]
+    remote: MaybeSecure,
+    *,
+    from_branch: str | None = None,
+    to_branch: str | None = None,
+    repo_path: Path | None = None,
+) -> None:
+    """Pull commits from `remote`."""
+    logger.debug(f"Pull from '{remote}' (from: {from_branch}, to: {to_branch})")
+    try:
+        cmd: CmdArgs = ["pull", remote]
+        branches: str | None = None
+        if from_branch:
+            branches = from_branch
+            if to_branch:
+                branches = f"{branches}:{to_branch}"
+        if branches:
+            cmd.append(branches)
+        _ = await _run_git(cmd, path=repo_path)
+    except GitError as e:
+        msg = f"unable to pull from '{remote}': {e}"
+        logger.exception(msg)
+        raise GitError(msg, ec=errno.ENOTRECOVERABLE) from e
+
+
+async def _git_cherry_pick(  # pyright: ignore[reportUnusedFunction]
+    sha: str, *, sha_end: str | None = None, repo_path: Path | None = None
+) -> None:
+    """
+    Cherry-picks a given SHA to the currently checked out branch.
+
+    If `sha_end` is provided, will cherry-pick the patches `[sha~1, sha_end]`.
+    If `repo_path` is provided, run the command in said repository; otherwise, run
+    in the current directory.
+    """
+    commit_to_pick = sha if not sha_end else f"{sha}~1..{sha_end}"
+    logger.debug(f"cherry-pick commit '{commit_to_pick}'")
+    try:
+        _ = await _run_git(["cherry-pick", "-x", commit_to_pick], path=repo_path)
+    except GitError as e:
+        msg = f"unable to cherry-pick '{commit_to_pick}': {e}"
+        logger.exception(msg)
+        raise GitError(msg, ec=errno.ENOTRECOVERABLE) from e
+
+
+async def _git_get_current_branch(repo_path: Path) -> str:  # pyright: ignore[reportUnusedFunction]
     """Obtain the name of the currently checked out branch."""
-    val = await run_git(["rev-parse", "--abbrev-ref", "HEAD"], path=repo_path)
+    val = await _run_git(["rev-parse", "--abbrev-ref", "HEAD"], path=repo_path)
     if not val:
         msg = (
             "unable to obtain current checked out branch's "
@@ -1127,3 +1111,22 @@ async def git_get_current_branch(repo_path: Path) -> str:
         raise GitError(msg, ec=errno.ENOTRECOVERABLE)
 
     return val.strip()
+
+
+async def _git_fetch(  # pyright: ignore[reportUnusedFunction]
+    remote: str, from_ref: str, to_branch: str, *, repo_path: Path | None = None
+) -> None:
+    """
+    Fetch a reference from a remote to a new branch.
+
+    Fetches the reference pointed to by `from_ref` from remote `remote` to a new branch
+    `to_branch`. If `repo_path` is specified, run the command in said path; otherwise,
+    run in current directory.
+    """
+    logger.debug(f"fetch from '{remote}', source: {from_ref}, dest: {to_branch}")
+    try:
+        _ = await _run_git(["fetch", remote, f"{from_ref}:{to_branch}"], path=repo_path)
+    except GitError as e:
+        msg = f"unable to fetch '{from_ref}' from '{remote}' to '{to_branch}': {e}"
+        logger.exception(msg)
+        raise GitError(msg, ec=errno.ENOTRECOVERABLE) from e
