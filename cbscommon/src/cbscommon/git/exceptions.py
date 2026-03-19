@@ -4,8 +4,8 @@
 
 from typing import override
 
-from cbscommon.exceptions import CBSCommonError
-from cbscommon.git._types import SHA
+from ..exceptions import CBSCommonError
+from .types import SHA
 
 
 class GitError(CBSCommonError):

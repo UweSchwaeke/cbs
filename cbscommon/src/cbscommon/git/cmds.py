@@ -11,7 +11,7 @@ from typing import cast
 
 import git
 
-from cbscommon.git._exceptions import (
+from .exceptions import (
     GitAMApplyError,
     GitCherryPickConflictError,
     GitCherryPickError,
@@ -27,9 +27,9 @@ from cbscommon.git._exceptions import (
     GitPatchDiffError,
     GitPushError,
 )
-from cbscommon.git._types import SHA
+from .types import SHA
 
-logger = logging.getLogger("cbscommon.git")
+logger = logging.getLogger(__name__)
 
 
 def git_check_patches_diff(
