@@ -20,13 +20,7 @@ from pathlib import Path
 from typing import cast
 
 import pydantic
-from cbscommon.git import (
-    GitCreateHeadExistsError,
-    GitError,
-    GitFetchError,
-    GitFetchHeadNotFoundError,
-    GitIsTagError,
-    GitPushError,
+from cbscommon.git.cmds import (
     git_branch_from,
     git_checkout_ref,
     git_cleanup_repo,
@@ -34,7 +28,15 @@ from cbscommon.git import (
     git_prepare_remote,
     git_push,
     git_status,
-)  # Git exceptions and functions are now imported from cbscommon.git
+)
+from cbscommon.git.exceptions import (
+    GitCreateHeadExistsError,
+    GitError,
+    GitFetchError,
+    GitFetchHeadNotFoundError,
+    GitIsTagError,
+    GitPushError,
+)
 from cbscore.versions.utils import parse_version
 
 from crt.crtlib.apply import ApplyError, apply_manifest

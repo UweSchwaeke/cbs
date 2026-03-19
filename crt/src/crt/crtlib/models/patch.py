@@ -16,7 +16,7 @@ from datetime import datetime as dt
 from typing import override
 
 import pydantic
-from cbscommon.git import SHA  # SHA is now imported from cbscommon.git
+from cbscommon.git.types import SHA
 
 from crt.crtlib.models.common import (
     AuthorData,

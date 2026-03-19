@@ -23,16 +23,16 @@ from typing import cast
 import click
 import pydantic
 import rich.box
-from cbscommon.git import (
-    SHA,
-    GitError,
+from cbscommon.git.cmds import (
     git_branch_delete,
     git_branch_from,
     git_fetch_ref,
     git_get_patch_sha_title,
     git_patches_in_interval,
     git_prepare_remote,
-)  # Git types, exceptions and functions are now imported from cbscommon.git
+)
+from cbscommon.git.exceptions import GitError
+from cbscommon.git.types import SHA
 from rich.console import Group, RenderableType
 from rich.padding import Padding
 from rich.table import Table

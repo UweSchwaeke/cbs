@@ -17,12 +17,9 @@ from datetime import datetime as dt
 from pathlib import Path
 from typing import cast
 
-from cbscommon.git import (
-    SHA,
-    GitError,
-    git_format_patch,
-    git_patch_id,
-)  # Git types, exceptions and functions are now imported from cbscommon.git
+from cbscommon.git.cmds import git_format_patch, git_patch_id
+from cbscommon.git.exceptions import GitError
+from cbscommon.git.types import SHA
 
 from crt.crtlib.errors import CRTError
 from crt.crtlib.logger import logger as parent_logger

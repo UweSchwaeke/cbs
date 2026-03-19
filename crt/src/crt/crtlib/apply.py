@@ -18,16 +18,16 @@ from pathlib import Path
 from typing import override
 
 import git
-from cbscommon.git import (
-    SHA,
-    GitAMApplyError,
+from cbscommon.git.cmds import (
     git_am_abort,
     git_am_apply,
     git_checkout_from_local_ref,
     git_cleanup_repo,
     git_prepare_remote,
     git_update_submodules,
-)  # Git types, exceptions and functions are now imported from cbscommon.git
+)
+from cbscommon.git.exceptions import GitAMApplyError
+from cbscommon.git.types import SHA
 
 from crt.crtlib.logger import logger as parent_logger
 from crt.crtlib.models.common import ManifestPatchEntry

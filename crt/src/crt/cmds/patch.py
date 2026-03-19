@@ -18,11 +18,11 @@ from collections.abc import Callable
 from pathlib import Path
 
 import click
-from cbscommon.git import (
-    GitError,
+from cbscommon.git.cmds import (
     git_prepare_remote,
     git_revparse,
-)  # Git exceptions and functions are now imported from cbscommon.git
+)
+from cbscommon.git.exceptions import GitError
 
 from crt.cmds import Ctx, pass_ctx, perror, psuccess, pwarn, with_patches_repo_path
 from crt.cmds import logger as parent_logger

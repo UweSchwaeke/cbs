@@ -23,14 +23,14 @@ from typing import cast
 
 import click
 import rich.box
-from cbscommon.git import (
-    GitError,
+from cbscommon.git.cmds import (
     git_prepare_remote,
     git_push,
     git_remote_exists,
     git_remote_ref_exists,
     git_tag_exists_in_remote,
-)  # Git exceptions and functions are now imported from cbscommon.git
+)
+from cbscommon.git.exceptions import GitError
 from cbscore.versions.utils import parse_version
 from rich.console import Group, RenderableType
 from rich.padding import Padding
