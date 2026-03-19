@@ -19,9 +19,7 @@ from typing import cast
 
 import click
 import rich.box
-from cbscommon.git import (
-    GitFetchHeadNotFoundError,
-    GitIsTagError,
+from cbscommon.git.cmds import (
     git_branch_from,
     git_cleanup_repo,
     git_fetch_ref,
@@ -33,7 +31,8 @@ from cbscommon.git import (
     git_remote_ref_names,
     git_reset_head,
     git_tag,
-)  # Git exceptions and functions are now imported from cbscommon.git
+)
+from cbscommon.git.exceptions import GitFetchHeadNotFoundError, GitIsTagError
 from cbscore.versions.utils import parse_version
 from git import GitError
 from rich.padding import Padding

@@ -14,7 +14,7 @@
 import uuid
 from typing import override
 
-from cbscommon.git import SHA  # SHA is now imported from cbscommon.git
+from cbscommon.git.types import SHA
 
 from crt.crtlib.errors import CRTError
 from crt.crtlib.models.common import AuthorData
