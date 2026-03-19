@@ -20,6 +20,13 @@ from datetime import datetime as dt
 from pathlib import Path
 
 import pydantic
+from cbscommon.git.cmds import (
+    git_apply,
+    git_checkout,
+    git_clone,
+    git_get_sha1,
+    git_remove_worktree,
+)
 from cbscommon.git.exceptions import GitError
 from cbscommon.process.cmds import async_run_cmd
 
@@ -27,7 +34,7 @@ from cbscore.builder import BuilderError
 from cbscore.builder import logger as parent_logger
 from cbscore.builder.utils import get_component_version
 from cbscore.core.component import CoreComponentLoc
-from cbscore.utils import CommandError, git
+from cbscore.utils import CommandError
 from cbscore.utils.secrets.mgr import SecretsMgr
 from cbscore.versions.desc import VersionComponent
 from cbscore.versions.utils import get_major_version, get_minor_version
@@ -220,7 +227,7 @@ async def prepare_components(
         start = dt.now(tz=datetime.UTC)
         try:
             with secrets.git_url_for(comp.repo) as comp_url:
-                cloned_path = await git.git_clone(
+                cloned_path = await git_clone(
                     comp_url,
                     git_repos_path,
                     comp.name,
@@ -242,7 +249,7 @@ async def prepare_components(
         """Checkout given ref in repository located at `repo`."""
         logger.info(f"checkout ref '{ref}' in repository at '{repo}'")
         try:
-            worktree_path = await git.git_checkout(
+            worktree_path = await git_checkout(
                 repo,
                 ref,
                 git_worktrees_path / comp.name,
@@ -272,7 +279,7 @@ async def prepare_components(
         for patch_path in patches_to_apply:
             logger.info(f"applying patch from '{patch_path}'")
             try:
-                await git.git_apply(repo, patch_path)
+                await git_apply(repo, patch_path)
             except GitError as e:
                 msg = f"unable to apply patch from '{patch_path}' to '{repo}': {e}"
                 logger.exception(msg)
@@ -305,7 +312,7 @@ async def prepare_components(
         component.
         """
         try:
-            sha1 = await git.git_get_sha1(worktree_path)
+            sha1 = await git_get_sha1(worktree_path)
         except (GitError, Exception) as e:
             msg = f"error obtaining SHA1 for worktree '{worktree_path}': {e}"
             logger.error(msg)
@@ -379,7 +386,7 @@ async def prepare_components(
             return await _finalize()
         except BuilderError as e:
             # remove worktree
-            await git.git_remove_worktree(repo_path, worktree_path)
+            await git_remove_worktree(repo_path, worktree_path)
             # propagate exception
             raise e from None
 
@@ -429,7 +436,7 @@ async def cleanup_components(components: dict[str, BuildComponentInfo]) -> None:
     for comp_name, comp in components.items():
         logger.info(f"cleanup component '{comp_name}'")
         try:
-            await git.git_remove_worktree(comp.repo_path, comp.worktree_path)
+            await git_remove_worktree(comp.repo_path, comp.worktree_path)
         except GitError as e:
             logger.warning(
                 f"unable to cleanup component '{comp_name}' at "
