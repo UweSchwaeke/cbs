@@ -18,7 +18,7 @@ The project will be structured as a multi-binary workspace:
 - `cbscore`: The core library crate.
 - `cbsbuild`: The main CLI tool.
 - `cbs-runner`: A specialized, minimal binary for execution inside build containers.
-- `cbscore-python`: (Optional) Python extension module using `PyO3`.
+- `cbscore-python`: (Optional) Python extension module using `PyO3` and `Maturin`.
 
 | Python Module | Rust Module / Crate | Description |
 |---|---|---|
@@ -169,13 +169,11 @@ Existing compose files (`podman-compose.cbs.yaml`, `podman-compose.cbs-dev.yaml`
 
 To support existing Python projects like `crt` that depend on `cbscore`'s logic (e.g., version parsing), we will provide two integration paths:
 
-### 12.1 Native Python Bindings (PyO3)
-For critical utilities and data models (like `parse_version`), we will use the **`pyo3`** crate to expose a Python-compatible package.
-- **Workflow**: Python projects can `import cbscore` as a native extension.
-- **Benefit**: Zero-overhead calls and high type safety while maintaining the familiar Python API.
-cc: is maturin on top of pyo3 a better way?
+### 12.1 Native Python Bindings (PyO3 & Maturin)
+For critical utilities and data models (like `parse_version`), we will use the **`pyo3`** crate along with **`maturin`** as the build system to expose a Python-compatible package.
+- **Workflow**: `maturin` will handle the compilation and generation of Python wheels. Python projects can then `import cbscore` as a native extension.
+- **Benefit**: Zero-overhead calls, high type safety, and an automated build/distribution pipeline.
 
 ### 12.2 CLI Abstraction
 For high-level operations (like starting a build), Python projects will be encouraged to invoke the `cbsbuild` binary using `subprocess`.
 - **Refactoring `crt`**: Update internal `crt` library calls to wrap the `cbsbuild` CLI instead of direct Python imports where appropriate.
-
