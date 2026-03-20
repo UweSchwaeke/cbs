@@ -10,6 +10,7 @@
 - **Reliability**: Use Rust's strong type system and error handling to reduce runtime errors.
 - **Single Binary**: Ship as a static binary for easier deployment in container environments.
 - **Library Support**: Expose a clean, public API so the core build logic can be included as a dependency in other Rust projects (e.g., future `cbsd` rewrites).
+- **Python Interoperability**: Provide Python bindings for core utilities to ensure existing Python tools like `crt` can leverage the Rust implementation without a full rewrite.
 
 ## 2. Architecture & Module Mapping
 
@@ -17,6 +18,7 @@ The project will be structured as a multi-binary workspace:
 - `cbscore`: The core library crate.
 - `cbsbuild`: The main CLI tool.
 - `cbs-runner`: A specialized, minimal binary for execution inside build containers.
+- `cbscore-python`: (Optional) Python extension module using `PyO3`.
 
 | Python Module | Rust Module / Crate | Description |
 |---|---|---|
@@ -111,6 +113,7 @@ A simplified version of the original shell script.
 4.  **Phase 4: cbs-runner**: **Verification**: Parallel testing of `-PURE-RUST` and `-BASH` entrypoints.
 5.  **Phase 5: cbsbuild CLI**: **Verification**: End-to-end local CLI tests.
 6.  **Phase 6: Container Integration**: **Verification**: Full build cycle using Podman.
+7.  **Phase 7: Python Bindings (Optional)**: **Verification**: Import `cbscore` in Python and run existing `crt` unit tests.
 
 ## 8. Development & VCS Guidelines
 
@@ -161,3 +164,18 @@ Existing compose files (`podman-compose.cbs.yaml`, `podman-compose.cbs-dev.yaml`
 - **Volume Mounts**: Remove mounts pointing to `./cbscore` (the Python source).
 - **Development Flow**: For local development, the compose file will mount the `target/release` (or `target/debug`) directory to provide the container with the latest compiled binaries.
 - **Compatibility**: Ensure the new `cbsd-rs` service (defined in `podman-compose.cbsd-rs.yaml`) correctly maps the worker configuration to the `cbs-runner`'s expected environment.
+
+## 12. Python Interoperability
+
+To support existing Python projects like `crt` that depend on `cbscore`'s logic (e.g., version parsing), we will provide two integration paths:
+
+### 12.1 Native Python Bindings (PyO3)
+For critical utilities and data models (like `parse_version`), we will use the **`pyo3`** crate to expose a Python-compatible package.
+- **Workflow**: Python projects can `import cbscore` as a native extension.
+- **Benefit**: Zero-overhead calls and high type safety while maintaining the familiar Python API.
+cc: is maturin on top of pyo3 a better way?
+
+### 12.2 CLI Abstraction
+For high-level operations (like starting a build), Python projects will be encouraged to invoke the `cbsbuild` binary using `subprocess`.
+- **Refactoring `crt`**: Update internal `crt` library calls to wrap the `cbsbuild` CLI instead of direct Python imports where appropriate.
+
