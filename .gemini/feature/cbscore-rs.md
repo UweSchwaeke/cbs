@@ -13,119 +13,109 @@
 
 ## 2. Architecture & Module Mapping
 
-The project will be structured as a library (`cbscore-rs`) with a CLI wrapper (`cbsbuild-rs`).
+The project will be structured as a multi-binary workspace:
+- `cbscore`: The core library crate.
+- `cbsbuild`: The main CLI tool.
+- `cbs-runner`: A specialized, minimal binary for execution inside build containers.
 
 | Python Module | Rust Module / Crate | Description |
 |---|---|---|
-| `cbscore.config` | `config` | `serde` + `serde_yaml` for config management. |
-| `cbscore.utils.secrets` | `secrets` | Vault integration (via `vaultrs`) and secret merging. |
-| `cbscore.utils.git` | `git` | Git binary wrapper using `tokio::process` or `git2`. |
-| `cbscore.utils.podman` | `podman` | Podman binary wrapper or `bollard` API. |
-| `cbscore.utils.buildah` | `buildah` | Buildah binary wrapper. |
-| `cbscore.utils.s3` | `s3` | S3 integration using `aws-sdk-s3`. |
-| `cbscore.builder` | `builder` | Core build orchestration logic. |
-| `cbscore.releases` | `releases` | Release descriptor models and S3 logic. |
-| `cbscore.versions` | `versions` | Version descriptor models and creation logic. |
-| `cbscore.cmds` | `cli` | CLI implementation using `clap`. |
+| `cbscore.config` | `cbscore::config` | `serde` + `serde_yaml` for config management. |
+| `cbscore.utils.secrets` | `cbscore::secrets` | Vault integration (via `vaultrs`) and secret merging. |
+| `cbscore.utils.git` | `cbscore::tools::git` | Git binary wrapper using `tokio::process`. |
+| `cbscore.utils.podman` | `cbscore::tools::podman` | Podman binary wrapper using `tokio::process`. |
+| `cbscore.utils.buildah` | `cbscore::tools::buildah` | Buildah binary wrapper using `tokio::process`. |
+| `cbscore.utils.s3` | `cbscore::s3` | S3 integration using `aws-sdk-s3`. |
+| `cbscore.builder` | `cbscore::builder` | Core build orchestration logic. |
+| `cbscore.releases` | `cbscore::releases` | Release descriptor models and S3 logic. |
+| `cbscore.versions` | `cbscore::versions` | Version descriptor models and creation logic. |
+| `cbscore.cmds` | `cbsbuild::cli` | CLI implementation using `clap`. |
 
 ## 3. Data Models (Serde)
 
 All Python `pydantic` models will be ported to Rust `structs` with `serde` attributes.
 
-### 3.1 Version Descriptor
-```rust
-#[derive(Debug, Serialize, Deserialize)]
-pub struct VersionDescriptor {
-    pub version: String,
-    pub title: String,
-    pub signed_off_by: SignedOffBy,
-    pub image: VersionImage,
-    pub components: Vec<VersionComponent>,
-    pub distro: String,
-    pub el_version: i32,
-}
-```
-
-### 3.2 Config
-```rust
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Config {
-    pub paths: PathsConfig,
-    pub storage: Option<StorageConfig>,
-    pub signing: Option<SigningConfig>,
-    pub logging: Option<LoggingConfig>,
-    pub secrets: Vec<PathBuf>,
-    pub vault: Option<PathBuf>,
-}
-```
-
 ## 4. Key Implementation Details
 
 ### 4.1 Concurrency Model
-The project will use the **Tokio** runtime. Parallel tasks (like cloning components or uploading RPMs) will be managed using `tokio::task::JoinSet` or `futures::stream::FuturesUnordered` to maintain parity with Python's `asyncio.TaskGroup`.
+The project will use the **Tokio** runtime. Parallel tasks (like cloning components or uploading RPMs) will be managed using `tokio::task::JoinSet` to maintain parity with Python's `asyncio.TaskGroup`.
 
 ### 4.2 Error Handling
-A custom `Error` enum using `thiserror` will be used to unify errors from Git, S3, Vault, and IO operations.
+We will use a custom error type `CBSError` defined via `thiserror`. Each module will expose its own error variants to ensure "rustic" error propagation.
 
-### 4.3 Tool Integration Strategies
+```rust
+#[derive(thiserror::Error, Debug)]
+pub enum CBSError {
+    #[error("Config error: {0}")]
+    Config(String),
+    #[error("Tool execution error: {0}")]
+    Tool {
+        command: String,
+        exit_code: Option<i32>,
+        stderr: String,
+        reason: String,
+    },
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+    // ...
+}
+```
 
-We evaluate two primary approaches for interacting with external tools (`git`, `podman`, `buildah`):
+### 4.3 Tool Integration Strategy (NO-FFI)
 
-#### Approach 1: Binary Wrapping (NO-FFI)
-This mirrors the current Python implementation.
-- **Evaluation**: Standard Rust `Command` or the `duct` crate can be used to build and execute shell commands. This is highly reliable in rootless/containerized environments where the environment variables and binary versions are strictly controlled.
-- **Pros**: No complex C dependencies (libgit2, etc.); easier static linking (musl); 1:1 behavior with manual CLI usage.
-- **Cons**: Overhead of process spawning; requires parsing STDOUT/STDERR strings.
+We will use a **Pure NO-FFI** approach for all external tools.
+- **Mechanism**: Use `tokio::process::Command` to invoke binaries.
+- **Handling Huge Output**: We will **never** use `.output()`, which collects the entire output into memory. Instead, we will use `.spawn()` and asynchronously stream `stdout`/`stderr` using `tokio::io::BufReader`.
+- **Stream Redirection**: Output can be piped to the log file, the terminal, or a string buffer with a hard size limit (e.g., last 100 lines) to prevent memory exhaustion during huge builds.
 
-#### Approach 2: API/FFI Integration (FFI)
-- **Evaluation**: Uses dedicated libraries like `git2` (libgit2 bindings) for Git and `bollard` for Podman/Docker.
-- **Pros**: Better performance (no fork/exec); structured data instead of string parsing.
-- **Cons**: `git2` is difficult to cross-compile statically; `bollard` requires a running Podman/Docker socket service, which may not be available inside the build container; Buildah has no stable FFI for its core operations.
-
-**Selected Strategy**: **NO-FFI** for `podman` and `buildah` to ensure compatibility with rootless builds. **Hybrid** for `git` (using `git2` for read operations and wrapping the binary for complex writes if needed).
+### 4.4 Output Analysis & Error Mapping
+To understand *why* a tool failed or to track its progress:
+- **Output Observers**: We will implement a `StreamParser` trait that analyzes the `stdout`/`stderr` streams in real-time.
+- **Regex Parsing**: Module-specific parsers (e.g., `GitParser`, `RpmBuildParser`) will look for specific error patterns or status updates.
+- **Failure Reason**: When a process exits with a non-zero code, the `CBSError::Tool` variant will be populated with the captured `stderr` context and a "reason" derived from the parsed output (e.g., "Authentication failed", "Missing dependency: libssl").
 
 ## 5. CLI Design & Runner Strategy
 
-The `cbsbuild-rs` CLI will use `clap` with subcommands mirroring the current structure.
-
-### 5.1 Task Runner Implementation
-
-The task runner currently executes inside a container via `cbscore-entrypoint.sh`. 
-
-#### Approach A: Unified Binary (NO-CUSTOM-RUNNER)
-The main `cbsbuild-rs` binary includes the `runner build` subcommand.
-- **Implementation**: The container entrypoint script is simplified. Instead of installing `uv` and the Python package, it simply invokes the pre-copied `cbsbuild-rs` binary.
-
-#### Approach B: Dedicated Runner (CUSTOM-RUNNER)
-Create a separate, minimal executable (e.g., `cbs-runner`) specifically for execution inside the build container.
-- **Implementation**: This binary contains only the logic required to build components and sign RPMs. It results in a smaller binary size and faster container startup.
-- **Pros**: Clear separation of concerns; minimal attack surface in build containers.
+### 5.1 Custom Runner (CUSTOM-RUNNER)
+We will implement the **CUSTOM-RUNNER** approach with a dedicated `cbs-runner` binary.
 
 ### 5.2 Container Entrypoint Achievement
-By using a static Rust binary, the `cbscore-entrypoint.sh` can be reduced to:
-```bash
-#!/bin/bash
-export PATH="/runner/bin:$PATH"
-# No uv/pip/sync needed!
-cbsbuild-rs --config "/runner/cbs-build.config.yaml" runner build "$@"
-```
 
-## 6. Implementation Phases
+We will implement and test two distinct approaches for the container entrypoint:
 
-1.  **Phase 1: Foundation (Models & Config)**: Implement `VersionDescriptor`, `ReleaseDesc`, and `Config` models with YAML/JSON support.
-2.  **Phase 2: Utilities (Git, S3, Vault)**: Port the utility wrappers.
-3.  **Phase 3: Builder Core**: Port the `Builder` logic, including component preparation and build orchestration.
-4.  **Phase 4: CLI Wrapper**: Implement the `clap` CLI and integrate the core logic.
-5.  **Phase 5: Container Runner**: Port the `podman_run` logic for containerized builds and optimize the entrypoint.
-6.  **Phase 6: Verification & Testing**: Run side-by-side tests with the Python version.
+#### Approach 1: Pure Rust (-PURE-RUST)
+The `cbs-runner` binary handles all environment setup directly.
+- **Logic**: Creates `/runner/bin`, initializes `PATH`, and manages scratch space via standard library calls (`std::fs`, `std::env`).
+- **Benefit**: Zero external shell dependencies; fastest startup.
 
-## 7. Migration Plan
+#### Approach 2: Bash Wrapper (-BASH)
+A simplified version of the original shell script.
+- **Logic**: A minimal `.sh` script that sets up the environment and then `exec`s into `cbs-runner`.
+- **Benefit**: Easier debugging for operators accustomed to shell-based entrypoints.
 
-Initially, `cbscore-rs` will exist alongside `cbscore`. Users can opt-in to using the Rust version for performance testing. Once parity and stability are confirmed, the Python version can be deprecated.
+## 6. Testing Strategy
+
+### 6.1 Unit Testing
+- Every `.rs` file will contain a `mod tests` block.
+- **Mocking**: Use `mockall` to isolate logic from external binaries and APIs.
+
+### 6.2 Integration Testing
+- **Podman Only**: All containerized tests will use Podman (no Docker).
+- **Gitea**: Use `testcontainers-rs` to run Gitea for verifying Git clone/patch operations.
+- **LocalStack & Vault**: Use `testcontainers-rs` for S3 and secret retrieval verification.
+
+## 7. Implementation Phases
+
+1.  **Phase 1: Foundation (Models & Config)**: **Verification**: Unit tests for YAML/JSON.
+2.  **Phase 2: Utilities (Git, S3, Vault)**: **Verification**: Integration tests with Gitea/LocalStack/Vault.
+3.  **Phase 3: Builder Core**: **Verification**: Mocked tool-flow verification.
+4.  **Phase 4: cbs-runner**: **Verification**: Parallel testing of `-PURE-RUST` and `-BASH` entrypoints.
+5.  **Phase 5: cbsbuild CLI**: **Verification**: End-to-end local CLI tests.
+6.  **Phase 6: Container Integration**: **Verification**: Full build cycle using Podman.
 
 ## 8. Development & VCS Guidelines
 
-- **Git as VCS**: Every commit must be buildable and pass all existing tests.
+- **Git as VCS**: Every commit must be buildable and pass all tests.
 - **Signed Commits**: All commits must be GPG signed.
 - **Commit Message Template**:
 ```text
@@ -133,6 +123,20 @@ cbscore-rs: <summary>
 
 <detailed-reason-why-changes-are-needed>
 
-Co-authored-by: <name> <email>
+Co-authored-by: Gemini <gemini@google.com>
 Signed-off-by: <name> <email>
 ```
+
+## 9. General Engineering Rules
+
+- **Design Patterns**: Strict adherence to **SOLID**, **DRY**, and **KISS** principles.
+- **Documentation**: Every public module, struct, and method MUST be documented using `///` doc comments.
+- **Code Clarity**:
+    - **Length Limit**: Functions should generally not exceed **10-15 lines**.
+- **Composition over Inheritance**: Use traits and composition to build flexible abstractions.
+
+## 10. Logging Strategy
+
+We will use the **`tracing`** crate for structured logging.
+- **Per-Module Levels**: The logging level can be configured independently for each module via the `RUST_LOG` environment variable (e.g., `RUST_LOG=cbscore::git=debug,cbscore::builder=info`).
+- **Formatting**: Support for both human-readable (terminal) and JSON (container logs) output formats.
