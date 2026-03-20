@@ -18,7 +18,7 @@ The project will be structured as a multi-binary workspace:
 - `cbscore`: The core library crate.
 - `cbsbuild`: The main CLI tool.
 - `cbs-runner`: A specialized, minimal binary for execution inside build containers.
-- `cbscore-python`: (Optional) Python extension module using `PyO3` and `Maturin`.
+- `cbscore-python`: Python extension module using `PyO3` and `Maturin`.
 
 | Python Module | Rust Module / Crate | Description |
 |---|---|---|
@@ -35,7 +35,13 @@ The project will be structured as a multi-binary workspace:
 
 ## 3. Data Models (Serde)
 
-All Python `pydantic` models will be ported to Rust `structs` with `serde` attributes.
+All Python `pydantic` models will be ported to Rust `structs` using `serde`. 
+
+### 3.1 Secrets Parity
+To maintain compatibility with existing `secrets.yaml` files, the Rust implementation will use a "fat" Enum with `#[serde(untagged)]`. This allows us to replicate the Python implementation's multi-level discriminators (e.g., `creds: vault` combined with `type: transit`) with high type safety and rigorous unit testing.
+
+### 3.2 Path Consistency
+We will use the **`camino` crate** (`Utf8PathBuf`) for all shared data models. This ensures that S3 keys and file paths are consistently UTF-8 enforced across different operating systems.
 
 ## 4. Key Implementation Details
 
@@ -45,79 +51,44 @@ The project will use the **Tokio** runtime. Parallel tasks (like cloning compone
 ### 4.2 Error Handling
 We will use a custom error type `CBSError` defined via `thiserror`. Each module will expose its own error variants to ensure "rustic" error propagation.
 
-```rust
-#[derive(thiserror::Error, Debug)]
-pub enum CBSError {
-    #[error("Config error: {0}")]
-    Config(String),
-    #[error("Tool execution error: {0}")]
-    Tool {
-        command: String,
-        exit_code: Option<i32>,
-        stderr: String,
-        reason: String,
-    },
-    #[error("IO error: {0}")]
-    Io(#[from] std::io::Error),
-    // ...
-}
-```
-
 ### 4.3 Tool Integration Strategy (NO-FFI)
 
 We will use a **Pure NO-FFI** approach for all external tools.
 - **Mechanism**: Use `tokio::process::Command` to invoke binaries.
-- **Handling Huge Output**: We will **never** use `.output()`, which collects the entire output into memory. Instead, we will use `.spawn()` and asynchronously stream `stdout`/`stderr` using `tokio::io::BufReader`.
-- **Stream Redirection**: Output can be piped to the log file, the terminal, or a string buffer with a hard size limit (e.g., last 100 lines) to prevent memory exhaustion during huge builds.
+- **Handling Huge Output**: We will asynchronously stream `stdout`/`stderr` using `tokio::io::BufReader` to prevent memory exhaustion during large builds.
+- **Environment Management**: A internal `CommandExecutor` will handle complex environment states (e.g., `XDG_RUNTIME_DIR`, `STORAGE_DRIVER`) required for rootless Podman-in-Podman builds.
 
 ### 4.4 Output Analysis & Error Mapping
-To understand *why* a tool failed or to track its progress:
 - **Output Observers**: We will implement a `StreamParser` trait that analyzes the `stdout`/`stderr` streams in real-time.
-- **Regex Parsing**: Module-specific parsers (e.g., `GitParser`, `RpmBuildParser`) will look for specific error patterns or status updates.
-- **Failure Reason**: When a process exits with a non-zero code, the `CBSError::Tool` variant will be populated with the captured `stderr` context and a "reason" derived from the parsed output (e.g., "Authentication failed", "Missing dependency: libssl").
+- **Failure Reason**: When a process fails, the `CBSError::Tool` variant will be populated with a human-readable reason derived from the parsed output (e.g., "Authentication failed").
 
 ## 5. CLI Design & Runner Strategy
 
 ### 5.1 Custom Runner (CUSTOM-RUNNER)
 We will implement the **CUSTOM-RUNNER** approach with a dedicated `cbs-runner` binary.
+- **Signal Forwarding**: `cbs-runner` will explicitly propagate signals (like `SIGTERM`) to sub-processes (like `buildah`) to prevent orphaned containers or corrupted locks.
 
 ### 5.2 Container Entrypoint Achievement
 We will implement and test two distinct approaches for the container entrypoint:
-
-#### Approach 1: Pure Rust (-PURE-RUST)
-The `cbs-runner` binary handles all environment setup directly.
-- **Logic**: Creates `/runner/bin`, initializes `PATH`, and manages scratch space via standard library calls (`std::fs`, `std::env`).
-- **Benefit**: Zero external shell dependencies; fastest startup.
-
-#### Approach 2: Bash Wrapper (-BASH)
-A simplified version of the original shell script.
-- **Logic**: A minimal `.sh` script that sets up the environment and then `exec`s into `cbs-runner`.
-- **Benefit**: Easier debugging for operators accustomed to shell-based entrypoints.
+- **Approach 1: Pure Rust (-PURE-RUST)**: The binary handles all environment setup directly.
+- **Approach 2: Bash Wrapper (-BASH)**: A minimal `.sh` script for legacy compatibility.
 
 ## 6. Testing Strategy
 
-### 6.1 Unit Testing
-- Every `.rs` file will contain a `mod tests` block.
-- **Mocking**: Use `mockall` to isolate logic from external binaries and APIs.
-
-### 6.2 Integration Testing
-- **Podman Only**: All containerized tests will use Podman (no Docker).
-- **Gitea**: Use `testcontainers-rs` to run Gitea for verifying Git clone/patch operations.
-- **LocalStack & Vault**: Use `testcontainers-rs` for S3 and secret retrieval verification.
+- **Unit Testing**: Every `.rs` file will contain a `mod tests` block with `mockall` for isolation.
+- **Integration Testing**: All containerized tests will use **Podman** only. We will use `testcontainers-rs` to run **Gitea**, **LocalStack**, and **Vault** for verifying end-to-end flows.
 
 ## 7. Implementation Phases
 
-1.  **Phase 1: Foundation (Models & Config)**: **Verification**: Unit tests for YAML/JSON.
-2.  **Phase 2: Utilities (Git, S3, Vault)**: **Verification**: Integration tests with Gitea/LocalStack/Vault.
-3.  **Phase 3: Builder Core**: **Verification**: Mocked tool-flow verification.
-4.  **Phase 4: cbs-runner**: **Verification**: Parallel testing of `-PURE-RUST` and `-BASH` entrypoints.
-5.  **Phase 5: cbsbuild CLI**: **Verification**: End-to-end local CLI tests.
-6.  **Phase 6: Container Integration**: **Verification**: Full build cycle using Podman.
-7.  **Phase 7: Python Bindings (Optional)**: **Verification**: Import `cbscore` in Python and run existing `crt` unit tests.
+1.  **Phase 1: Foundation (Models & Config)**: Implement `VersionDescriptor` and `Config` using `camino`.
+2.  **Phase 2: Utilities (Git, S3, Vault)**: Port utility wrappers with `testcontainers` verification.
+3.  **Phase 3: Builder Core & Python Bindings**: Port orchestration logic and `PyO3` bindings concurrently to support existing `cbsd` workers.
+4.  **Phase 4: cbs-runner**: Implement specialized runner with signal forwarding.
+5.  **Phase 5: cbsbuild CLI**: Implement the `clap` CLI.
+6.  **Phase 6: Container Integration**: Full build cycle verification using Podman.
 
 ## 8. Development & VCS Guidelines
 
-- **Git as VCS**: Every commit must be buildable and pass all tests.
 - **Signed Commits**: All commits must be GPG signed.
 - **Commit Message Template**:
 ```text
@@ -131,49 +102,21 @@ Signed-off-by: <name> <email>
 
 ## 9. General Engineering Rules
 
-- **Design Patterns**: Strict adherence to **SOLID**, **DRY**, and **KISS** principles.
-- **Documentation**: 
-    - Every public module, struct, and method MUST be documented using `///` doc comments.
-    - **Examples**: Documentation for public functions MUST include an `# Examples` section with working code snippets (doctests) where applicable.
-- **Code Clarity**:
-    - **Length Limit**: Functions should generally not exceed **10-15 lines**.
-- **Composition over Inheritance**: Use traits and composition to build flexible abstractions.
+- **Design Patterns**: Strict adherence to **SOLID**, **DRY**, and **KISS**.
+- **Multi-arch Ready**: We will implement an `Arch` enum from the start to resolve existing Python debt regarding hardcoded `x86_64` assumptions.
+- **Documentation**: Every public symbol MUST be documented with `///` and include an `# Examples` section with working doctests.
+- **Code Clarity**: Functions should generally not exceed **10-15 lines**.
 
 ## 10. Logging Strategy
 
-We will use the **`tracing`** crate for structured logging.
-- **Per-Module Levels**: The logging level can be configured independently for each module via the `RUST_LOG` environment variable (e.g., `RUST_LOG=cbscore::git=debug,cbscore::builder=info`).
-- **Formatting**: Support for both human-readable (terminal) and JSON (container logs) output formats.
+We will use the **`tracing`** crate. Logging levels can be configured independently per module (e.g., `RUST_LOG=cbscore::git=debug`).
 
 ## 11. Deployment Strategy
 
-The deployment of `cbscore-rs` focuses on replacing Python-based components with optimized, statically-linked Rust binaries.
-
-### 11.1 Binary Distribution
-- **`cbsbuild`**: Distributed as a standalone binary for developers and CI/CD systems.
-- **`cbs-runner`**: Integrated into the `cbsd-worker` container image.
-
-### 11.2 Container Image Changes
-The `cbsd` worker images will be updated to:
-1.  Remove the `uv` and Python installation steps.
-2.  Copy the statically linked `cbs-runner` binary into the image.
-3.  Set the `ENTRYPOINT` to `cbs-runner` (supporting both `-PURE-RUST` and `-BASH` strategies).
-
-### 11.3 Podman Compose Updates
-Existing compose files (`podman-compose.cbs.yaml`, `podman-compose.cbs-dev.yaml`) will be updated:
-- **Volume Mounts**: Remove mounts pointing to `./cbscore` (the Python source).
-- **Development Flow**: For local development, the compose file will mount the `target/release` (or `target/debug`) directory to provide the container with the latest compiled binaries.
-- **Compatibility**: Ensure the new `cbsd-rs` service (defined in `podman-compose.cbsd-rs.yaml`) correctly maps the worker configuration to the `cbs-runner`'s expected environment.
+- **Worker Updates**: Remove `uv` and Python from images; replace with static `cbs-runner` binary.
+- **Compose Files**: Remove Python source mounts (`./cbscore`) from `podman-compose.cbs.yaml`.
 
 ## 12. Python Interoperability
 
-To support existing Python projects like `crt` that depend on `cbscore`'s logic (e.g., version parsing), we will provide two integration paths:
-
-### 12.1 Native Python Bindings (PyO3 & Maturin)
-For critical utilities and data models (like `parse_version`), we will use the **`pyo3`** crate along with **`maturin`** as the build system to expose a Python-compatible package.
-- **Workflow**: `maturin` will handle the compilation and generation of Python wheels. Python projects can then `import cbscore` as a native extension.
-- **Benefit**: Zero-overhead calls, high type safety, and an automated build/distribution pipeline.
-
-### 12.2 CLI Abstraction
-For high-level operations (like starting a build), Python projects will be encouraged to invoke the `cbsbuild` binary using `subprocess`.
-- **Refactoring `crt`**: Update internal `crt` library calls to wrap the `cbsbuild` CLI instead of direct Python imports where appropriate.
+- **PyO3 & Maturin**: Critical utilities will be exposed as a native extension package.
+- **CLI Wrapper**: High-level orchestration will be handled via `subprocess` calls to the `cbsbuild` binary.
