@@ -80,7 +80,6 @@ To understand *why* a tool failed or to track its progress:
 We will implement the **CUSTOM-RUNNER** approach with a dedicated `cbs-runner` binary.
 
 ### 5.2 Container Entrypoint Achievement
-
 We will implement and test two distinct approaches for the container entrypoint:
 
 #### Approach 1: Pure Rust (-PURE-RUST)
@@ -130,7 +129,9 @@ Signed-off-by: <name> <email>
 ## 9. General Engineering Rules
 
 - **Design Patterns**: Strict adherence to **SOLID**, **DRY**, and **KISS** principles.
-- **Documentation**: Every public module, struct, and method MUST be documented using `///` doc comments.
+- **Documentation**: 
+    - Every public module, struct, and method MUST be documented using `///` doc comments.
+    - **Examples**: Documentation for public functions MUST include an `# Examples` section with working code snippets (doctests) where applicable.
 - **Code Clarity**:
     - **Length Limit**: Functions should generally not exceed **10-15 lines**.
 - **Composition over Inheritance**: Use traits and composition to build flexible abstractions.
