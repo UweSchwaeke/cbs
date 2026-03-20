@@ -141,3 +141,23 @@ Signed-off-by: <name> <email>
 We will use the **`tracing`** crate for structured logging.
 - **Per-Module Levels**: The logging level can be configured independently for each module via the `RUST_LOG` environment variable (e.g., `RUST_LOG=cbscore::git=debug,cbscore::builder=info`).
 - **Formatting**: Support for both human-readable (terminal) and JSON (container logs) output formats.
+
+## 11. Deployment Strategy
+
+The deployment of `cbscore-rs` focuses on replacing Python-based components with optimized, statically-linked Rust binaries.
+
+### 11.1 Binary Distribution
+- **`cbsbuild`**: Distributed as a standalone binary for developers and CI/CD systems.
+- **`cbs-runner`**: Integrated into the `cbsd-worker` container image.
+
+### 11.2 Container Image Changes
+The `cbsd` worker images will be updated to:
+1.  Remove the `uv` and Python installation steps.
+2.  Copy the statically linked `cbs-runner` binary into the image.
+3.  Set the `ENTRYPOINT` to `cbs-runner` (supporting both `-PURE-RUST` and `-BASH` strategies).
+
+### 11.3 Podman Compose Updates
+Existing compose files (`podman-compose.cbs.yaml`, `podman-compose.cbs-dev.yaml`) will be updated:
+- **Volume Mounts**: Remove mounts pointing to `./cbscore` (the Python source).
+- **Development Flow**: For local development, the compose file will mount the `target/release` (or `target/debug`) directory to provide the container with the latest compiled binaries.
+- **Compatibility**: Ensure the new `cbsd-rs` service (defined in `podman-compose.cbsd-rs.yaml`) correctly maps the worker configuration to the `cbs-runner`'s expected environment.
