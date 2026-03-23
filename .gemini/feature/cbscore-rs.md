@@ -5,9 +5,8 @@
 `cbscore-rs` is a Rust-based rewrite of the `cbscore` library and `cbsbuild` CLI tool. The goal is to provide a high-performance, type-safe, and memory-safe implementation that maintains 100% functional parity with the original Python version.
 
 ### 1.1 Goals
-- **Parity**: Support all existing `cbsbuild` commands and configurations.
-  > cc: Question: Does "functional parity" include porting the utility methods currently identified as unused in the Python codebase (e.g., `sync_image`, `git_fetch`), or is Phase 1 an opportunity for scope cleanup?
-  cc: please allow dead code, buyt mark it as dead code on a function base
+- **Parity**: Support all existing `cbsbuild` commands and configurations. 
+    - **Dead Code Policy**: To ensure 100% functional parity, all utility methods (including those currently unused like `sync_image`) will be ported. Unused functions will be explicitly marked with `#[allow(dead_code)]` at the function level.
 - **Performance**: Leverage Rust's concurrency model (Tokio) for faster parallel builds and uploads.
 - **Reliability**: Use Rust's strong type system and error handling to reduce runtime errors.
 - **Single Binary**: Ship as a static binary for easier deployment in container environments.
@@ -21,8 +20,6 @@ The project will be structured as a multi-binary workspace:
 - `cbsbuild`: The main CLI tool.
 - `cbs-runner`: A specialized, minimal binary for execution inside build containers.
 - `cbscore-python`: Python extension module using `PyO3` and `Maturin`.
-  > cc: Question: Will the PyO3 bindings replicate the existing Python class hierarchy (`Builder`, `Runner`, `SecretsMgr`) to allow a drop-in replacement in `cbsd` worker code, or is a refactor of `cbsd` planned to use a more "rustic" bridge?
-cc: Please define that we need a drop in replacement.
 
 | Python Module | Rust Module / Crate | Description |
 |---|---|---|
@@ -34,17 +31,16 @@ cc: Please define that we need a drop in replacement.
 | `cbscore.utils.s3` | `cbscore::s3` | S3 integration using `aws-sdk-s3`. |
 | `cbscore.builder` | `cbscore::builder` | Core build orchestration logic. |
 | `cbscore.releases` | `cbscore::releases` | Release descriptor models and S3 logic. |
-| `cbscore.versions` | `cbscore::versions" | Version descriptor models and creation logic. |
+| `cbscore.versions` | `cbscore::versions` | Version descriptor models and creation logic. |
 | `cbscore.cmds` | `cbsbuild::cli` | CLI implementation using `clap`. |
 
 ## 3. Data Models (Serde)
 
 All Python `pydantic` models will be ported to Rust `structs` using `serde`. 
 
-### 3.1 Secrets Parity
-To maintain compatibility with existing `secrets.yaml` files, the Rust implementation will use a "fat" Enum with `#[serde(untagged)]`. This allows us to replicate the Python implementation's multi-level discriminators (e.g., `creds: vault` combined with `type: transit`) with high type safety and rigorous unit testing.
-> cc: Question: Python's discriminators use functional logic (checking key presence). Will Phase 1 include a schema-validation suite using existing production `secrets.yaml` files to ensure no regressions in complex union matching?
-cc: schema validation would be good to have evaluate a possibility to validate a schema.
+### 3.1 Secrets Parity & Schema Validation
+To maintain compatibility with existing `secrets.yaml` files, the Rust implementation will use a "fat" Enum with `#[serde(untagged)]`. 
+- **Validation**: Phase 1 will include an automated validation suite that runs the Rust parser against a corpus of existing production `secrets.yaml` files. We will evaluate using the `schemars` crate to generate and validate against a formal JSON/YAML schema.
 
 ### 3.2 Path Consistency
 We will use the **`camino` crate** (`Utf8PathBuf`) for all shared data models. This ensures that S3 keys and file paths are consistently UTF-8 enforced across different operating systems.
@@ -72,9 +68,7 @@ We will use a **Pure NO-FFI** approach for all external tools.
 
 ### 5.1 Custom Runner (CUSTOM-RUNNER)
 We will implement the **CUSTOM-RUNNER** approach with a dedicated `cbs-runner` binary.
-- **Signal Forwarding**: `cbs-runner` will explicitly propagate signals (like `SIGTERM`) to sub-processes (like `buildah`) to prevent orphaned containers or corrupted locks.
-  > cc: Question: Will this signal forwarding logic also be part of the main `cbsbuild` CLI for developers running builds locally, or is it exclusive to the `cbs-runner` execution environment?
-
+- **Global Signal Forwarding**: The `ToolExecutor` abstraction will implement explicit signal propagation (e.g., `SIGTERM`). This ensures that sub-processes (like `buildah`) are gracefully terminated whether running via the `cbsbuild` CLI (locally) or the `cbs-runner` (in a container).
 
 ### 5.2 Container Entrypoint Achievement
 We will implement and test two distinct approaches for the container entrypoint:
@@ -88,7 +82,7 @@ We will implement and test two distinct approaches for the container entrypoint:
 
 ## 7. Implementation Phases
 
-1.  **Phase 1: Foundation (Models & Config)**: Implement `VersionDescriptor` and `Config` using `camino`.
+1.  **Phase 1: Foundation (Models & Config)**: Implement `VersionDescriptor` and `Config` using `camino`. Evaluate schema validation.
 2.  **Phase 2: Utilities (Git, S3, Vault)**: Port utility wrappers with `testcontainers` verification.
 3.  **Phase 3: Builder Core & Python Bindings**: Port orchestration logic and `PyO3` bindings concurrently to support existing `cbsd` workers.
 4.  **Phase 4: cbs-runner**: Implement specialized runner with signal forwarding.
@@ -112,7 +106,7 @@ Signed-off-by: <name> <email>
 
 - **Design Patterns**: Strict adherence to **SOLID**, **DRY**, and **KISS**.
 - **Multi-arch Ready**: We will implement an `Arch` enum from the start to resolve existing Python debt regarding hardcoded `x86_64` assumptions.
-- **Documentation**: Every public symbol MUST be documented with `///` and include an `# Examples` section with working code snippets (doctests) where applicable.
+- **Documentation**: Every public symbol MUST be documented with `///` and include an `# Examples` section with working doctests.
 - **Code Clarity**: Functions should generally not exceed **10-15 lines**.
 
 ## 10. Logging Strategy
@@ -122,11 +116,15 @@ We will use the **`tracing`** crate. Logging levels can be configured independen
 ## 11. Deployment Strategy
 
 - **Worker Updates**: Remove `uv` and Python from images; replace with static `cbs-runner` binary.
+- **Binary Deployment**: Binaries will **not** be baked into the worker images. They will be mounted from the host path. The worker will abort immediately if the required binaries are missing.
 - **Compose Files**: Remove Python source mounts (`./cbscore`) from `podman-compose.cbs.yaml`.
-  > cc: Question: For production deployments, will the `cbs-runner` binary be baked into the image during CI, or will the worker mount it from a host path? If mounted, what is the fallback strategy if the host binary is missing?
-cc: no baked into the image. just abort if not found
 
 ## 12. Python Interoperability
 
-- **PyO3 & Maturin**: Critical utilities will be exposed as a native extension package.
-- **CLI Wrapper**: High-level orchestration will be handled via `subprocess` calls to the `cbsbuild` binary.
+### 12.1 Native Python Bindings (PyO3 & Maturin)
+To support existing projects like `crt` and `cbsd` workers, the `cbscore-python` package will provide a **drop-in replacement** for the current Python implementation.
+- **Drop-in Parity**: The bindings will replicate the existing Python class hierarchy (`Builder`, `Runner`, `SecretsMgr`) and method signatures exactly.
+- **Workflow**: Maturin will generate wheels that can be installed via pip, replacing the current `cbscore` package.
+
+### 12.2 CLI Wrapper
+High-level orchestration will be handled via `subprocess` calls to the `cbsbuild` binary for tools that do not require deep library integration.
