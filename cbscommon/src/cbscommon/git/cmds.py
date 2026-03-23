@@ -39,7 +39,7 @@ from .types import SHA
 logger = logging.getLogger(__name__)
 
 
-def git_check_patches_diff(
+async def git_check_patches_diff(
     ceph_git_path: Path,
     upstream_ref: str | SHA,
     head_ref: str | SHA,
@@ -49,20 +49,14 @@ def git_check_patches_diff(
     logger.debug(
         f"check ref '{head_ref}' against upstream '{upstream_ref}', limit '{limit}'"
     )
-    repo = git.Repo(ceph_git_path)
 
-    cmd = ["git", "cherry", upstream_ref, head_ref]
+    cmd: CmdArgs = ["cherry", upstream_ref, head_ref]
     if limit:
         cmd.append(limit)
 
     try:
-        res = repo.git.execute(
-            cmd,
-            with_extended_output=False,
-            as_process=False,
-            stdout_as_string=True,
-        )
-    except Exception as e:
+        res = await _run_git(cmd, path=ceph_git_path)
+    except GitError as e:
         msg = (
             f"unable to check patch diff between '{upstream_ref}' and '{head_ref}': {e}"
         )

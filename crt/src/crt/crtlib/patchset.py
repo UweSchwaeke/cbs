@@ -12,6 +12,7 @@
 # GNU General Public License for more details.
 
 
+import asyncio
 import datetime
 import uuid
 from datetime import datetime as dt
@@ -56,8 +57,10 @@ def patchset_check_patches_diff(
     logger.debug(f"check patchset branch '{patchset_branch}' against '{base_ref}'")
 
     try:
-        added, skipped = git_check_patches_diff(
-            ceph_git_path, base_ref, patchset_branch, limit=patchset.base_sha
+        added, skipped = asyncio.run(
+            git_check_patches_diff(
+                ceph_git_path, base_ref, patchset_branch, limit=patchset.base_sha
+            )
         )
     except GitEmptyPatchDiffError:
         logger.warning(
