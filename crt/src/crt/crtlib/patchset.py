@@ -265,11 +265,13 @@ def patchset_fetch_gh_patches(
         return
 
     # obtain patches
-    git_prepare_remote(ceph_repo_path, f"github.com/{repo_path}", repo_path, token)
+    asyncio.run(
+        git_prepare_remote(ceph_repo_path, f"github.com/{repo_path}", repo_path, token)
+    )
     src_ref = f"pull/{pr_id}/head"
     dst_ref = f"patchset/gh/{repo_path}/{pr_id}"
     try:
-        _ = git_fetch_ref(ceph_repo_path, src_ref, dst_ref, repo_path)
+        _ = asyncio.run(git_fetch_ref(ceph_repo_path, src_ref, dst_ref, repo_path))
     except Exception as e:
         msg = f"error fetching patchset '{pr_id}' from '{repo_path}': {e}"
         logger.error(msg)
@@ -383,7 +385,7 @@ def fetch_custom_patchset_patches(
 
         if run_locally:
             try:
-                git_branch_from(ceph_repo_path, meta.branch, dst_branch)
+                asyncio.run(git_branch_from(ceph_repo_path, meta.branch, dst_branch))
             except GitError as e:
                 msg = (
                     f"error creating patchset branch '{dst_branch}' "
@@ -393,10 +395,14 @@ def fetch_custom_patchset_patches(
                 raise PatchSetError(msg=msg) from None
         else:
             try:
-                git_prepare_remote(
-                    ceph_repo_path, f"github.com/{meta.repo}", meta.repo, token
+                asyncio.run(
+                    git_prepare_remote(
+                        ceph_repo_path, f"github.com/{meta.repo}", meta.repo, token
+                    )
                 )
-                _ = git_fetch_ref(ceph_repo_path, meta.branch, dst_branch, meta.repo)
+                _ = asyncio.run(
+                    git_fetch_ref(ceph_repo_path, meta.branch, dst_branch, meta.repo)
+                )
             except Exception as e:
                 msg = (
                     f"error fetching patchset branch '{meta.branch}' "
@@ -410,7 +416,7 @@ def fetch_custom_patchset_patches(
     def _cleanup() -> None:
         for branch in fetched_branches:
             try:
-                git_branch_delete(ceph_repo_path, branch)
+                asyncio.run(git_branch_delete(ceph_repo_path, branch))
             except Exception as e:
                 msg = f"unable to delete temporary branch '{branch}': {e}"
                 logger.error(msg)

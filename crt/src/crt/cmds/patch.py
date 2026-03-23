@@ -11,6 +11,7 @@
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
 
+import asyncio
 import errno
 import re
 import sys
@@ -168,11 +169,13 @@ def cmd_patch_add(
     if not ctx.run_locally:
         # update remote repo, maybe patches are not yet in the current repo state
         try:
-            git_prepare_remote(
-                src_ceph_repo_path,
-                f"github.com/{src_gh_repo}",
-                src_gh_repo,
-                ctx.github_token,
+            asyncio.run(
+                git_prepare_remote(
+                    src_ceph_repo_path,
+                    f"github.com/{src_gh_repo}",
+                    src_gh_repo,
+                    ctx.github_token,
+                )
             )
         except Exception as e:
             perror(f"unable to update remote '{src_gh_repo}': {e}")

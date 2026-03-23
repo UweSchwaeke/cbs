@@ -12,6 +12,7 @@
 # GNU General Public License for more details.
 
 
+import asyncio
 import datetime
 from datetime import datetime as dt
 from pathlib import Path
@@ -83,7 +84,7 @@ def _prepare_repo(repo_path: Path):
                 raise ApplyError(msg=msg)
 
     def _cleanup_repo() -> None:
-        git_cleanup_repo(repo_path)
+        asyncio.run(git_cleanup_repo(repo_path))
         repo.head.reference = repo.heads.main
         _ = repo.index.reset(index=True, working_tree=True)
 
@@ -110,9 +111,9 @@ def apply_manifest(
     def _cleanup(*, abort_apply: bool = False) -> None:
         logger.debug(f"cleanup state, branch '{target_branch}'")
         if abort_apply:
-            git_am_abort(ceph_repo_path)
+            asyncio.run(git_am_abort(ceph_repo_path))
 
-        git_cleanup_repo(ceph_repo_path)
+        asyncio.run(git_cleanup_repo(ceph_repo_path))
         ceph_repo.head.reference = ceph_repo.heads.main
         ceph_repo.git.branch(["-D", target_branch])  # pyright: ignore[reportAny]
 
@@ -136,7 +137,7 @@ def apply_manifest(
                 raise ApplyError(msg=f"missing patch uuid '{entry.entry_uuid}'")
 
             try:
-                git_am_apply(ceph_repo_path, patch_path)
+                asyncio.run(git_am_apply(ceph_repo_path, patch_path))
             except Exception as e:
                 raise e from None
 
@@ -148,8 +149,10 @@ def apply_manifest(
         _prepare_repo(ceph_repo_path)
         repo_name = f"{manifest.base_ref_org}/{manifest.base_ref_repo}"
         if not run_locally:
-            git_prepare_remote(
-                ceph_repo_path, f"github.com/{repo_name}", repo_name, token
+            asyncio.run(
+                git_prepare_remote(
+                    ceph_repo_path, f"github.com/{repo_name}", repo_name, token
+                )
             )
     except ApplyError as e:
         logger.error(e)

@@ -11,6 +11,7 @@
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
 
+import asyncio
 import errno
 import re
 import sys
@@ -74,8 +75,8 @@ def _prepare_release_repo(
     run_locally: bool = False,
 ) -> None:
     try:
-        git_cleanup_repo(ceph_repo_path)
-        git_reset_head(ceph_repo_path, "main")
+        asyncio.run(git_cleanup_repo(ceph_repo_path))
+        asyncio.run(git_reset_head(ceph_repo_path, "main"))
     except GitError as e:
         perror(f"failed to cleanup ceph repo at '{ceph_repo_path}': {e}")
         raise _ExitError(errno.ENOTRECOVERABLE) from e
@@ -85,10 +86,16 @@ def _prepare_release_repo(
         return
 
     try:
-        git_prepare_remote(ceph_repo_path, f"github.com/{src_repo}", src_repo, token)
-        if src_repo != dst_repo:
+        asyncio.run(
             git_prepare_remote(
-                ceph_repo_path, f"github.com/{dst_repo}", dst_repo, token
+                ceph_repo_path, f"github.com/{src_repo}", src_repo, token
+            )
+        )
+        if src_repo != dst_repo:
+            asyncio.run(
+                git_prepare_remote(
+                    ceph_repo_path, f"github.com/{dst_repo}", dst_repo, token
+                )
             )
     except GitError as e:
         perror(f"failed to prepare git remotes: {e}")
@@ -106,11 +113,11 @@ def _prepare_release_branches(
 ) -> None:
     try:
         if run_locally:
-            if git_local_head_exists(ceph_repo_path, dst_branch):
+            if asyncio.run(git_local_head_exists(ceph_repo_path, dst_branch)):
                 perror(f"destination branch '{dst_branch}' already exists locally")
                 sys.exit(errno.EEXIST)
         else:
-            if git_remote_ref_exists(ceph_repo_path, dst_branch, dst_repo):
+            if asyncio.run(git_remote_ref_exists(ceph_repo_path, dst_branch, dst_repo)):
                 perror(
                     f"destination branch '{dst_branch}' already exists in '{dst_repo}'"
                 )
@@ -122,7 +129,7 @@ def _prepare_release_branches(
     is_tag = False
     if run_locally:
         try:
-            git_branch_from(ceph_repo_path, src_ref, dst_branch)
+            asyncio.run(git_branch_from(ceph_repo_path, src_ref, dst_branch))
         except GitError as e:
             perror(f"failed to create branch from source ref '{src_ref}': {e}")
             raise _ExitError(errno.ENOTRECOVERABLE) from e
@@ -130,7 +137,9 @@ def _prepare_release_branches(
             return
     else:
         try:
-            _ = git_fetch_ref(ceph_repo_path, src_ref, dst_branch, src_repo)
+            _ = asyncio.run(
+                git_fetch_ref(ceph_repo_path, src_ref, dst_branch, src_repo)
+            )
         except GitIsTagError:
             logger.debug(f"source ref '{src_ref}' is a tag, fetching as branch")
             is_tag = True
@@ -143,7 +152,7 @@ def _prepare_release_branches(
 
     if is_tag:
         try:
-            git_branch_from(ceph_repo_path, src_ref, dst_branch)
+            asyncio.run(git_branch_from(ceph_repo_path, src_ref, dst_branch))
         except GitError as e:
             perror(f"failed to create branch '{dst_branch}' from tag '{src_ref}': {e}")
             raise _ExitError(errno.ENOTRECOVERABLE) from e
@@ -318,8 +327,8 @@ def cmd_release_start(
     progress.done_task()
 
     progress.new_task("prepare release branches")
-    if not ctx.run_locally and git_remote_ref_exists(
-        ceph_repo_path, f"release/{release_name}", dst_repo
+    if not ctx.run_locally and asyncio.run(
+        git_remote_ref_exists(ceph_repo_path, f"release/{release_name}", dst_repo)
     ):
         progress.stop_error()
         perror(f"release '{release_name}' already marked released in '{dst_repo}'")
@@ -344,7 +353,7 @@ def cmd_release_start(
 
     if not ctx.run_locally:
         try:
-            _ = git_push(ceph_repo_path, release_base_branch, dst_repo)
+            _ = asyncio.run(git_push(ceph_repo_path, release_base_branch, dst_repo))
         except GitError as e:
             progress.stop_error()
             perror(f"failed to push release branch '{release_base_branch}': {e}")
@@ -454,7 +463,7 @@ def cmd_release_list(
 
     if ctx.run_locally:
         progress.new_task("get remote")
-        if not git_remote_exists(ceph_repo_path, dst_repo):
+        if not asyncio.run(git_remote_exists(ceph_repo_path, dst_repo)):
             pinfo(f"remote {dst_repo} doesn't exist locally")
             console.print(Padding(table, (1, 0, 1, 0)))
             progress.done_task()
@@ -465,8 +474,10 @@ def cmd_release_list(
     else:
         progress.new_task("prepare remote")
         try:
-            git_prepare_remote(
-                ceph_repo_path, f"github.com/{dst_repo}", dst_repo, gh_token
+            asyncio.run(
+                git_prepare_remote(
+                    ceph_repo_path, f"github.com/{dst_repo}", dst_repo, gh_token
+                )
             )
         except GitError as e:
             perror(f"unable to prepare remote repository '{dst_repo}': {e}")
@@ -691,11 +702,13 @@ def cmd_release_finish(
         f"fetch manifest branch '{manifest.dst_branch}' to '{release.release_branch}'"
     )
     try:
-        _ = git_fetch_ref(
-            ceph_repo_path,
-            manifest.dst_branch,
-            release.release_branch,
-            manifest.dst_repo,
+        _ = asyncio.run(
+            git_fetch_ref(
+                ceph_repo_path,
+                manifest.dst_branch,
+                release.release_branch,
+                manifest.dst_repo,
+            )
         )
     except GitError as e:
         perror(f"failed to fetch manifest branch '{manifest.dst_branch}': {e}")

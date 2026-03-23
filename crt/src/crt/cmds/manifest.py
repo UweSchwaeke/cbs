@@ -12,6 +12,7 @@
 # GNU General Public License for more details.
 
 
+import asyncio
 import datetime
 import errno
 import re
@@ -1161,8 +1162,10 @@ def _prepare_release_repo(
         release_tag_name = release_branch_name.replace("/", "-")
         remote_name = manifest.dst_repo
         if (
-            git_remote_exists(ceph_repo_path, remote_name)
-            and git_remote_ref_exists(ceph_repo_path, release_branch_name, remote_name)
+            asyncio.run(git_remote_exists(ceph_repo_path, remote_name))
+            and asyncio.run(
+                git_remote_ref_exists(ceph_repo_path, release_branch_name, remote_name)
+            )
             and git_tag_exists_in_remote(ceph_repo_path, remote_name, release_tag_name)
         ):
             pinfo("release repo already prepared")
@@ -1171,15 +1174,22 @@ def _prepare_release_repo(
         release = load_release(ces_patch_path, release_name)
         release_repo_name = release.base_repo
 
-        git_prepare_remote(
-            ceph_repo_path, f"github.com/{release_repo_name}", release_repo_name, token
+        asyncio.run(
+            git_prepare_remote(
+                ceph_repo_path,
+                f"github.com/{release_repo_name}",
+                release_repo_name,
+                token,
+            )
         )
         if remote_name != release_repo_name:
-            git_prepare_remote(
-                ceph_repo_path, f"github.com/{remote_name}", remote_name, token
+            asyncio.run(
+                git_prepare_remote(
+                    ceph_repo_path, f"github.com/{remote_name}", remote_name, token
+                )
             )
-        git_push(ceph_repo_path, release_branch_name, remote_name)
-        git_push(ceph_repo_path, release_tag_name, remote_name)
+        _ = asyncio.run(git_push(ceph_repo_path, release_branch_name, remote_name))
+        _ = asyncio.run(git_push(ceph_repo_path, release_tag_name, remote_name))
     except GitError as e:
         perror(f"unable to prepare release repository: {e}")
         sys.exit(e.ec if e.ec else errno.ENOTRECOVERABLE)
