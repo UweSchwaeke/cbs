@@ -9,8 +9,6 @@ import tempfile
 from pathlib import Path
 from typing import IO, Any, cast
 
-import git
-
 from cbscommon.process.cmds import async_run_cmd
 from cbscommon.process.types import AsyncRunCmdOutCallback, CmdArgs, MaybeSecure
 
@@ -367,12 +365,12 @@ async def git_fetch_ref(
     try:
         cmd = ["fetch", remote_name, f"{from_ref}:{to_ref}"]
         _ = await _run_git(cmd, path=repo_path)
-    except git.CommandError as e:
+    except GitError as e:
         logger.error(
             f"unable to fetch from remote '{remote_name}' "
             + f"ref '{from_ref}' to '{to_ref}'"
         )
-        logger.error(e.stderr)
+        logger.error(e.msg)
         raise GitFetchError(remote_name, from_ref, to_ref) from None
 
     return True
@@ -925,11 +923,10 @@ async def git_get_sha1(repo_path: Path) -> str:
 
 
 async def _git_cherry_pick(repo_path: Path, sha: SHA) -> None:  # pyright: ignore[reportUnusedFunction, reportRedeclaration]
-    repo = git.Repo(repo_path)
-
+    cmd: CmdArgs = ["cherry-pick", "-x", "-s", sha]
     try:
-        repo.git.cherry_pick(["-x", "-s", sha])  # pyright: ignore[reportAny]
-    except git.CommandError as e:
+        _ = await _run_git(cmd, path=repo_path)
+    except GitError as e:
         msg = f"unable to cherry-pick patch sha '{sha}'"
         logger.error(msg)
 
@@ -939,17 +936,16 @@ async def _git_cherry_pick(repo_path: Path, sha: SHA) -> None:  # pyright: ignor
         if conflicts:
             raise GitCherryPickConflictError(sha, conflicts) from None
 
-        logger.error(e.stderr)
+        logger.error(e.msg)
         raise GitCherryPickError(msg=msg) from None
 
 
-def _git_abort_cherry_pick(repo_path: Path) -> None:  # pyright: ignore[reportUnusedFunction]
-    repo = git.Repo(repo_path)
-
+async def _git_abort_cherry_pick(repo_path: Path) -> None:  # pyright: ignore[reportUnusedFunction]
+    cmd: CmdArgs = ["cherry-pick", "--abort"]
     try:
-        _ = repo.git.cherry_pick("--abort")  # pyright: ignore[reportAny]
-    except git.CommandError as e:
-        logger.error(f"found error aborting cherry-pick: {e.stderr}")
+        _ = await _run_git(cmd, path=repo_path)
+    except GitError as e:
+        logger.error(f"found error aborting cherry-pick: {e.msg}")
 
 
 async def _get_git_modified_paths(  # pyright: ignore[reportUnusedFunction]
