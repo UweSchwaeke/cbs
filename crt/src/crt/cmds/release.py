@@ -366,12 +366,14 @@ def cmd_release_start(
             sys.exit(errno.ENOTRECOVERABLE)
 
     try:
-        git_tag(
-            ceph_repo_path,
-            release_base_tag,
-            release_base_branch,
-            msg=f"Base release for {release_name}",
-            push_to=dst_repo if not ctx.run_locally else None,
+        asyncio.run(
+            git_tag(
+                ceph_repo_path,
+                release_base_tag,
+                release_base_branch,
+                msg=f"Base release for {release_name}",
+                push_to=dst_repo if not ctx.run_locally else None,
+            )
         )
     except GitError as e:
         progress.stop_error()
@@ -737,12 +739,14 @@ def cmd_release_finish(
         f"tagging release branch '{release.release_branch}' with '{release.name}'"
     )
     try:
-        git_tag(
-            ceph_repo_path,
-            release.name,
-            release.release_branch,
-            msg=f"Release '{release.name}'",
-            push_to=release.release_repo,
+        asyncio.run(
+            git_tag(
+                ceph_repo_path,
+                release.name,
+                release.release_branch,
+                msg=f"Release '{release.name}'",
+                push_to=release.release_repo,
+            )
         )
     except GitError as e:
         perror(f"failed to create and push tag '{release.name}': {e}")

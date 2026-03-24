@@ -182,7 +182,7 @@ def cmd_patch_add(
             sys.exit(errno.ENOTRECOVERABLE)
 
     try:
-        shas = [git_revparse(src_ceph_repo_path, sha) for sha in patch_sha]
+        shas = [asyncio.run(git_revparse(src_ceph_repo_path, sha)) for sha in patch_sha]
     except GitError as e:
         perror(f"unable to obtain sha: {e}")
         sys.exit(errno.EINVAL)

@@ -1166,7 +1166,9 @@ def _prepare_release_repo(
             and asyncio.run(
                 git_remote_ref_exists(ceph_repo_path, release_branch_name, remote_name)
             )
-            and git_tag_exists_in_remote(ceph_repo_path, remote_name, release_tag_name)
+            and asyncio.run(
+                git_tag_exists_in_remote(ceph_repo_path, remote_name, release_tag_name)
+            )
         ):
             pinfo("release repo already prepared")
             return

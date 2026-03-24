@@ -278,10 +278,12 @@ def patchset_fetch_gh_patches(
         raise PatchSetError(msg=msg) from None
 
     try:
-        formatted_patchset = git_format_patch(
-            ceph_repo_path,
-            patchset.head_sha,
-            base_rev=patchset.base_sha,
+        formatted_patchset = asyncio.run(
+            git_format_patch(
+                ceph_repo_path,
+                patchset.head_sha,
+                base_rev=patchset.base_sha,
+            )
         )
     except GitError as e:
         msg = f"error formatting patch set: {e}"
@@ -431,7 +433,7 @@ def fetch_custom_patchset_patches(
             title = patch[1]
             logger.debug(f"format patch sha '{sha}' title '{title}'")
             try:
-                formatted_patch = git_format_patch(ceph_repo_path, sha)
+                formatted_patch = asyncio.run(git_format_patch(ceph_repo_path, sha))
             except GitError as e:
                 _cleanup()
                 msg = f"unable to obtain formatted patch for sha '{sha}': {e}"

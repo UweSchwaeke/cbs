@@ -12,6 +12,7 @@
 # GNU General Public License for more details.
 
 
+import asyncio
 import re
 from datetime import datetime as dt
 from pathlib import Path
@@ -151,7 +152,7 @@ def patch_import(
         raise PatchError(msg=msg) from None
 
     try:
-        formatted_patch = git_format_patch(repo_path, sha)
+        formatted_patch = asyncio.run(git_format_patch(repo_path, sha))
     except GitError as e:
         msg = f"unable to obtain formatted patch for sha '{sha}': {e}"
         logger.error(msg)
@@ -249,7 +250,7 @@ def patch_add(
         raise PatchError(msg=msg) from None
 
     try:
-        formatted_patch = git_format_patch(src_repo_path, sha)
+        formatted_patch = asyncio.run(git_format_patch(src_repo_path, sha))
     except GitError as e:
         msg = f"unable to obtain formatted patch for sha '{sha}': {e}"
         logger.error(msg)

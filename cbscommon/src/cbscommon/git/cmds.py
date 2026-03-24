@@ -7,7 +7,7 @@ import re
 import secrets
 import shutil
 import tempfile
-from collections.abc import Callable, Generator
+from collections.abc import Generator
 from pathlib import Path
 from typing import cast
 
@@ -571,7 +571,7 @@ async def git_tag(
         cmd = ["push", push_to, "tag", tag_name]
         try:
             _ = await _run_git(cmd, path=repo_path)
-        except Exception as e:
+        except GitError as e:
             msg = f"unable to push tag '{tag_name}' to remote '{push_to}': {e}"
             logger.error(msg)
             raise GitError(msg=msg) from None
@@ -579,7 +579,6 @@ async def git_tag(
 
 def git_patch_id(repo_path: Path, sha: SHA) -> str:
     repo = git.Repo(repo_path)
-
     with tempfile.TemporaryFile() as tmp:
         try:
             repo.git.show(sha, output_stream=tmp)  # pyright: ignore[reportAny]
@@ -596,40 +595,31 @@ def git_patch_id(repo_path: Path, sha: SHA) -> str:
     return res.split()[0]
 
 
-def git_revparse(repo_path: Path, commitish: SHA | str) -> str:
-    repo = git.Repo(repo_path)
-
+async def git_revparse(repo_path: Path, commitish: SHA | str) -> str:
+    cmd: CmdArgs = ["rev-parse", commitish]
     try:
-        res = repo.rev_parse(commitish)
-    except git.BadObject:
-        msg = f"rev '{commitish}' not found"
-        logger.error(msg)
-        raise GitError(msg=msg) from None
-    except ValueError:
-        msg = f"malformed rev '{commitish}'"
-        logger.error(msg)
-        raise GitError(msg=msg) from None
-    except Exception as e:
+        res = await _run_git(cmd, path=repo_path)
+    except GitError as e:
         msg = f"unable to obtain revision for '{commitish}': {e}"
         logger.error(msg)
         raise GitError(msg=msg) from None
+    return res
 
-    return res.hexsha
 
+async def git_format_patch(
+    repo_path: Path, rev: SHA, *, base_rev: SHA | None = None
+) -> str:
+    cmd: CmdArgs = ["format-patch", "--stdout"]
 
-def git_format_patch(repo_path: Path, rev: SHA, *, base_rev: SHA | None = None) -> str:
-    repo = git.Repo(repo_path)
-
-    args = ["--stdout"]
     if not base_rev:
-        args.append("-1")
+        cmd.append("-1")
 
     rev_str = f"{base_rev}..{rev}" if base_rev else rev
-    args.append(rev_str)
+    cmd.append(rev_str)
 
     try:
-        res = cast(str, repo.git.format_patch(args))  # pyright: ignore[reportAny]
-    except git.CommandError as e:
+        res = await _run_git(cmd, path=repo_path)
+    except GitError as e:
         msg = f"unable to obtain format patch for '{rev_str}': {e}"
         logger.error(msg)
         raise GitError(msg=msg) from None
@@ -637,13 +627,14 @@ def git_format_patch(repo_path: Path, rev: SHA, *, base_rev: SHA | None = None) 
     return res
 
 
-def git_tag_exists_in_remote(repo_path: Path, remote_name: str, tag_name: str) -> bool:
+async def git_tag_exists_in_remote(
+    repo_path: Path, remote_name: str, tag_name: str
+) -> bool:
+    cmd: CmdArgs = ["ls-remote", "--tags", remote_name, ""]
     try:
-        repo = git.Repo(repo_path)
-        ls_remote = cast(Callable[..., str], repo.git.ls_remote)
-        raw_tag = ls_remote("--tags", remote_name, f"refs/tags/{tag_name}")
+        raw_tag = await _run_git(cmd, path=repo_path)
         return bool(raw_tag.strip())
-    except git.CommandError as e:
+    except GitError as e:
         msg = f"unable to execute git ls-remote --tags {remote_name} refs/tags/{tag_name}: {e}"
         logger.error(msg)
         raise GitError(msg) from None
