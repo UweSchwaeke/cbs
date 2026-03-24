@@ -546,7 +546,7 @@ async def git_push(
     return (failed, updated, rejected)
 
 
-def git_tag(
+async def git_tag(
     repo_path: Path,
     tag_name: str,
     ref: str,
@@ -554,20 +554,23 @@ def git_tag(
     msg: str | None = None,
     push_to: str | None = None,
 ) -> None:
-    repo = git.Repo(repo_path)
-
     logger.debug(f"create tag '{tag_name}' at ref '{ref}'")
+    cmd: CmdArgs = ["tag", tag_name, ref]
+    if msg:
+        cmd.append("-m")
+        cmd.append("msg")
     try:
-        _ = repo.create_tag(tag_name, ref, msg)
-    except Exception as e:
+        _ = await _run_git(cmd, path=repo_path)
+    except GitError as e:
         msg = f"unable to create tag '{tag_name}' at ref '{ref}': {e}"
         logger.error(msg)
         raise GitError(msg=msg) from None
 
     if push_to:
         logger.debug(f"push tag '{tag_name}' to remote '{push_to}'")
+        cmd = ["push", push_to, "tag", tag_name]
         try:
-            repo.git.push([push_to, "tag", tag_name])  # pyright: ignore[reportAny]
+            _ = await _run_git(cmd, path=repo_path)
         except Exception as e:
             msg = f"unable to push tag '{tag_name}' to remote '{push_to}': {e}"
             logger.error(msg)
