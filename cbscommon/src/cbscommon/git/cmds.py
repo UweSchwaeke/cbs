@@ -7,12 +7,12 @@ import secrets
 import shutil
 import tempfile
 from pathlib import Path
-from typing import cast
+from typing import IO, Any, cast
 
 import git
 
 from cbscommon.process.cmds import async_run_cmd
-from cbscommon.process.types import CmdArgs, MaybeSecure
+from cbscommon.process.types import AsyncRunCmdOutCallback, CmdArgs, MaybeSecure
 
 from .exceptions import (
     GitAMApplyError,
@@ -575,18 +575,24 @@ async def git_tag(
             raise GitError(msg=msg) from None
 
 
-def git_patch_id(repo_path: Path, sha: SHA) -> str:
-    repo = git.Repo(repo_path)
+async def git_patch_id(repo_path: Path, sha: SHA) -> str:
     with tempfile.TemporaryFile() as tmp:
+
+        async def _write_to_tmp(line: str):
+            _ = tmp.write(line.encode("utf-8"))
+            _ = tmp.write(b"\n")
+
+        cmd: CmdArgs = ["show", sha]
         try:
-            repo.git.show(sha, output_stream=tmp)  # pyright: ignore[reportAny]
-        except git.CommandError:
+            _ = await _run_git(cmd, path=repo_path, outcb=_write_to_tmp)
+        except GitError:
             msg = f"unable to find patch sha '{sha}'"
             logger.error(msg)
             raise GitError(msg=msg) from None
 
         _ = tmp.seek(0)
-        res = cast(str, repo.git.patch_id(["--stable"], istream=tmp))  # pyright: ignore[reportAny]
+        cmd = ["patch-id", "--stable"]
+        res = await _run_git(cmd, path=repo_path, stdin=tmp)
 
     if not res:
         raise GitError(msg="unable to obtain git patch id")
@@ -704,7 +710,13 @@ async def git_local_head_exists(repo_path: Path, name: str) -> bool:
     return bool(res.strip())
 
 
-async def _run_git(args: CmdArgs, *, path: Path | None = None) -> str:
+async def _run_git(
+    args: CmdArgs,
+    *,
+    path: Path | None = None,
+    outcb: AsyncRunCmdOutCallback | None = None,
+    stdin: int | IO[Any] | None = None,  # pyright: ignore[reportExplicitAny]
+) -> str:
     """
     Run a git command within the repository.
 
@@ -718,7 +730,7 @@ async def _run_git(args: CmdArgs, *, path: Path | None = None) -> str:
     cmd.extend(args)
     logger.debug(f"run {cmd}")
     try:
-        rc, stdout, stderr = await async_run_cmd(cmd)
+        rc, stdout, stderr = await async_run_cmd(cmd, outcb=outcb, stdin=stdin)
     except Exception as e:
         msg = f"unexpected error running command: {e}"
         logger.error(msg)

@@ -8,6 +8,7 @@ import shutil
 from asyncio.streams import StreamReader
 from io import StringIO
 from pathlib import Path
+from typing import IO, Any
 
 from cbscommon.process.types import AsyncRunCmdOutCallback, CmdArgs, SecureArg
 
@@ -89,6 +90,7 @@ async def async_run_cmd(
     cwd: Path | None = None,
     reset_python_env: bool = False,
     extra_env: dict[str, str] | None = None,
+    stdin: int | IO[Any] | None = None,  # pyright: ignore[reportExplicitAny]
 ) -> tuple[int, str, str]:
     logger.debug(f"async run '{sanitize_cmd(cmd)}'")
 
@@ -104,6 +106,7 @@ async def async_run_cmd(
         *(get_unsecured_cmd(cmd)),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
+        stdin=stdin,
         cwd=cwd,
         env=env,
     )

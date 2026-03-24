@@ -145,7 +145,7 @@ def patch_import(
     target_version: str | None = None,
 ) -> None:
     try:
-        patch_id = git_patch_id(repo_path, sha)
+        patch_id = asyncio.run(git_patch_id(repo_path, sha))
     except GitError as e:
         msg = f"unable to obtain patch id for sha '{sha}': {e}"
         logger.error(msg)
@@ -243,7 +243,7 @@ def patch_add(
     src_version: str | None,
 ) -> PatchMeta:
     try:
-        patch_id = git_patch_id(src_repo_path, sha)
+        patch_id = asyncio.run(git_patch_id(src_repo_path, sha))
     except GitError as e:
         msg = f"unable to obtain patch id for sha '{sha}': {e}"
         logger.error(msg)
