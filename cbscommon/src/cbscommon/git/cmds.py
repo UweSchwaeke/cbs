@@ -33,7 +33,7 @@ from .exceptions import (
     GitPatchDiffError,
     GitPushError,
 )
-from .types import SHA
+from .types import SHA, PushInfoLine, PushInfoLineStatus
 
 logger = logging.getLogger(__name__)
 
@@ -521,7 +521,10 @@ async def git_push(
     try:
         cmd: CmdArgs = ["push", remote_name, f"{ref}:{dst_ref}", "--porcelain"]
         info = await _run_git(cmd, path=repo_path)
-
+        # skip first line because it is To remote url
+        # and skip last line because it is Done
+        info = info.splitlines()[1:-1]
+        info = [PushInfoLine(line) for line in info]
     except GitError as e:
         msg = f"unable to push '{ref}' to '{dst_ref}': {e}"
         logger.error(msg)
@@ -533,19 +536,12 @@ async def git_push(
     failed = len(info) == 0
 
     for entry in info:
-        entry_names = _get_remote_ref_name(remote_name, entry.remote_ref.name)
-        if not entry_names:
-            logger.warning(f"mismatched remote ref on push: '{entry.remote_ref.name}'")
-            continue
-
-        remote_ref_name = entry_names[1]
-        logger.debug(f"entry '{remote_ref_name}' flags '{entry.flags}'")
-        if entry.flags & entry.ERROR:
-            logger.debug(f"rejected head: {remote_ref_name}")
-            rejected.append(remote_ref_name)
-        elif entry.flags & (entry.NEW_HEAD | entry.FAST_FORWARD):
-            logger.debug(f"updated head: {remote_ref_name}")
-            updated.append(remote_ref_name)
+        logger.debug(f"entry '{entry.remote_ref_name}' flags '{entry.flag}'")
+        if entry.status == PushInfoLineStatus.REJECTED:
+            logger.debug(f"rejected head: {entry.remote_ref_name}")
+            rejected.append(entry.remote_ref_name)
+        elif entry.status == PushInfoLineStatus.UPDATED:
+            logger.debug(f"updated head: {entry.remote_ref_name}")
 
     return (failed, updated, rejected)
 

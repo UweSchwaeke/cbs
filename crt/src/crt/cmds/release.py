@@ -719,7 +719,9 @@ def cmd_release_finish(
         f"push release branch '{release.release_branch}' to '{release.release_repo}'"
     )
     try:
-        _ = git_push(ceph_repo_path, release.release_branch, release.release_repo)
+        _ = asyncio.run(
+            git_push(ceph_repo_path, release.release_branch, release.release_repo)
+        )
     except GitError as e:
         perror(f"failed to push release branch '{release.release_branch}': {e}")
         progress.stop_error()
