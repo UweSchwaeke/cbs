@@ -91,7 +91,7 @@ def _prepare_repo(repo_path: Path):
     # propagate exceptions
     _check_repo()
     _cleanup_repo()
-    git_update_submodules(repo_path)
+    asyncio.run(git_update_submodules(repo_path))
 
 
 def apply_manifest(
@@ -159,8 +159,10 @@ def apply_manifest(
         raise e from None
 
     try:
-        _branch = git_checkout_from_local_ref(
-            ceph_repo_path, manifest.base_ref, target_branch
+        _branch = asyncio.run(
+            git_checkout_from_local_ref(
+                ceph_repo_path, manifest.base_ref, target_branch
+            )
         )
     except ApplyError as e:
         msg = f"unable to apply manifest patchsets: {e}"

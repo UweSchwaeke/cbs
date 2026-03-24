@@ -493,7 +493,7 @@ def cmd_release_list(
     remote_base_releases: list[str] = []
     releases_meta: dict[str, Release | None] = {}
 
-    for r in git_remote_ref_names(ceph_repo_path, dst_repo):
+    for r in asyncio.run(git_remote_ref_names(ceph_repo_path, dst_repo)):
         ref_name = r[len(dst_repo) + 1 :]
         m = re.match(r"(release|release-base)/((?:ces|ccs)-.+)", ref_name)
         if not m:

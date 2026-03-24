@@ -1,13 +1,11 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (c) 2026 Clyso GmbH
-import asyncio
 import errno
 import logging
 import re
 import secrets
 import shutil
 import tempfile
-from collections.abc import Generator
 from pathlib import Path
 from typing import cast
 
@@ -640,66 +638,61 @@ async def git_tag_exists_in_remote(
         raise GitError(msg) from None
 
 
-def git_remote_ref_names(repo_path: Path, remote_name: str) -> Generator[str]:
+async def git_remote_ref_names(repo_path: Path, remote_name: str) -> list[str]:
+    cmd: CmdArgs = ["branch", "-r", "--list", remote_name, "--format", "%(refname)"]
     try:
-        repo = git.Repo(repo_path)
-        remote = repo.remotes[remote_name]
-        for ref in remote.refs:
-            yield ref.name
-    except git.NoSuchPathError:
-        msg = f"path '{repo_path}' doesn't exist"
+        res = await _run_git(cmd, path=repo_path)
+        lines = res.splitlines()
+        return [line.removeprefix("refs/remotes/") for line in lines]
+    except GitError as e:
+        msg = f"unable to list remote names of remote '{remote_name}': '{e}'"
         logger.error(msg)
         raise GitError(msg) from None
-    except git.InvalidGitRepositoryError:
-        msg = f"path '{repo_path}' isn't a valid git repository"
-        logger.error(msg)
-        raise GitError(msg) from None
-    except IndexError:
-        msg = f"repository '{repo_path}' has no remote '{remote_name}'"
-        logger.error(msg)
-        raise GitMissingRemoteError(msg) from None
 
 
-def git_checkout_from_local_ref(
+async def git_checkout_from_local_ref(
     repo_path: Path, from_ref: str, branch_name: str
 ) -> None:
     logger.debug(f"checkout ref '{from_ref}' to '{branch_name}'")
-    repo = git.Repo(repo_path)
-    if asyncio.run(git_local_head_exists(repo_path, branch_name)):
+    if await git_local_head_exists(repo_path, branch_name):
         logger.debug(f"branch '{branch_name}' already exists, simply checkout")
-        asyncio.run(git_reset_head(repo_path, branch_name))
+        await git_reset_head(repo_path, branch_name)
         return
 
-    assert branch_name not in repo.heads
+    cmd: CmdArgs = ["branch", "--list", branch_name]
     try:
-        new_head = repo.create_head(branch_name, from_ref)
-    except Exception:
+        branch = await _run_git(cmd, path=repo_path)
+        assert not branch.strip()
+    except GitError as e:
+        msg = f"unable to list local branches matching '{branch_name}': {e}"
+        logger.error(msg)
+        raise GitError(msg) from None
+
+    cmd = ["branch", branch_name, from_ref]
+    try:
+        _ = await _run_git(cmd, path=repo_path)
+    except GitError:
         msg = f"unable to create new head '{branch_name}' " + f"from '{from_ref}'"
         logger.exception(msg)
         raise GitError(msg=msg) from None
 
-    repo.head.reference = new_head
-    _ = repo.head.reset(index=True, working_tree=True)
+    await git_reset_head(repo_path, branch_name)
 
     try:
-        asyncio.run(git_cleanup_repo(repo_path))
-        git_update_submodules(repo_path)
-    except Exception as e:
+        await git_cleanup_repo(repo_path)
+        await git_update_submodules(repo_path)
+    except GitError as e:
         msg = f"unable to clean up repo state after checkout: {e}"
         logger.error(msg)
         raise GitError(msg=msg) from None
 
 
-def git_update_submodules(repo_path: Path) -> None:
+async def git_update_submodules(repo_path: Path) -> None:
     logger.debug("update submodules")
-    repo = git.Repo(repo_path)
+    cmd: CmdArgs = ["submodule", "update", "--init", "--recursive"]
     try:
-        repo.git.execute(  # pyright: ignore[reportCallIssue]
-            ["git", "submodule", "update", "--init", "--recursive"],
-            as_process=False,
-            with_stdout=True,
-        )
-    except Exception as e:
+        _ = await _run_git(cmd, path=repo_path)
+    except GitError as e:
         msg = f"unable to update repository's submodules: {e}"
         logger.error(msg)
         raise GitError(msg=msg) from None
