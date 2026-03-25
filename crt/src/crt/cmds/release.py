@@ -33,9 +33,8 @@ from cbscommon.git.cmds import (
     git_switch,
     git_tag,
 )
-from cbscommon.git.exceptions import GitFetchHeadNotFoundError, GitIsTagError
+from cbscommon.git.exceptions import GitError, GitFetchHeadNotFoundError, GitIsTagError
 from cbscore.versions.utils import parse_version
-from git import GitError
 from rich.padding import Padding
 from rich.table import Table
 

@@ -18,16 +18,18 @@ from datetime import datetime as dt
 from pathlib import Path
 from typing import override
 
-import git
 from cbscommon.git.cmds import (
+    get_git_user,
     git_am_abort,
     git_am_apply,
+    git_branch_delete,
     git_checkout_from_local_ref,
     git_cleanup_repo,
     git_prepare_remote,
+    git_switch,
     git_update_submodules,
 )
-from cbscommon.git.exceptions import GitAMApplyError
+from cbscommon.git.exceptions import GitAMApplyError, GitError
 from cbscommon.git.types import SHA
 
 from crt.crtlib.logger import logger as parent_logger
@@ -61,36 +63,24 @@ class ApplyConflictError(ApplyError):
 
 
 def _prepare_repo(repo_path: Path):
-    repo = git.Repo(repo_path)
-
-    def _check_repo() -> None:
-        logger.debug("check repo's config user and email")
-        for what in ["name", "email"]:
-            try:
-                res = repo.git.execute(
-                    ["git", "config", f"user.{what}"],
-                    with_extended_output=False,
-                    as_process=False,
-                    stdout_as_string=True,
-                )
-            except Exception:
-                msg = f"error obtaining repository's user's {what}"
-                logger.error(msg)
-                raise ApplyError(msg=msg) from None
-
-            if not res:
-                msg = f"user's {what} not set for repository"
-                logger.error(msg)
-                raise ApplyError(msg=msg)
-
-    def _cleanup_repo() -> None:
-        asyncio.run(git_cleanup_repo(repo_path))
-        repo.head.reference = repo.heads.main
-        _ = repo.index.reset(index=True, working_tree=True)
+    try:
+        name, email = asyncio.run(get_git_user(repo_path))
+        if not name:
+            msg = "user's name not set for repository"
+            logger.error(msg)
+            raise ApplyError(msg=msg)
+        if not email:
+            msg = "user's email not set for repository"
+            logger.error(msg)
+            raise ApplyError(msg=msg)
+    except GitError as e:
+        msg = f"error obtaining repository's user's data: {e}"
+        logger.error(msg)
+        raise ApplyError(msg=msg) from None
 
     # propagate exceptions
-    _check_repo()
-    _cleanup_repo()
+    asyncio.run(git_cleanup_repo(repo_path))
+    asyncio.run(git_switch(repo_path, "main", discard_changes=True))
     asyncio.run(git_update_submodules(repo_path))
 
 
@@ -104,8 +94,6 @@ def apply_manifest(
     no_cleanup: bool = False,
     run_locally: bool = False,
 ) -> tuple[bool, list[ManifestPatchEntry], list[ManifestPatchEntry]]:
-    ceph_repo = git.Repo(ceph_repo_path)
-
     logger.info(f"apply manifest '{manifest.release_uuid}' to branch '{target_branch}'")
 
     def _cleanup(*, abort_apply: bool = False) -> None:
@@ -114,8 +102,8 @@ def apply_manifest(
             asyncio.run(git_am_abort(ceph_repo_path))
 
         asyncio.run(git_cleanup_repo(ceph_repo_path))
-        ceph_repo.head.reference = ceph_repo.heads.main
-        ceph_repo.git.branch(["-D", target_branch])  # pyright: ignore[reportAny]
+        asyncio.run(git_switch(ceph_repo_path, "main", discard_changes=True))
+        asyncio.run(git_branch_delete(ceph_repo_path, target_branch))
 
     def _apply_patches(
         patches: list[ManifestPatchEntry],

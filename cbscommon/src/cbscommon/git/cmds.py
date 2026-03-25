@@ -694,12 +694,12 @@ async def _run_git(
     return stdout
 
 
-async def get_git_user() -> tuple[str, str]:
+async def get_git_user(repo_path: Path | None = None) -> tuple[str, str]:
     """Obtain the current repository's git user and email, returned as a tuple."""
 
     async def _run_git_config_for(v: str) -> str:
         cmd: CmdArgs = ["config", v]
-        val = await _run_git(cmd)
+        val = await _run_git(cmd, path=repo_path)
         if len(val) == 0:
             logger.error(f"'{v}' not set in git config")
             raise GitConfigNotSetError(v)
