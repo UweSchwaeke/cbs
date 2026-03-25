@@ -120,9 +120,8 @@ async def git_patches_in_interval(
 async def git_get_patch_sha_title(repo_path: Path, sha: SHA) -> tuple[str, str]:
     logger.debug(f"get patch sha and title for '{sha}'")
 
-    cmd: CmdArgs = ["show", "--format=%H %s", "--no-patch", sha]
     try:
-        res = await _run_git(cmd, path=repo_path)
+        res = await _git_show(repo_path, sha, format="%H %s", no_patch=True)
     except GitError as e:
         msg = f"unable to obtain patch sha and title for '{sha}': {e}"
         logger.error(msg)
@@ -155,9 +154,8 @@ async def git_status(repo_path: Path) -> list[tuple[str, str]]:
 
 
 async def git_am_apply(repo_path: Path, patch_path: Path) -> None:
-    cmd: CmdArgs = ["am", str(patch_path)]
     try:
-        _ = await _run_git(cmd, path=repo_path)
+        _ = await _git_am(repo_path, patch_path)
     except GitError:
         msg = f"unable to apply patch '{patch_path}'"
         logger.error(msg)
@@ -165,26 +163,18 @@ async def git_am_apply(repo_path: Path, patch_path: Path) -> None:
 
 
 async def git_am_abort(repo_path: Path) -> None:
-    cmd: CmdArgs = ["am", "--abort"]
     try:
-        _ = await _run_git(cmd, path=repo_path)
+        _ = await _git_am(repo_path, abort=True)
     except GitError:
         logger.error("found error aborting git-am")
 
 
 async def git_cleanup_repo(repo_path: Path) -> None:
-    cmd: CmdArgs = [
-        "submodulede",
-        "init",
-        "--all",
-        "-f",
-    ]
     try:
+        _ = await _git_submodule(repo_path, "init", all=True, force=True)
+        cmd: CmdArgs = ["clean", "-ffdx"]
         _ = await _run_git(cmd, path=repo_path)
-        cmd = ["clean", "-ffdx"]
-        _ = await _run_git(cmd, path=repo_path)
-        cmd = ["reset", "--hard"]
-        _ = await _run_git(cmd, path=repo_path)
+        _ = await _git_reset(repo_path, hard=True)
     except GitError as e:
         msg = f"unable to clean up repository '{repo_path}': {e}"
         logger.error(msg)
@@ -196,10 +186,9 @@ async def git_prepare_remote(
 ) -> None:
     logger.info(f"prepare remote '{remote_name}' uri '{remote_uri}'")
     remote_url = f"https://crt:{token}@{remote_uri}"
-    cmd: CmdArgs = ["remote", "add", remote_name, remote_url]
 
     try:
-        _ = await _run_git(cmd, path=repo_path)
+        _ = await _git_remote(repo_path, "add", remote_name, remote_url)
     except GitError as e:
         # git remote add returns ESRCH (3), if remote_name already exists.
         if e.ec != errno.ESRCH:
@@ -211,8 +200,7 @@ async def git_prepare_remote(
 
     logger.info(f"update remote '{remote_name}'")
     try:
-        cmd = ["remote", "update", remote_name]
-        _ = await _run_git(cmd, path=repo_path)
+        _ = await _git_remote(repo_path, "update", remote_name)
     except GitError:
         logger.error(f"unable to update remote '{remote_name}'")
         raise GitError(msg=f"unable to update remote '{remote_name}'") from None
@@ -220,8 +208,7 @@ async def git_prepare_remote(
 
 async def git_remote_exists(repo_path: Path, remote_name: str) -> bool:
     logger.info(f"does remote '{remote_name}' exist.")
-    cmd: CmdArgs = ["remote"]
-    res = await _run_git(cmd, path=repo_path)
+    res = await _git_remote(repo_path)
     return remote_name in res.splitlines()
 
 
@@ -245,8 +232,7 @@ async def git_remote_ref_exists(
         logger.error(f"remote '{remote_name}' not found")
         raise GitMissingRemoteError(remote_name) from None
 
-    cmd: CmdArgs = ["branch", "-r", "--list", f"{remote_name}/*"]
-    res = await _run_git(cmd, path=repo_path)
+    res = await _git_branch(repo_path, remote=True, list=f"{remote_name}/*")
     for ref in res.splitlines():
         ref = ref.strip()
         if _get_remote_ref_name(remote_name, ref, ref_name=ref_name):
@@ -258,9 +244,7 @@ async def git_remote_ref_exists(
 async def _git_pull_ref(
     repo_path: Path, from_ref: str, to_ref: str, remote_name: str
 ) -> bool:
-    cmd: CmdArgs = ["branch", "--show-current"]
-    active_branch = await _run_git(cmd, path=repo_path)
-
+    active_branch = await _git_branch(repo_path, show_current=True)
     if active_branch != to_ref:
         return False
 
@@ -268,7 +252,7 @@ async def _git_pull_ref(
         logger.warning(f"ref '{from_ref}' not found in remote '{remote_name}'")
         return False
 
-    cmd = ["pull", remote_name, f"{from_ref}:{to_ref}"]
+    cmd: CmdArgs = ["pull", remote_name, f"{from_ref}:{to_ref}"]
     try:
         _ = await _run_git(cmd, path=repo_path)
     except GitError as e:
@@ -282,8 +266,7 @@ async def _git_pull_ref(
 
 
 async def _is_tag(repo_path: Path, tag_name: str) -> bool:
-    cmd: CmdArgs = ["tag", "--list", tag_name]
-    res = await _run_git(cmd, path=repo_path)
+    res = await _git_tag(repo_path, list=tag_name)
     return bool(res.strip())
 
 
@@ -294,17 +277,14 @@ async def git_reset_head(repo_path: Path, new_head: str) -> None:
         logger.error(msg)
         raise GitError(msg)
 
-    cmd: CmdArgs = ["switch", new_head]
-    _ = await _run_git(cmd, path=repo_path)
-    cmd = ["reset", "--hard", new_head]
-    _ = await _run_git(cmd, path=repo_path)
+    _ = await _git_reset(repo_path, new_head, hard=True)
+    _ = await _git_switch(repo_path, new_head)
 
 
 async def git_branch_from(repo_path: Path, src_ref: str, dst_branch: str) -> None:
     """Create a new branch `dst_branch` from `src_ref`."""
     logger.debug(f"create branch '{dst_branch}' from '{src_ref}'")
-    cmd: CmdArgs = ["branch", "--show-current"]
-    active_branch = await _run_git(cmd, path=repo_path)
+    active_branch = await _git_branch(repo_path, show_current=True)
     logger.debug(f"repo active branch: {active_branch}")
 
     if await git_local_head_exists(repo_path, dst_branch):
@@ -317,8 +297,7 @@ async def git_branch_from(repo_path: Path, src_ref: str, dst_branch: str) -> Non
         src_ref = f"refs/tags/{src_ref}"
 
     try:
-        cmd = ["branch", dst_branch, src_ref]
-        _ = await _run_git(cmd)
+        _ = await _git_branch(repo_path, dst_branch, src_ref)
     except GitError as e:
         msg = f"unable to create branch '{dst_branch}' from '{src_ref}': {e}"
         logger.error(msg)
@@ -339,8 +318,7 @@ async def git_fetch_ref(
     Might raise in other `git fetch` error conditions.
     """
     logger.debug(f"fetch from '{remote_name}' ref '{from_ref}' to '{to_ref}'")
-    cmd: CmdArgs = ["branch", "--show-current"]
-    active_branch = await _run_git(cmd, path=repo_path)
+    active_branch = await _git_branch(repo_path, show_current=True)
     logger.debug(f"repo active branch: {active_branch}")
 
     if active_branch == to_ref:
@@ -363,7 +341,7 @@ async def git_fetch_ref(
         raise GitError(msg) from None
 
     try:
-        cmd = ["fetch", remote_name, f"{from_ref}:{to_ref}"]
+        cmd: CmdArgs = ["fetch", remote_name, f"{from_ref}:{to_ref}"]
         _ = await _run_git(cmd, path=repo_path)
     except GitError as e:
         logger.error(
@@ -480,16 +458,11 @@ async def git_checkout_ref(
 
 async def git_branch_delete(repo_path: Path, branch: str) -> None:
     """Delete a local branch."""
-    cmd: CmdArgs = ["branch", "--show-current"]
-    active_branch = await _run_git(cmd, path=repo_path)
-
+    active_branch = await _git_branch(repo_path, show_current=True)
     if active_branch == branch:
         await git_cleanup_repo(repo_path)
-        cmd = ["switch", "main"]
-        _ = await _run_git(cmd, path=repo_path)
-
-    cmd = ["branch", "-D", branch]
-    _ = await _run_git(cmd, path=repo_path)
+        _ = await _git_switch(repo_path, "main")
+    _ = await _git_branch(repo_path, delete=True, force=True)
 
 
 async def git_push(
@@ -515,8 +488,9 @@ async def git_push(
         raise GitMissingRemoteError(remote_name) from None
 
     try:
-        cmd: CmdArgs = ["push", remote_name, f"{ref}:{dst_ref}", "--porcelain"]
-        info = await _run_git(cmd, path=repo_path)
+        info = await _git_push(
+            repo_path, remote_name, f"{ref}:{dst_ref}", porcelain=True
+        )
         # skip first line because it is To remote url
         # and skip last line because it is Done
         info = info.splitlines()[1:-1]
@@ -551,12 +525,8 @@ async def git_tag(
     push_to: str | None = None,
 ) -> None:
     logger.debug(f"create tag '{tag_name}' at ref '{ref}'")
-    cmd: CmdArgs = ["tag", tag_name, ref]
-    if msg:
-        cmd.append("-m")
-        cmd.append("msg")
     try:
-        _ = await _run_git(cmd, path=repo_path)
+        _ = await _git_tag(repo_path, tag_name, ref, m=msg)
     except GitError as e:
         msg = f"unable to create tag '{tag_name}' at ref '{ref}': {e}"
         logger.error(msg)
@@ -564,9 +534,8 @@ async def git_tag(
 
     if push_to:
         logger.debug(f"push tag '{tag_name}' to remote '{push_to}'")
-        cmd = ["push", push_to, "tag", tag_name]
         try:
-            _ = await _run_git(cmd, path=repo_path)
+            _ = await _git_push(repo_path, push_to, tag=tag_name)
         except GitError as e:
             msg = f"unable to push tag '{tag_name}' to remote '{push_to}': {e}"
             logger.error(msg)
@@ -580,16 +549,15 @@ async def git_patch_id(repo_path: Path, sha: SHA) -> str:
             _ = tmp.write(line.encode("utf-8"))
             _ = tmp.write(b"\n")
 
-        cmd: CmdArgs = ["show", sha]
         try:
-            _ = await _run_git(cmd, path=repo_path, outcb=_write_to_tmp)
+            _ = await _git_show(repo_path, sha, outcb=_write_to_tmp)
         except GitError:
             msg = f"unable to find patch sha '{sha}'"
             logger.error(msg)
             raise GitError(msg=msg) from None
 
         _ = tmp.seek(0)
-        cmd = ["patch-id", "--stable"]
+        cmd: CmdArgs = ["patch-id", "--stable"]
         res = await _run_git(cmd, path=repo_path, stdin=tmp)
 
     if not res:
@@ -598,9 +566,8 @@ async def git_patch_id(repo_path: Path, sha: SHA) -> str:
 
 
 async def git_revparse(repo_path: Path, commitish: SHA | str) -> str:
-    cmd: CmdArgs = ["rev-parse", commitish]
     try:
-        res = await _run_git(cmd, path=repo_path)
+        res = await _git_rev_parse(repo_path, commitish)
     except GitError as e:
         msg = f"unable to obtain revision for '{commitish}': {e}"
         logger.error(msg)
@@ -643,9 +610,10 @@ async def git_tag_exists_in_remote(
 
 
 async def git_remote_ref_names(repo_path: Path, remote_name: str) -> list[str]:
-    cmd: CmdArgs = ["branch", "-r", "--list", remote_name, "--format", "%(refname)"]
     try:
-        res = await _run_git(cmd, path=repo_path)
+        res = await _git_branch(
+            repo_path, remote=True, list=remote_name, format="%(refname)"
+        )
         lines = res.splitlines()
         return [line.removeprefix("refs/remotes/") for line in lines]
     except GitError as e:
@@ -663,18 +631,16 @@ async def git_checkout_from_local_ref(
         await git_reset_head(repo_path, branch_name)
         return
 
-    cmd: CmdArgs = ["branch", "--list", branch_name]
     try:
-        branch = await _run_git(cmd, path=repo_path)
+        branch = await _git_branch(repo_path, list=branch_name)
         assert not branch.strip()
     except GitError as e:
         msg = f"unable to list local branches matching '{branch_name}': {e}"
         logger.error(msg)
         raise GitError(msg) from None
 
-    cmd = ["branch", branch_name, from_ref]
     try:
-        _ = await _run_git(cmd, path=repo_path)
+        _ = await _git_branch(repo_path, branch_name, from_ref)
     except GitError:
         msg = f"unable to create new head '{branch_name}' " + f"from '{from_ref}'"
         logger.exception(msg)
@@ -693,9 +659,8 @@ async def git_checkout_from_local_ref(
 
 async def git_update_submodules(repo_path: Path) -> None:
     logger.debug("update submodules")
-    cmd: CmdArgs = ["submodule", "update", "--init", "--recursive"]
     try:
-        _ = await _run_git(cmd, path=repo_path)
+        _ = await _git_submodule(repo_path, "update", init=True, recursive=True)
     except GitError as e:
         msg = f"unable to update repository's submodules: {e}"
         logger.error(msg)
@@ -703,8 +668,7 @@ async def git_update_submodules(repo_path: Path) -> None:
 
 
 async def git_local_head_exists(repo_path: Path, name: str) -> bool:
-    cmd: CmdArgs = ["branch", "--list", name]
-    res = await _run_git(cmd, path=repo_path)
+    res = await _git_branch(repo_path, list=name)
     return bool(res.strip())
 
 
@@ -745,7 +709,8 @@ async def get_git_user() -> tuple[str, str]:
     """Obtain the current repository's git user and email, returned as a tuple."""
 
     async def _run_git_config_for(v: str) -> str:
-        val = await _run_git(["config", v])
+        cmd: CmdArgs = ["config", v]
+        val = await _run_git(cmd)
         if len(val) == 0:
             logger.error(f"'{v}' not set in git config")
             raise GitConfigNotSetError(v)
@@ -760,7 +725,7 @@ async def get_git_user() -> tuple[str, str]:
 
 async def get_git_repo_root() -> Path:
     """Obtain the root of the current git repository."""
-    val = await _run_git(["rev-parse", "--show-toplevel"])
+    val = await _git_rev_parse(show_toplevel=True)
     if len(val) == 0:
         logger.error("unable to obtain toplevel git directory path")
         raise GitError("top-level git directory not found", ec=errno.ENOENT)
@@ -771,15 +736,14 @@ async def get_git_repo_root() -> Path:
 async def _clone(repo: MaybeSecure, dest_path: Path) -> None:
     """Clones a repository from `repo` to `dest_path`."""
     try:
-        _ = await _run_git(
-            [
-                "clone",
-                "--mirror",
-                "--quiet",
-                repo,
-                dest_path.resolve().as_posix(),
-            ]
-        )
+        cmd: CmdArgs = [
+            "clone",
+            "--mirror",
+            "--quiet",
+            repo,
+            dest_path.resolve().as_posix(),
+        ]
+        _ = await _run_git(cmd)
     except GitError as e:
         msg = f"unable to clone '{repo}' to '{dest_path}': {e}"
         logger.error(msg)
@@ -789,8 +753,8 @@ async def _clone(repo: MaybeSecure, dest_path: Path) -> None:
 async def _update(repo: MaybeSecure, repo_path: Path) -> None:
     """Update a git repository in `repo_path` from its upstream at `repo`."""
     try:
-        _ = await _run_git(["remote", "set-url", "origin", repo], path=repo_path)
-        _ = await _run_git(["remote", "update"], path=repo_path)
+        _ = await _git_remote(repo_path, "set-url", "origin", repo)
+        _ = await _git_remote(repo_path, "update")
     except GitError as e:
         msg = f"unable to update '{repo_path}': {e}'"
         logger.error(msg)
@@ -910,13 +874,190 @@ async def git_apply(repo_path: Path, patch_path: Path) -> None:
 
 async def git_get_sha1(repo_path: Path) -> str:
     """For the repository in `repo_path`, obtain its currently checked out SHA1."""
-    val = await _run_git(["rev-parse", "HEAD"], path=repo_path)
+    val = await _git_rev_parse(repo_path, "HEAD")
     if len(val) == 0:
         msg = f"unable to obtain current SHA1 on repository '{repo_path}"
         logger.error(msg)
         raise GitError(msg, ec=errno.ENOTRECOVERABLE)
 
     return val.strip()
+
+
+async def _git_show(
+    repo_path: Path,
+    sha: SHA,
+    *,
+    format: str | None = None,
+    no_patch: bool = False,
+    outcb: AsyncRunCmdOutCallback | None = None,
+) -> str:
+    cmd: CmdArgs = ["show", sha]
+    if format:
+        cmd.append(f"--format={format}")
+    if no_patch:
+        cmd.append("--no-patch")
+
+    return await _run_git(cmd, path=repo_path, outcb=outcb)
+
+
+async def _git_am(
+    repo_path: Path, mbox: Path | None = None, *, abort: bool = False
+) -> str:
+    cmd: CmdArgs = ["am"]
+    if abort:
+        cmd.append("--abort")
+    if mbox:
+        cmd.append(str(mbox))
+    return await _run_git(cmd, path=repo_path)
+
+
+async def _git_submodule(
+    repo_path: Path,
+    verb: str,
+    *,
+    init: bool = False,
+    recursive: bool = False,
+    all: bool = False,
+    force: bool = False,
+) -> str:
+    cmd: CmdArgs = ["submodule", verb]
+    if init:
+        cmd.append("--init")
+    if recursive:
+        cmd.append("--recursive")
+    if all:
+        cmd.append("--all")
+    if force:
+        cmd.append("--force")
+    return await _run_git(cmd, path=repo_path)
+
+
+async def _git_reset(
+    repo_path: Path, commit: str | None = None, *, hard: bool = False
+) -> str:
+    cmd: CmdArgs = ["reset"]
+    if hard:
+        cmd.append("--hard")
+    if commit:
+        cmd.append(commit)
+    return await _run_git(cmd, path=repo_path)
+
+
+async def _git_remote(
+    repo_path: Path,
+    verb: str | None = None,
+    name: str | None = None,
+    url: MaybeSecure | None = None,
+) -> str:
+    cmd: CmdArgs = ["remote"]
+    if verb:
+        cmd.append(verb)
+    if name:
+        cmd.append(name)
+    if url:
+        cmd.append(url)
+    return await _run_git(cmd, path=repo_path)
+
+
+async def _git_branch(
+    repo_path: Path,
+    branch_name: str | None = None,
+    start_point: str | None = None,
+    *,
+    remote: bool = False,
+    list: str | None = None,
+    show_current: bool = False,
+    delete: bool = False,
+    force: bool = False,
+    format: str | None = None,
+) -> str:
+    cmd: CmdArgs = ["branch"]
+    if branch_name:
+        cmd.append(branch_name)
+    if start_point:
+        cmd.append(start_point)
+    if remote:
+        cmd.append("--remotes")
+    if list:
+        cmd.append("--list")
+        cmd.append(list)
+    if show_current:
+        cmd.append("--show-current")
+    if delete:
+        cmd.append("--delete")
+    if force:
+        cmd.append("--force")
+    if format:
+        cmd.append("--format")
+        cmd.append(format)
+
+    return await _run_git(cmd, path=repo_path)
+
+
+async def _git_tag(
+    repo_path: Path,
+    tagname: str | None = None,
+    commit: str | None = None,
+    *,
+    list: str | None = None,
+    m: str | None = None,
+) -> str:
+    cmd: CmdArgs = ["tag"]
+    if tagname:
+        cmd.append(tagname)
+    if commit:
+        cmd.append(commit)
+    if list:
+        cmd.append("--list")
+        cmd.append(list)
+    if m:
+        cmd.append("-m")
+        cmd.append(m)
+
+    return await _run_git(cmd, path=repo_path)
+
+
+async def _git_switch(repo_path: Path, branch: str) -> str:
+    cmd: CmdArgs = ["switch", branch]
+    return await _run_git(cmd, path=repo_path)
+
+
+async def _git_push(
+    repo_path: Path,
+    repository: str,
+    refspec: str | None = None,
+    *,
+    tag: str | None = None,
+    porcelain: bool = False,
+) -> str:
+    cmd: CmdArgs = ["push", repository]
+    if refspec:
+        cmd.append(refspec)
+    if tag:
+        cmd.append("tag")
+        cmd.append(tag)
+    if porcelain:
+        cmd.append("--porcelain")
+
+    return await _run_git(cmd, path=repo_path)
+
+
+async def _git_rev_parse(
+    repo_path: Path | None = None,
+    arg: SHA | str | None = None,
+    *,
+    show_toplevel: bool = False,
+    abbrev_ref: bool = False,
+) -> str:
+    cmd: CmdArgs = ["rev-parse"]
+    if arg:
+        cmd.append(arg)
+    if show_toplevel:
+        cmd.append("--show-toplevel")
+    if abbrev_ref:
+        cmd.append("--abbrev-ref")
+
+    return await _run_git(cmd, path=repo_path)
 
 
 # unused functions
@@ -1071,7 +1212,7 @@ async def _git_cherry_pick(  # pyright: ignore[reportUnusedFunction]
 
 async def _git_get_current_branch(repo_path: Path) -> str:  # pyright: ignore[reportUnusedFunction]
     """Obtain the name of the currently checked out branch."""
-    val = await _run_git(["rev-parse", "--abbrev-ref", "HEAD"], path=repo_path)
+    val = await _git_rev_parse(repo_path, "HEAD", abbrev_ref=True)
     if not val:
         msg = (
             "unable to obtain current checked out branch's "
