@@ -30,7 +30,7 @@ from cbscommon.git.cmds import (
     git_remote_exists,
     git_remote_ref_exists,
     git_remote_ref_names,
-    git_reset_head,
+    git_switch,
     git_tag,
 )
 from cbscommon.git.exceptions import GitFetchHeadNotFoundError, GitIsTagError
@@ -76,7 +76,7 @@ def _prepare_release_repo(
 ) -> None:
     try:
         asyncio.run(git_cleanup_repo(ceph_repo_path))
-        asyncio.run(git_reset_head(ceph_repo_path, "main"))
+        asyncio.run(git_switch(ceph_repo_path, "main", discard_changes=True))
     except GitError as e:
         perror(f"failed to cleanup ceph repo at '{ceph_repo_path}': {e}")
         raise _ExitError(errno.ENOTRECOVERABLE) from e

@@ -270,17 +270,6 @@ async def _is_tag(repo_path: Path, tag_name: str) -> bool:
     return bool(res.strip())
 
 
-async def git_reset_head(repo_path: Path, new_head: str) -> None:
-    """Reset current checked out head to `new_head`."""
-    if not await git_local_head_exists(repo_path, new_head):
-        msg = f"unexpected missing local head '{new_head}'"
-        logger.error(msg)
-        raise GitError(msg)
-
-    _ = await _git_reset(repo_path, new_head, hard=True)
-    _ = await _git_switch(repo_path, new_head)
-
-
 async def git_branch_from(repo_path: Path, src_ref: str, dst_branch: str) -> None:
     """Create a new branch `dst_branch` from `src_ref`."""
     logger.debug(f"create branch '{dst_branch}' from '{src_ref}'")
@@ -409,7 +398,7 @@ async def git_checkout_ref(
         if update_from_remote and remote_name:
             await _update_from_remote(head, remote_name)
 
-        await git_reset_head(repo_path, head)
+        await git_switch(repo_path, head, discard_changes=True)
 
     target_branch = to_branch if to_branch else ref
 
@@ -453,7 +442,7 @@ async def git_checkout_ref(
         return
 
     # propagate exceptions
-    await git_reset_head(repo_path, target_branch)
+    await git_switch(repo_path, target_branch, discard_changes=True)
 
 
 async def git_branch_delete(repo_path: Path, branch: str) -> None:
@@ -461,7 +450,7 @@ async def git_branch_delete(repo_path: Path, branch: str) -> None:
     active_branch = await _git_branch(repo_path, show_current=True)
     if active_branch == branch:
         await git_cleanup_repo(repo_path)
-        _ = await _git_switch(repo_path, "main")
+        await git_switch(repo_path, "main")
     _ = await _git_branch(repo_path, delete=True, force=True)
 
 
@@ -628,7 +617,7 @@ async def git_checkout_from_local_ref(
     logger.debug(f"checkout ref '{from_ref}' to '{branch_name}'")
     if await git_local_head_exists(repo_path, branch_name):
         logger.debug(f"branch '{branch_name}' already exists, simply checkout")
-        await git_reset_head(repo_path, branch_name)
+        await git_switch(repo_path, branch_name, discard_changes=True)
         return
 
     try:
@@ -646,7 +635,7 @@ async def git_checkout_from_local_ref(
         logger.exception(msg)
         raise GitError(msg=msg) from None
 
-    await git_reset_head(repo_path, branch_name)
+    await git_switch(repo_path, branch_name, discard_changes=True)
 
     try:
         await git_cleanup_repo(repo_path)
@@ -1017,9 +1006,19 @@ async def _git_tag(
     return await _run_git(cmd, path=repo_path)
 
 
-async def _git_switch(repo_path: Path, branch: str) -> str:
+async def git_switch(repo_path: Path, branch: str, *, discard_changes: bool = False):
     cmd: CmdArgs = ["switch", branch]
-    return await _run_git(cmd, path=repo_path)
+    if discard_changes:
+        cmd.append("--discard-changes")
+    try:
+        _ = await _run_git(cmd, path=repo_path)
+    except GitError as e:
+        msg = (
+            f"unable to switch to branch '{branch}' with discard-changes="
+            f"{discard_changes}: {e}"
+        )
+        logger.error(msg)
+        raise GitError(msg) from None
 
 
 async def _git_push(
