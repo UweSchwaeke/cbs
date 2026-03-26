@@ -874,13 +874,13 @@ async def git_get_sha1(repo_path: Path) -> str:
 
 async def _git_show(
     repo_path: Path,
-    sha: SHA,
+    object: SHA,
     *,
     format: str | None = None,
     no_patch: bool = False,
     outcb: AsyncRunCmdOutCallback | None = None,
 ) -> str:
-    cmd: CmdArgs = ["show", sha]
+    cmd: CmdArgs = ["show", object]
     if format:
         cmd.append(f"--format={format}")
     if no_patch:
