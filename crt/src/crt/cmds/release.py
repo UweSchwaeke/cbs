@@ -22,7 +22,6 @@ import click
 import rich.box
 from cbscommon.git.cmds import (
     git_branch_from,
-    git_cleanup_repo,
     git_fetch_ref,
     git_local_head_exists,
     git_prepare_remote,
@@ -30,7 +29,7 @@ from cbscommon.git.cmds import (
     git_remote_exists,
     git_remote_ref_exists,
     git_remote_ref_names,
-    git_switch,
+    git_reset_state,
     git_tag,
 )
 from cbscommon.git.exceptions import GitError, GitFetchHeadNotFoundError, GitIsTagError
@@ -74,8 +73,7 @@ def _prepare_release_repo(
     run_locally: bool = False,
 ) -> None:
     try:
-        asyncio.run(git_cleanup_repo(ceph_repo_path))
-        asyncio.run(git_switch(ceph_repo_path, "main", discard_changes=True))
+        asyncio.run(git_reset_state(ceph_repo_path))
     except GitError as e:
         perror(f"failed to cleanup ceph repo at '{ceph_repo_path}': {e}")
         raise _ExitError(errno.ENOTRECOVERABLE) from e

@@ -34,6 +34,19 @@ from .types import SHA, PushInfoLine, PushInfoLineStatus
 logger = logging.getLogger(__name__)
 
 
+async def git_reset_state(repo_path: Path, branch: str = "main"):
+    try:
+        await git_cleanup_repo(repo_path)
+        await git_switch(repo_path, branch, discard_changes=True)
+
+    except GitError as e:
+        msg = (
+            f"unable to reset state of repository {repo_path} to branch {branch}: '{e}'"
+        )
+        logger.error(msg)
+        raise GitError(msg) from None
+
+
 async def git_check_patches_diff(
     ceph_git_path: Path,
     upstream_ref: str | SHA,
@@ -445,12 +458,89 @@ async def git_checkout_ref(
     await git_switch(repo_path, target_branch, discard_changes=True)
 
 
+async def git_checkout_from_local_ref(
+    repo_path: Path, from_ref: str, branch_name: str
+) -> None:
+    logger.debug(f"checkout ref '{from_ref}' to '{branch_name}'")
+    if await git_local_head_exists(repo_path, branch_name):
+        logger.debug(f"branch '{branch_name}' already exists, simply checkout")
+        await git_switch(repo_path, branch_name, discard_changes=True)
+        return
+
+    try:
+        branch = await _git_branch(repo_path, list=branch_name)
+        assert not branch.strip()
+    except GitError as e:
+        msg = f"unable to list local branches matching '{branch_name}': {e}"
+        logger.error(msg)
+        raise GitError(msg) from None
+
+    try:
+        _ = await _git_branch(repo_path, branch_name, from_ref)
+    except GitError:
+        msg = f"unable to create new head '{branch_name}' " + f"from '{from_ref}'"
+        logger.exception(msg)
+        raise GitError(msg=msg) from None
+
+    await git_switch(repo_path, branch_name, discard_changes=True)
+
+    try:
+        await git_cleanup_repo(repo_path)
+        await git_update_submodules(repo_path)
+    except GitError as e:
+        msg = f"unable to clean up repo state after checkout: {e}"
+        logger.error(msg)
+        raise GitError(msg=msg) from None
+
+
+async def git_checkout(repo_path: Path, ref: str, worktrees_base_path: Path) -> Path:
+    """
+    Checkout a reference pointed to by `ref`, in repository `repo_path`.
+
+    Uses git worktrees to checkout the reference into a new worktree under
+    `worktrees_base_path`.
+
+    Returns the path to the checked out worktree.
+    """
+    try:
+        worktrees_base_path.mkdir(parents=True, exist_ok=True)
+    except Exception as e:
+        msg = f"unable to create worktrees base path at '{worktrees_base_path}': {e}"
+        logger.error(msg)
+        raise GitError(msg, ec=errno.ENOTRECOVERABLE) from e
+
+    worktree_rnd_suffix = secrets.token_hex(5)
+    worktree_name = ref.replace("/", "--") + f".{worktree_rnd_suffix}"
+    worktree_path = worktrees_base_path / worktree_name
+    logger.info(f"checkout ref '{ref}' into worktree at '{worktree_path}'")
+
+    try:
+        _ = await _run_git(
+            [
+                "worktree",
+                "add",
+                "--track",
+                "-b",
+                worktree_name,
+                "--quiet",
+                worktree_path.resolve().as_posix(),
+                ref,
+            ],
+            path=repo_path,
+        )
+    except GitError as e:
+        msg = f"unable to checkout ref '{ref}' in repository '{repo_path}': {e}"
+        logger.error(msg)
+        raise GitError(msg, ec=errno.ENOTRECOVERABLE) from e
+
+    return worktree_path
+
+
 async def git_branch_delete(repo_path: Path, branch: str) -> None:
     """Delete a local branch."""
     active_branch = await _git_branch(repo_path, show_current=True)
     if active_branch == branch:
-        await git_cleanup_repo(repo_path)
-        await git_switch(repo_path, "main")
+        await git_reset_state(repo_path)
     _ = await _git_branch(repo_path, delete=True, force=True)
 
 
@@ -611,41 +701,6 @@ async def git_remote_ref_names(repo_path: Path, remote_name: str) -> list[str]:
         raise GitError(msg) from None
 
 
-async def git_checkout_from_local_ref(
-    repo_path: Path, from_ref: str, branch_name: str
-) -> None:
-    logger.debug(f"checkout ref '{from_ref}' to '{branch_name}'")
-    if await git_local_head_exists(repo_path, branch_name):
-        logger.debug(f"branch '{branch_name}' already exists, simply checkout")
-        await git_switch(repo_path, branch_name, discard_changes=True)
-        return
-
-    try:
-        branch = await _git_branch(repo_path, list=branch_name)
-        assert not branch.strip()
-    except GitError as e:
-        msg = f"unable to list local branches matching '{branch_name}': {e}"
-        logger.error(msg)
-        raise GitError(msg) from None
-
-    try:
-        _ = await _git_branch(repo_path, branch_name, from_ref)
-    except GitError:
-        msg = f"unable to create new head '{branch_name}' " + f"from '{from_ref}'"
-        logger.exception(msg)
-        raise GitError(msg=msg) from None
-
-    await git_switch(repo_path, branch_name, discard_changes=True)
-
-    try:
-        await git_cleanup_repo(repo_path)
-        await git_update_submodules(repo_path)
-    except GitError as e:
-        msg = f"unable to clean up repo state after checkout: {e}"
-        logger.error(msg)
-        raise GitError(msg=msg) from None
-
-
 async def git_update_submodules(repo_path: Path) -> None:
     logger.debug("update submodules")
     try:
@@ -748,49 +803,6 @@ async def _update(repo: MaybeSecure, repo_path: Path) -> None:
         msg = f"unable to update '{repo_path}': {e}'"
         logger.error(msg)
         raise GitError(msg, ec=errno.ENOTRECOVERABLE) from e
-
-
-async def git_checkout(repo_path: Path, ref: str, worktrees_base_path: Path) -> Path:
-    """
-    Checkout a reference pointed to by `ref`, in repository `repo_path`.
-
-    Uses git worktrees to checkout the reference into a new worktree under
-    `worktrees_base_path`.
-
-    Returns the path to the checked out worktree.
-    """
-    try:
-        worktrees_base_path.mkdir(parents=True, exist_ok=True)
-    except Exception as e:
-        msg = f"unable to create worktrees base path at '{worktrees_base_path}': {e}"
-        logger.error(msg)
-        raise GitError(msg, ec=errno.ENOTRECOVERABLE) from e
-
-    worktree_rnd_suffix = secrets.token_hex(5)
-    worktree_name = ref.replace("/", "--") + f".{worktree_rnd_suffix}"
-    worktree_path = worktrees_base_path / worktree_name
-    logger.info(f"checkout ref '{ref}' into worktree at '{worktree_path}'")
-
-    try:
-        _ = await _run_git(
-            [
-                "worktree",
-                "add",
-                "--track",
-                "-b",
-                worktree_name,
-                "--quiet",
-                worktree_path.resolve().as_posix(),
-                ref,
-            ],
-            path=repo_path,
-        )
-    except GitError as e:
-        msg = f"unable to checkout ref '{ref}' in repository '{repo_path}': {e}"
-        logger.error(msg)
-        raise GitError(msg, ec=errno.ENOTRECOVERABLE) from e
-
-    return worktree_path
 
 
 async def git_remove_worktree(repo_path: Path, worktree_path: Path) -> None:

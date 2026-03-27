@@ -24,9 +24,8 @@ from cbscommon.git.cmds import (
     git_am_apply,
     git_branch_delete,
     git_checkout_from_local_ref,
-    git_cleanup_repo,
     git_prepare_remote,
-    git_switch,
+    git_reset_state,
     git_update_submodules,
 )
 from cbscommon.git.exceptions import GitAMApplyError, GitError
@@ -79,8 +78,7 @@ def _prepare_repo(repo_path: Path):
         raise ApplyError(msg=msg) from None
 
     # propagate exceptions
-    asyncio.run(git_cleanup_repo(repo_path))
-    asyncio.run(git_switch(repo_path, "main", discard_changes=True))
+    asyncio.run(git_reset_state(repo_path))
     asyncio.run(git_update_submodules(repo_path))
 
 
@@ -101,8 +99,7 @@ def apply_manifest(
         if abort_apply:
             asyncio.run(git_am_abort(ceph_repo_path))
 
-        asyncio.run(git_cleanup_repo(ceph_repo_path))
-        asyncio.run(git_switch(ceph_repo_path, "main", discard_changes=True))
+        asyncio.run(git_reset_state(ceph_repo_path))
         asyncio.run(git_branch_delete(ceph_repo_path, target_branch))
 
     def _apply_patches(
