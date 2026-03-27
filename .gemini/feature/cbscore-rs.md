@@ -25,10 +25,10 @@ The project will be structured as a multi-binary workspace:
 |---|---|---|
 | `cbscore.config` | `cbscore::config` | `serde` + `serde_yaml` for config management. |
 | `cbscore.utils.secrets` | `cbscore::secrets` | Vault integration (via `vaultrs`) and secret merging. |
-| `cbscore.utils.git` | `cbscore::tools::git` | Git binary wrapper using `tokio::process`. |
+| `cbscore.utils.git` | `cbscore::tools::git" | Git binary wrapper using `tokio::process`. |
 | `cbscore.utils.podman` | `cbscore::tools::podman` | Podman binary wrapper using `tokio::process`. |
-| `cbscore.utils.buildah` | `cbscore::tools::buildah` | Buildah binary wrapper using `tokio::process`. |
-| `cbscore.utils.s3` | `cbscore::s3` | S3 integration using `aws-sdk-s3`. |
+| `cbscore.utils.buildah" | `cbscore::tools::buildah` | Buildah binary wrapper using `tokio::process`. |
+| `cbscore.utils.s3" | `cbscore::s3` | S3 integration using `aws-sdk-s3`. |
 | `cbscore.builder` | `cbscore::builder` | Core build orchestration logic. |
 | `cbscore.releases` | `cbscore::releases` | Release descriptor models and S3 logic. |
 | `cbscore.versions` | `cbscore::versions` | Version descriptor models and creation logic. |
@@ -59,6 +59,7 @@ We will use a **Pure NO-FFI** approach for all external tools.
 - **Mechanism**: Use `tokio::process::Command` to invoke binaries.
 - **Handling Huge Output**: We will asynchronously stream `stdout`/`stderr` using `tokio::io::BufReader` to prevent memory exhaustion during large builds.
 - **Environment Management**: A internal `CommandExecutor` will handle complex environment states (e.g., `XDG_RUNTIME_DIR`, `STORAGE_DRIVER`) required for rootless Podman-in-Podman builds.
+  > cc: Question: How will binary paths for tools like `podman` or `buildah` be resolved? Will the `CommandExecutor` rely on the system `PATH`, or will the `Config` struct be extended to support explicit tool path overrides?
 
 ### 4.4 Output Analysis & Error Mapping
 - **Output Observers**: We will implement a `StreamParser` trait that analyzes the `stdout`/`stderr` streams in real-time.
@@ -84,9 +85,9 @@ We will implement and test two distinct approaches for the container entrypoint:
 
 1.  **Phase 1: Foundation (Models & Config)**: Implement `VersionDescriptor` and `Config` using `camino`. Evaluate schema validation.
 2.  **Phase 2: Utilities (Git, S3, Vault)**: Port utility wrappers with `testcontainers` verification.
-3.  **Phase 3: Builder Core & Python Bindings**: Port orchestration logic and `PyO3` bindings concurrently to support existing `cbsd` workers.
+3.  **Phase 3: Builder Core & Python Bindings**: Port orchestration logic and `PyO3" bindings concurrently to support existing `cbsd` workers.
 4.  **Phase 4: cbs-runner**: Implement specialized runner with signal forwarding.
-5.  **Phase 5: cbsbuild CLI**: Implement the `clap` CLI.
+5.  **Phase 5: cbsbuild CLI**: Implement the `clap" CLI.
 6.  **Phase 6: Container Integration**: Full build cycle verification using Podman.
 
 ## 8. Development & VCS Guidelines
@@ -106,7 +107,7 @@ Signed-off-by: <name> <email>
 
 - **Design Patterns**: Strict adherence to **SOLID**, **DRY**, and **KISS**.
 - **Multi-arch Ready**: We will implement an `Arch` enum from the start to resolve existing Python debt regarding hardcoded `x86_64` assumptions.
-- **Documentation**: Every public symbol MUST be documented with `///` and include an `# Examples` section with working doctests.
+- **Documentation**: Every public symbol MUST be documented with `///` and include an `# Examples` section with working code snippets (doctests) where applicable.
 - **Code Clarity**: Functions should generally not exceed **10-15 lines**.
 
 ## 10. Logging Strategy
@@ -117,13 +118,15 @@ We will use the **`tracing`** crate. Logging levels can be configured independen
 
 - **Worker Updates**: Remove `uv` and Python from images; replace with static `cbs-runner` binary.
 - **Binary Deployment**: Binaries will **not** be baked into the worker images. They will be mounted from the host path. The worker will abort immediately if the required binaries are missing.
+  > cc: Question: Given that binaries are mounted rather than baked, what is the strategy for provisioning the `cbs-runner` binary to the host filesystem? Will there be a bootstrap process or an external artifact pull?
 - **Compose Files**: Remove Python source mounts (`./cbscore`) from `podman-compose.cbs.yaml`.
 
 ## 12. Python Interoperability
 
 ### 12.1 Native Python Bindings (PyO3 & Maturin)
-To support existing projects like `crt` and `cbsd` workers, the `cbscore-python` package will provide a **drop-in replacement** for the current Python implementation.
+To support existing projects like `crt" and `cbsd` workers, the `cbscore-python` package will provide a **drop-in replacement** for the current Python implementation.
 - **Drop-in Parity**: The bindings will replicate the existing Python class hierarchy (`Builder`, `Runner`, `SecretsMgr`) and method signatures exactly.
+  > cc: Question: Python's `Builder` and `Runner` logic is heavily `async`. How will the `PyO3` bindings bridge the Tokio runtime with the Python `asyncio` loop to ensure Rust futures are awaitable in the `cbsd` worker?
 - **Workflow**: Maturin will generate wheels that can be installed via pip, replacing the current `cbscore` package.
 
 ### 12.2 CLI Wrapper
