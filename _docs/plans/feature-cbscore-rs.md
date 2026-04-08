@@ -23,25 +23,25 @@ cbscore/
 │   │       ├── lib.rs
 │   │       ├── errors.rs            # CbsError enum hierarchy (thiserror)
 │   │       ├── config.rs            # Config, PathsConfig, StorageConfig, etc. (serde)
+│   │       ├── versions.rs          # mod declarations for versions submodules
 │   │       ├── versions/
-│   │       │   ├── mod.rs
 │   │       │   ├── desc.rs          # VersionDescriptor, VersionImage, etc.
 │   │       │   ├── errors.rs        # VersionError variants
 │   │       │   └── utils.rs         # VersionType, parse_version, parse_component_refs
+│   │       ├── core.rs              # mod declarations for core submodules
 │   │       ├── core/
-│   │       │   ├── mod.rs
 │   │       │   └── component.rs     # CoreComponent, CoreComponentLoc, load_components
+│   │       ├── secrets.rs           # mod declarations for secrets submodules
 │   │       ├── secrets/
-│   │       │   ├── mod.rs
 │   │       │   └── models.rs        # All 16 secret types + 4 discriminated unions
+│   │       ├── releases.rs          # mod declarations for releases submodules
 │   │       ├── releases/
-│   │       │   ├── mod.rs
 │   │       │   └── desc.rs          # ArchType, BuildType, ReleaseDesc, etc.
+│   │       ├── containers.rs        # mod declarations for containers submodules
 │   │       ├── containers/
-│   │       │   ├── mod.rs
 │   │       │   └── desc.rs          # ContainerDescriptor, repos, scripts
+│   │       ├── images.rs            # mod declarations for images submodules
 │   │       └── images/
-│   │           ├── mod.rs
 │   │           ├── desc.rs          # ImageDescriptor
 │   │           └── errors.rs        # SkopeoError, ImageNotFoundError, etc.
 │   │
@@ -54,45 +54,45 @@ cbscore/
 │   │       ├── runner.rs            # runner(), gen_run_name(), stop()
 │   │       ├── vault.rs             # Vault trait + backends (reqwest)
 │   │       ├── s3.rs                # S3 operations (aws-sdk-s3)
+│   │       ├── secrets.rs           # mod declarations for secrets submodules
 │   │       ├── secrets/
-│   │       │   ├── mod.rs
 │   │       │   ├── mgr.rs           # SecretsMgr
 │   │       │   ├── git.rs           # SSH key setup, git_url_for
 │   │       │   ├── storage.rs       # S3 credential resolution
 │   │       │   ├── signing.rs       # GPG keyring creation
 │   │       │   ├── registry.rs      # Registry credential resolution
 │   │       │   └── utils.rs         # find_best_secret_candidate
+│   │       ├── utils.rs             # mod declarations for utils submodules
 │   │       ├── utils/
-│   │       │   ├── mod.rs
 │   │       │   ├── git.rs           # run_git, git_clone, git_checkout, etc.
 │   │       │   ├── podman.rs        # podman_run, podman_stop
 │   │       │   ├── buildah.rs       # BuildahContainer, buildah_new_container
 │   │       │   ├── containers.rs    # get_container_canonical_uri
 │   │       │   ├── paths.rs         # Script path resolution
 │   │       │   └── uris.rs          # matches_uri
+│   │       ├── builder.rs           # mod declarations for builder submodules
 │   │       ├── builder/
-│   │       │   ├── mod.rs
-│   │       │   ├── builder.rs       # Builder struct with run()
+│   │       │   ├── build.rs         # Builder struct with run()
 │   │       │   ├── prepare.rs       # prepare_builder, prepare_components
 │   │       │   ├── rpmbuild.rs      # build_rpms, ComponentBuild
 │   │       │   ├── signing.rs       # sign_rpms (GPG)
 │   │       │   └── upload.rs        # s3_upload_rpms
+│   │       ├── containers.rs        # mod declarations for containers submodules
 │   │       ├── containers/
-│   │       │   ├── mod.rs
 │   │       │   ├── build.rs         # ContainerBuilder
 │   │       │   ├── component.rs     # ComponentContainer
 │   │       │   └── repos.rs         # File/URL/COPR repository impls
+│   │       ├── images.rs            # mod declarations for images submodules
 │   │       ├── images/
-│   │       │   ├── mod.rs
 │   │       │   ├── skopeo.rs        # skopeo_get_tags, _copy, _inspect, _image_exists
 │   │       │   ├── signing.rs       # cosign signing
 │   │       │   └── sync.rs          # Image sync
+│   │       ├── releases.rs          # mod declarations for releases submodules
 │   │       ├── releases/
-│   │       │   ├── mod.rs
 │   │       │   ├── s3.rs            # check_release_exists, release_desc_upload, etc.
 │   │       │   └── utils.rs         # get_component_release_rpm
+│   │       ├── versions.rs          # mod declarations for versions submodules
 │   │       └── versions/
-│   │           ├── mod.rs
 │   │           └── create.rs        # version_create_helper
 │   │
 │   ├── cbscore-python/              # PyO3 bindings — thin wrapper
@@ -117,23 +117,23 @@ cbscore/
 │               ├── config.rs        # config init, config init-vault (dialoguer)
 │               └── advanced.rs      # Placeholder
 │
-└── src/cbscore/                     # Python shim package (thin re-exports)
-    ├── __init__.py
-    ├── _exceptions.py               # Pure Python exception hierarchy
-    ├── errors.py                    # from ._exceptions import *
-    ├── config.py                    # Delegates to _cbscore
-    ├── logger.py                    # Pure Python (logging.getLogger)
-    ├── runner.py                    # Async shim wrapping Rust runner
-    ├── __main__.py                  # CLI entry (delegates to cbsbuild binary or stays Click during transition)
+└── src/cbscore/                     # Python package (transitional shims → removed in Phase 11)
+    ├── __init__.py                  # Re-exports from _cbscore
+    ├── _exceptions.py               # Python exception hierarchy (used by PyO3 error mapping)
+    ├── errors.py                    # Re-exports from _exceptions
+    ├── config.py                    # Re-exports from _cbscore
+    ├── logger.py                    # Re-exports from _cbscore
+    ├── runner.py                    # Async bridge wrapping Rust runner
+    ├── __main__.py                  # CLI entry (transitional, replaced by cbsbuild binary)
     ├── versions/
     │   ├── __init__.py
-    │   ├── utils.py                 # VersionType StrEnum + delegates to _cbscore
-    │   ├── desc.py                  # Pydantic VersionDescriptor wrapping Rust
-    │   ├── create.py                # Delegates to _cbscore
-    │   └── errors.py                # from .._exceptions import VersionError
+    │   ├── utils.py                 # Re-exports from _cbscore
+    │   ├── desc.py                  # Re-exports from _cbscore
+    │   ├── create.py                # Re-exports from _cbscore
+    │   └── errors.py                # Re-exports from _exceptions
     └── core/
         ├── __init__.py
-        └── component.py             # Delegates to _cbscore
+        └── component.py             # Re-exports from _cbscore
 ```
 
 ### Crate dependency graph
@@ -141,7 +141,7 @@ cbscore/
 ```
 cbscore-types  (serde, thiserror, regex, strum — zero async)
     ↑
-cbscore-lib    (cbscore-types, tokio, aws-sdk-s3, reqwest, tracing)
+cbscore-lib    (cbscore-types, tokio, aws-sdk-s3, vaultrs, tracing)
     ↑
     ├── cbsbuild        (cbscore-lib, cbscore-types, clap, dialoguer, anyhow)
     └── cbscore-python  (cbscore-lib, cbscore-types, pyo3, pyo3-async-runtimes, pyo3-log)
@@ -178,6 +178,7 @@ pyo3-log = "0.12"
 aws-config = "1"
 aws-sdk-s3 = "1"
 reqwest = { version = "0.12", features = ["json"] }
+vaultrs = "0.7"
 rand = "0.9"
 tempfile = "3"
 ```
@@ -245,7 +246,7 @@ Uses `tokio::process::Command` with `BufReader` on stdout/stderr for streaming. 
 
 ### Vault client
 
-Thin `reqwest`-based implementation (only 3 endpoints used: AppRole login, UserPass login, KVv2 read). No need for the full `vaultrs` crate.
+Use the `vaultrs` crate for full Vault client support. Although only 3 endpoints are currently needed (AppRole login, UserPass login, KVv2 read), using the established crate provides better API coverage for future needs and avoids maintaining a custom HTTP client.
 
 ### S3 client
 
@@ -286,33 +287,55 @@ fn map_error_to_pyerr(err: CbsError) -> PyErr {
 
 ### Types consumed as Pydantic fields
 
-`VersionDescriptor` is embedded in `cbsd`'s `WorkerBuildEntry(pydantic.BaseModel)` and serialized via `model_dump_json()`. Two options:
+`VersionDescriptor` is embedded in `cbsd`'s `WorkerBuildEntry(pydantic.BaseModel)` and serialized via `model_dump_json()`. Since the goal is to eliminate all Python code eventually, all types must be pure `#[pyclass]` in Rust.
 
-- **Option A**: Keep `VersionDescriptor` as a Pydantic model in `versions/desc.py`, delegate `read()`/`write()` to Rust.
-- **Option B**: Implement `__get_pydantic_core_schema__` on the `#[pyclass]`.
+**Strategy**: Implement `__get_pydantic_core_schema__` on `#[pyclass]` types that are used as Pydantic fields. This tells Pydantic how to validate and serialize the Rust-backed type without requiring Python inheritance from `BaseModel`.
 
-**Use Option A** for `VersionDescriptor` (used as Pydantic field). Use pure `#[pyclass]` for types not embedded in Pydantic models (`Config`, `CoreComponentLoc`).
+```rust
+#[pymethods]
+impl PyVersionDescriptor {
+    #[classmethod]
+    fn __get_pydantic_core_schema__(
+        _cls: &Bound<'_, PyType>,
+        _source_type: &Bound<'_, PyAny>,
+        _handler: &Bound<'_, PyAny>,
+    ) -> PyResult<PyObject> {
+        // Return a pydantic_core schema:
+        // - validate from JSON: call cls.model_validate_json()
+        // - validate from dict: construct from fields
+        // - serialize: call .model_dump_json()
+    }
+}
+```
+
+This applies to `VersionDescriptor` (used in `WorkerBuildEntry`). All other types (`Config`, `CoreComponentLoc`, etc.) use plain `#[pyclass]` with getters since they are not embedded in Pydantic models.
 
 ### Async runner bridge
 
 The `runner()` function is the critical async boundary. `cbsd` calls it via `await runner(...)` from its own asyncio event loop.
 
-Strategy: **simplified sync callback** for initial implementation:
+Two approaches were evaluated for the log streaming callback:
 
-```python
-# cbscore/runner.py (Python shim)
-import asyncio
-from cbscore._cbscore import rust_runner, gen_run_name, stop
+**Option 1: Sync callback bridge**
+| Pros | Cons |
+|------|------|
+| Simple implementation (~10 lines) | Blocks tokio thread while Python callback runs |
+| No extra crate dependency | GIL contention via `run_coroutine_threadsafe` |
+| Easy to debug | Not truly non-blocking |
+| Works with any event loop impl | Throttles build output if callback is slow |
 
-async def runner(desc_file_path, cbscore_path, config, *, log_out_cb=None, **kwargs):
-    loop = asyncio.get_running_loop()
-    def sync_cb(msg: str) -> None:
-        if log_out_cb:
-            future = asyncio.run_coroutine_threadsafe(log_out_cb(msg), loop)
-            future.result()
-    await rust_runner(desc_file_path, cbscore_path, config,
-                      log_out_cb=sync_cb if log_out_cb else None, **kwargs)
-```
+**Option 2: Full async bridge (pyo3-async-runtimes)**
+| Pros | Cons |
+|------|------|
+| True non-blocking end-to-end | Must match pyo3 version exactly |
+| No tokio thread blocking | Complex tokio ↔ asyncio interaction |
+| Better throughput at high log volume | Risk of deadlock with unclear loop ownership |
+| Future-proof for complex async | cbsd's per-thread event loop needs verification |
+
+**Decision: TBD** — to be finalized during Phase 9 implementation based on testing. Both approaches will be prototyped. The callback is only used for log streaming (~1 line/sec with bursts), so sync blocking is negligible in practice.
+CC: use Option 2. We need to be non blocking.
+
+Regardless of callback approach, the runner itself uses `pyo3-async-runtimes::tokio::future_into_py` to return a Python awaitable:
 
 ```rust
 // cbscore-python/src/runner.rs
@@ -324,6 +347,12 @@ fn rust_runner<'py>(py: Python<'py>, /* params */) -> PyResult<Bound<'py, PyAny>
     })
 }
 ```
+
+### CLI binary installation
+
+The `cbsbuild` binary is available via two paths:
+- **Dev workflow**: Maturin bundles the binary in the Python wheel. Available after `uv sync` / `maturin develop`.
+- **Production/standalone**: Built separately via `cargo build --release -p cbsbuild`. Decoupled from Python, deployable independently.
 
 ### Maturin pyproject.toml
 
@@ -343,6 +372,8 @@ manifest-path = "rust/cbscore-python/Cargo.toml"
 module-name = "cbscore._cbscore"
 python-source = "src"
 features = ["pyo3/extension-module"]
+# Include cbsbuild binary in the wheel
+bindings = "pyo3"
 ```
 
 ---
@@ -357,7 +388,19 @@ features = ["pyo3/extension-module"]
 - Verify `maturin develop` + `uv sync --all-packages` work together
 - Verify existing Python code still works unchanged
 
-**Test**: `python -c "from cbscore._cbscore import version; print(version())"`
+**Test**:
+- `python -c "from cbscore._cbscore import version; print(version())"`
+- Baseline smoke tests for all subcommands (capture and snapshot outputs to detect regressions):
+  - `cbsbuild --help`
+  - `cbsbuild build --help`
+  - `cbsbuild runner build --help`
+  - `cbsbuild versions --help`
+  - `cbsbuild versions create --help`
+  - `cbsbuild versions list --help`
+  - `cbsbuild config --help`
+  - `cbsbuild config init --help`
+  - `cbsbuild config init-vault --help`
+- These help-output snapshots serve as regression anchors for all subsequent phases
 
 ### Phase 1: Errors + Logging (S)
 
@@ -374,10 +417,15 @@ features = ["pyo3/extension-module"]
 - `cbscore-types/src/versions/`: `VersionType`, `parse_version()`, `normalize_version()`, `get_version_type()`, `parse_component_refs()`, `VersionDescriptor` + sub-types with serde JSON
 - `cbscore-types/src/core/component.rs`: `CoreComponent`, `CoreComponentLoc`, `load_components()` with serde YAML
 - `cbscore-lib/src/versions/create.rs`: `version_create_helper()`
-- PyO3 bindings for all above
-- Python shims for `versions/utils.py` (VersionType stays as Python StrEnum, delegates funcs to Rust), `versions/desc.py` (Pydantic wrapper), `core/component.py`
+- PyO3 bindings for all above — pure `#[pyclass]` types, `VersionType` as PyO3 enum with string conversion, `VersionDescriptor` with `__get_pydantic_core_schema__` for cbsd compatibility
 
-**Test**: Port ~30 inline tests from Python `versions/utils.py`; JSON round-trip for VersionDescriptor; `load_components()` against fixture dirs; verify `cbsdcore`, `cbc`, `cbsd` imports still work.
+**Test**:
+- Port ~30 inline tests from Python `versions/utils.py` to Rust `#[test]`
+- JSON round-trip for VersionDescriptor
+- `load_components()` against fixture dirs
+- PyO3: `from cbscore._cbscore import VersionType, parse_component_refs, VersionDescriptor`
+- Verify `cbsdcore`, `cbc`, `cbsd` imports still work
+- Re-run baseline subcommand help tests from Phase 0
 
 ### Phase 3: Configuration System (M)
 
@@ -398,10 +446,10 @@ features = ["pyo3/extension-module"]
 
 ### Phase 5: Vault + Secure Args (M)
 
-- `cbscore-lib/src/vault.rs`: `Vault` trait, AppRole/UserPass/Token backends via `reqwest`
+- `cbscore-lib/src/vault.rs`: `Vault` trait, AppRole/UserPass/Token backends via `vaultrs` crate
 - `cbscore-lib/src/cmd.rs` (partial): `CmdArg`, `SecureArg`, sanitize, `run_cmd()` (sync)
 
-**Test**: SecureArg display masking; sanitize_cmd behavior; Vault integration test (mock or testcontainers).
+**Test**: SecureArg display masking; sanitize_cmd behavior; Vault integration test (dev Vault container).
 
 ### Phase 6: Async Command Executor + Secrets Manager (L)
 
@@ -424,7 +472,7 @@ Can split into 4 independent tracks:
 
 Also: `utils/containers.rs`, `utils/paths.rs`
 
-**Test**: Git with temp repos; S3 with MinIO/LocalStack; Podman/Buildah/Skopeo as integration-only.
+**Test**: Git with temp repos; S3 with Ceph RGW (S3-compatible); Podman/Buildah/Skopeo as integration-only.
 
 ### Phase 8: Releases + Builder Pipeline (XL)
 
@@ -457,10 +505,13 @@ Also: `utils/containers.rs`, `utils/paths.rs`
 
 ### Phase 11: Python Shim Cleanup (M)
 
-- Replace all Python source files with thin shims delegating to `_cbscore`
+- Replace all Python implementation files with thin re-export shims delegating to `_cbscore`
+- `_exceptions.py` remains as the exception hierarchy definition (used by PyO3 error mapping)
 - Remove now-unused Python dependencies (`aioboto3`, `aiofiles`, `hvac`, `click`)
 - Verify all `cbsd`/`cbsdcore`/`cbc` tests pass
-- Remove old Python implementation files
+- Re-run all baseline subcommand help tests
+
+Note: Full elimination of Python code (including `_exceptions.py` and shims) is out of scope for this plan.
 
 ---
 
@@ -485,8 +536,8 @@ Phase 0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 (parallel tracks) → 8 → 9 
 | PyO3 async bridge for `runner()` | High | Use simplified sync callback wrapper in Python shim; test the bridge in Phase 0 with a minimal async function |
 | Secret discriminated unions (multi-field dispatch) | Medium | Custom `Deserialize` via `serde_json::Value` intermediary; comprehensive round-trip tests |
 | Maturin + uv workspace coexistence | Medium | Validate in Phase 0 before any real code; `maturin develop` must work alongside `uv sync` |
-| `VersionDescriptor` as Pydantic field in `cbsd` | Medium | Keep as Python Pydantic model wrapping Rust; delegate `read()`/`write()` to Rust |
-| `aioboto3` → `aws-sdk-s3` API differences | Medium | Focus on the 6 operations used; test with MinIO |
+| `VersionDescriptor` as Pydantic field in `cbsd` | Medium | Implement `__get_pydantic_core_schema__` on `#[pyclass]` so Pydantic can validate/serialize the Rust type natively |
+| `aioboto3` → `aws-sdk-s3` API differences | Medium | Focus on the 6 operations used; test with Ceph RGW |
 | `WorkerBuilder` creates its own asyncio event loop | Medium | `pyo3-async-runtimes::tokio::future_into_py` captures the running loop; verify with a test that mimics `cbsd`'s pattern |
 
 ---
@@ -507,6 +558,6 @@ Phase 0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 (parallel tracks) → 8 → 9 
 
 ### Integration tests (require tools)
 - Git operations: temp repos
-- S3: MinIO container
+- S3: Ceph RGW container (S3-compatible gateway — native choice for a Ceph build system)
 - Vault: dev Vault container
 - Podman/Buildah/Skopeo: CI with tools installed
