@@ -332,8 +332,7 @@ Two approaches were evaluated for the log streaming callback:
 | Better throughput at high log volume | Risk of deadlock with unclear loop ownership |
 | Future-proof for complex async | cbsd's per-thread event loop needs verification |
 
-**Decision: TBD** — to be finalized during Phase 9 implementation based on testing. Both approaches will be prototyped. The callback is only used for log streaming (~1 line/sec with bursts), so sync blocking is negligible in practice.
-CC: use Option 2. We need to be non blocking.
+**Decision: Option 2 (full async bridge)**. Non-blocking is required. Use `pyo3-async-runtimes` with tokio feature for true async end-to-end. The cbsd per-thread event loop compatibility must be validated early in Phase 9.
 
 Regardless of callback approach, the runner itself uses `pyo3-async-runtimes::tokio::future_into_py` to return a Python awaitable:
 
