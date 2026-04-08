@@ -478,9 +478,12 @@ Also: `utils/containers.rs`, `utils/paths.rs`
 - `releases/desc.rs`: Release descriptor types (already in cbscore-types from Phase 4 area, but S3 operations here)
 - `releases/s3.rs`: `check_release_exists`, `release_desc_upload`, `release_upload_components`, `check_released_components`, `list_releases`
 - `builder/`: `Builder.run()`, `prepare_builder()`, `prepare_components()`, `build_rpms()`, `sign_rpms()`, `s3_upload_rpms()`
-// CC: This pipeline must implement "State Checkpointing" (KISS approach: check 
-// for existing artifacts in scratch/S3 before starting a stage) to allow 
-// resume-on-failure.
+- **State Checkpointing**: The builder pipeline must check for existing artifacts (in scratch dir and S3) before starting each stage, allowing resume-on-failure. This follows the KISS approach — no external state store, just check if the output of a stage already exists before running it. Stages to checkpoint:
+  - Component source checkout (scratch dir exists with correct SHA?)
+  - RPM build (RPMs already in scratch/rpms/?)
+  - RPM signing (signed RPMs present?)
+  - S3 upload (artifacts already in S3 bucket?)
+  - Container image (already in registry? — this already exists in the Python code via `skopeo_image_exists`)
 - Parallel RPM builds via `tokio::task::JoinSet`
 
 **Test**: Release descriptor JSON round-trip; builder integration tests.
@@ -491,6 +494,9 @@ Also: `utils/containers.rs`, `utils/paths.rs`
 - `containers/component.rs`: `ComponentContainer` with PRE/POST/CONFIG
 - `containers/repos.rs`: File/URL/COPR repository types
 - `runner.rs`: `runner()`, `gen_run_name()`, `stop()`
+// CC: Verify that cbscore-entrypoint.sh correctly installs the Rust-backed 
+// wheel inside the container and that the `cbsbuild` binary is available 
+// for the recursive `runner build` call.
 - **Critical**: PyO3 async binding for `runner()` using `pyo3-async-runtimes`
 
 **Test**: Container descriptor YAML loading; runner integration test with Podman.
@@ -563,3 +569,4 @@ Phase 0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 (parallel tracks) → 8 → 9 
 - S3: Ceph RGW container (S3-compatible gateway — native choice for a Ceph build system)
 - Vault: dev Vault container
 - Podman/Buildah/Skopeo: CI with tools installed
+alled
