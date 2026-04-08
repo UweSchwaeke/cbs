@@ -478,6 +478,9 @@ Also: `utils/containers.rs`, `utils/paths.rs`
 - `releases/desc.rs`: Release descriptor types (already in cbscore-types from Phase 4 area, but S3 operations here)
 - `releases/s3.rs`: `check_release_exists`, `release_desc_upload`, `release_upload_components`, `check_released_components`, `list_releases`
 - `builder/`: `Builder.run()`, `prepare_builder()`, `prepare_components()`, `build_rpms()`, `sign_rpms()`, `s3_upload_rpms()`
+// CC: This pipeline must implement "State Checkpointing" (KISS approach: check 
+// for existing artifacts in scratch/S3 before starting a stage) to allow 
+// resume-on-failure.
 - Parallel RPM builds via `tokio::task::JoinSet`
 
 **Test**: Release descriptor JSON round-trip; builder integration tests.
