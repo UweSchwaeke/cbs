@@ -494,9 +494,7 @@ Also: `utils/containers.rs`, `utils/paths.rs`
 - `containers/component.rs`: `ComponentContainer` with PRE/POST/CONFIG
 - `containers/repos.rs`: File/URL/COPR repository types
 - `runner.rs`: `runner()`, `gen_run_name()`, `stop()`
-// CC: Verify that cbscore-entrypoint.sh correctly installs the Rust-backed 
-// wheel inside the container and that the `cbsbuild` binary is available 
-// for the recursive `runner build` call.
+- **Entrypoint verification**: Verify that `cbscore-entrypoint.sh` correctly installs the Rust-backed wheel inside the Podman container and that the `cbsbuild` binary is available on `PATH` for the recursive `cbsbuild runner build` call. This may require updating the entrypoint script to use `maturin` or `pip install` for the wheel instead of `uv tool install .`.
 - **Critical**: PyO3 async binding for `runner()` using `pyo3-async-runtimes`
 
 **Test**: Container descriptor YAML loading; runner integration test with Podman.
