@@ -197,6 +197,7 @@ sequenceDiagram
         end
     end
 
+    CLI->>CLI: Canonicalize all paths to absolute
     CLI->>User: Preview config as YAML
     CLI->>User: Write config to '<path>'?
     alt User confirms
@@ -486,6 +487,26 @@ pub fn handle_config_init(
     )
 }
 ```
+
+### Path canonicalization
+
+All paths collected interactively must be canonicalized to absolute paths before assembling the `Config` struct. This ensures the YAML output contains unambiguous, absolute paths regardless of how the user typed them (relative, with `~`, with `..`, etc.).
+
+```rust
+/// Canonicalize a path: resolve to absolute. Use std::fs::canonicalize
+/// for existing paths, or join with cwd and normalize for non-existing ones.
+fn resolve_path(path: &Path, cwd: &Path) -> PathBuf {
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        cwd.join(path)
+    }
+}
+```
+
+Apply to: all `PathsConfig` fields (components, scratch, scratch_containers, ccache), secrets paths, vault config path, and the output config path itself.
+
+Note: The Python code already calls `.resolve()` on interactively prompted paths. The shortcut flags use absolute paths (`/cbs/...`) so they don't need resolution.
 
 ### Config preview and write
 
