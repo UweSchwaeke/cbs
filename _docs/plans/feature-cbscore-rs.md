@@ -232,7 +232,7 @@ Trailers are managed by tooling, not hardcoded in the message:
 **Rules:**
 
 - **Scope**: Use the crate or module name (`cbscore`, `cbscore/builder`, `cbscore-types`, `cbsbuild`, `cbscore-python`)
-- **Subject**: Lowercase imperative, under 60 characters (e.g., `add serde rename for ref keyword`, `fix tls-verify flag parsing`). The subject says *what* changed — it should be self-explanatory from the diff.
+- **Subject**: Lowercase imperative, max 72 characters including the scope prefix (e.g., `add serde rename for ref keyword`, `fix tls-verify flag parsing`). The subject says *what* changed — it should be self-explanatory from the diff.
 - **Body**: Explain *why* the change was made. 1-3 lines. Omit for trivial changes where the subject is sufficient.
 - **One logical change per commit**: Don't mix unrelated changes. A single function fix is one commit. A new module is one commit. Refactoring + feature is two commits.
 - **DCO required**: Always use `git commit -s` for the `Signed-off-by` line
