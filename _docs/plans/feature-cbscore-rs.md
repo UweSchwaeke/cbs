@@ -325,7 +325,7 @@ pub enum CbsError {
 
 ### Config models (serde)
 
-Use `#[serde(alias = "...")]` for Python field aliases (e.g., `scratch-containers`). `Config::load()` and `Config::store()` use synchronous `std::fs` in `cbscore-types` since config I/O is simple file read/write.
+Use `#[serde(rename_all = "kebab-case")]` on config structs to match the hyphenated YAML keys from the Python implementation (e.g., `scratch_containers` ↔ `scratch-containers`, `vault_addr` ↔ `vault-addr`). For fields where the kebab-case convention doesn't apply, use explicit `#[serde(alias = "...")]` or `#[serde(rename = "...")]`. `Config::load()` and `Config::store()` use synchronous `std::fs` in `cbscore-types` since config I/O is simple file read/write.
 
 ### Secret discriminated unions
 

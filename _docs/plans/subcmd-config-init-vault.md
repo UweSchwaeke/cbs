@@ -363,7 +363,7 @@ This is the same pattern as the Python code where `config_init_vault()` is a sta
 
 ### Dependencies
 
-- **Phase 3** (Configuration System) must be complete — `VaultConfig`, `VaultUserPassConfig`, `VaultAppRoleConfig` structs with `store()` method
+- **Phase 3** (Configuration System) must be complete — `VaultConfig`, `VaultUserPassConfig`, `VaultAppRoleConfig` structs with `store()` method. These structs must use `#[serde(rename_all = "kebab-case")]` to match the hyphenated YAML keys from the Python implementation (`vault-addr`, `auth-user`, `auth-approle`, `auth-token`, `role-id`, `secret-id`).
 - `dialoguer` crate for interactive prompts
 - `resolve_path()` helper (located in `rust/cbsbuild/src/cmds/utils.rs`)
 
