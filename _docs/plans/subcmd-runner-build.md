@@ -383,6 +383,9 @@ impl Builder {
     }
 
     /// Install build dependencies (dnf update/install).
+    ///
+    /// This includes installing `cosign` from a GitHub release RPM,
+    /// as it is not available in standard Rocky Linux repositories.
     async fn prepare(&self) -> Result<(), BuilderError> { ... }
 
     /// Check if the target image already exists in the registry.
