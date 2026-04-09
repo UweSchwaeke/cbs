@@ -166,6 +166,7 @@ serde_json = "1"
 serde_yaml = "0.9"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+dirs = "6"
 regex = "1"
 strum = { version = "0.26", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
@@ -186,6 +187,16 @@ tempfile = "3"
 ---
 
 ## 2. Key Design Decisions
+
+### Documentation
+
+All public functions, structs, enums, traits, and methods must have `///` doc comments. This is enforced via `#![warn(missing_docs)]` at the crate level for all four crates. Doc comments should describe:
+- **What** the item does (not how — the code shows that)
+- **Parameters** and return values for non-obvious signatures
+- **Errors** — which error variants can be returned
+- **Panics** — if the function can panic, document when
+
+Private functions should have doc comments when the intent is not self-evident from the name and signature.
 
 ### Error hierarchy
 
@@ -501,13 +512,15 @@ Also: `utils/containers.rs`, `utils/paths.rs`
 
 ### Phase 10: CLI with Clap (M)
 
-- `cbsbuild/src/main.rs`: Clap command tree
-- `cmds/builds.rs`: `build` (launches runner), `runner build` (runs Builder)
+- `cbsbuild/src/main.rs`: Clap command tree with `#[tokio::main]`
+- `cmds/builds.rs`: `build`, `runner build`
 - `cmds/versions.rs`: `versions create`, `versions list`
-- `cmds/config.rs`: `config init`, `config init-vault` (interactive prompts via `dialoguer`)
+- `cmds/config.rs`: `config init`, `config init-vault`
 - `cmds/advanced.rs`: empty placeholder
 
-**Test**: CLI help output; `cbsbuild versions create` with fixtures.
+Each subcommand has a detailed plan with description, sequence diagram, class diagram, and implementation specifics. See [Subcommand Detail Plans](#subcommand-detail-plans) below.
+
+**Test**: CLI help output snapshots; `cbsbuild versions create` with fixtures; re-run all baseline tests.
 
 ### Phase 11: Python Shim Cleanup (M)
 
@@ -567,4 +580,19 @@ Phase 0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 (parallel tracks) → 8 → 9 
 - S3: Ceph RGW container (S3-compatible gateway — native choice for a Ceph build system)
 - Vault: dev Vault container
 - Podman/Buildah/Skopeo: CI with tools installed
-alled
+
+---
+
+## 8. Subcommand Detail Plans
+
+Each subcommand has its own detailed document with: description, CLI signature, mermaid sequence diagram, class diagram, Rust implementation plan, and tests.
+
+| Subcommand | Detail Plan | Status |
+|------------|-------------|--------|
+| `config init` | [subcmd-config-init.md](subcmd-config-init.md) | Done |
+| `config init-vault` | subcmd-config-init-vault.md | Pending |
+| `versions create` | subcmd-versions-create.md | Pending |
+| `versions list` | subcmd-versions-list.md | Pending |
+| `build` | subcmd-build.md | Pending |
+| `runner build` | subcmd-runner-build.md | Pending |
+| `advanced` | — | Empty placeholder, no detail plan needed |

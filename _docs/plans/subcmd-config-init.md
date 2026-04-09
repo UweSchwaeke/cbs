@@ -197,7 +197,7 @@ sequenceDiagram
         end
     end
 
-    CLI->>CLI: Canonicalize all paths to absolute
+    CLI->>CLI: Canonicalize all paths to absolute (after shortcut pre-fills, before serialization)
     CLI->>User: Preview config as YAML
     CLI->>User: Write config to '<path>'?
     alt User confirms
