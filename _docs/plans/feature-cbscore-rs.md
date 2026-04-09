@@ -170,6 +170,7 @@ dirs = "6"
 regex = "1"
 strum = { version = "0.26", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
+tokio-util = "0.7"
 clap = { version = "4", features = ["derive"] }
 dialoguer = "0.11"
 anyhow = "1"

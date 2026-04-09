@@ -446,21 +446,47 @@ fn build_podman_args(
 
 ### Graceful shutdown (Ctrl+C)
 
-The Python code catches `KeyboardInterrupt`, cancels the task, and waits for cleanup. In Rust with tokio:
+The Python code catches `KeyboardInterrupt` in `cmd_build`, cancels the asyncio task, and waits for cleanup. The Rust design must handle the fact that `runner()` is a shared library function called by both the CLI (`handle_build`) and the daemon (`cbsd`'s `WorkerBuilder`) — each caller needs different cancellation behavior.
+
+**Approach**: `runner()` accepts a `tokio_util::sync::CancellationToken`. Internally, `runner()` monitors the token alongside `podman_run()` via `tokio::select!`. When cancelled, it stops the container and cleans up. Each caller controls cancellation differently:
 
 ```rust
+// In runner() — monitors token alongside podman_run
 tokio::select! {
     result = podman_run(/* ... */) => {
-        // Normal completion
         result?;
     }
-    _ = tokio::signal::ctrl_c() => {
-        tracing::info!("received interrupt, cancelling build...");
+    _ = cancel_token.cancelled() => {
+        tracing::info!("build cancelled, stopping container...");
         podman_stop(Some(&container_name), 1).await?;
-        tracing::info!("task successfully cancelled");
+        tracing::info!("container stopped");
+        return Err(RunnerError::Cancelled);
     }
 }
 ```
+
+```rust
+// In handle_build() — CLI wires Ctrl+C to the token
+let cancel_token = CancellationToken::new();
+let token_clone = cancel_token.clone();
+
+tokio::spawn(async move {
+    let _ = tokio::signal::ctrl_c().await;
+    tracing::info!("received interrupt, cancelling build...");
+    token_clone.cancel();
+});
+
+runner(/* ..., */ cancel_token).await?;
+```
+
+```rust
+// In cbsd's WorkerBuilder — daemon wires its own shutdown signal
+let cancel_token = CancellationToken::new();
+// Store token_clone for WorkerBuilder.shutdown() to call .cancel()
+runner(/* ..., */ cancel_token).await?;
+```
+
+The `RunnerOpts` struct gains a `cancel_token: CancellationToken` field. Add `tokio-util` to workspace dependencies.
 
 ### Temp file cleanup
 
