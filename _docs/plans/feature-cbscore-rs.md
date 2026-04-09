@@ -353,7 +353,7 @@ fn init_logging(debug: bool) {
     tracing_subscriber::fmt()
         .with_env_filter(filter)
         .with_target(true)
-        .with_span_events(FmtSpan::CLOSE)  // Emit log line on span close with duration
+        .with_span_events(FmtSpan::NEW | FmtSpan::CLOSE)  // Emit log line on span entry and close (with duration)
         .init();
 }
 ```
@@ -398,7 +398,7 @@ How it works:
 - `#[instrument]` wraps the function body in a `tracing::Span`
 - All log events emitted inside the function carry the span's context (function name + arguments) automatically
 - For async functions, the span is correctly attached across `.await` points
-- **Important**: The subscriber must be configured with `FmtSpan::CLOSE` (see `init_logging` above) to emit a log line when the span closes (function exit) with `time.busy` and `time.idle` duration fields. Without this, `#[instrument]` provides nested context but no discrete entry/exit log lines.
+- **Important**: The subscriber must be configured with `FmtSpan::NEW | FmtSpan::CLOSE` (see `init_logging` above) to emit log lines on span creation (function entry) and span close (function exit with `time.busy` and `time.idle` duration fields). Without this, `#[instrument]` provides nested context but no discrete entry/exit log lines.
 
 ```rust
 use tracing::instrument;
