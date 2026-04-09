@@ -228,7 +228,7 @@ classDiagram
     VersionsCmd --> VersionsCreateArgs : Create variant
 
     note for VersionDescriptor "Serialized to JSON via serde\nField names match Python (snake_case)\nField order in struct declaration must match Python output\nfor consistent, human-reviewable JSON\nUsed as Pydantic field in cbsd's WorkerBuildEntry"
-    note for VersionType "Maps to Python StrEnum\nUsed for output directory name and title generation"
+    note for VersionType "Maps to Python StrEnum\nMust serialize to lowercase via #[serde(rename_all = lowercase)]\nUsed directly for output directory naming and title generation"
     note for CoreComponentLoc "Loaded from cbs.component.yaml\nValidates that requested components exist"
     note for VersionsCreateArgs "Clap derive struct\nMaps CLI options to fields"
 ```
