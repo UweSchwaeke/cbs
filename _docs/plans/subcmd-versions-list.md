@@ -322,6 +322,9 @@ Located in `cbscore-lib/src/releases/s3.rs`. This is async — it performs S3 ne
 /// Fetches all .json files from the releases bucket location,
 /// parses each as a ReleaseDesc, and returns a map of version → descriptor.
 /// Malformed entries are logged and skipped (not fatal).
+///
+/// Uses `tokio::task::JoinSet` to download and parse JSON descriptors
+/// in parallel, improving performance over the sequential Python implementation.
 pub async fn list_releases(
     secrets: &SecretsMgr,
     url: &str,
