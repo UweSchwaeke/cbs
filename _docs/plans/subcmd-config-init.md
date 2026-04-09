@@ -518,7 +518,7 @@ The Python code does `json.loads(config.model_dump_json())` then `yaml.safe_dump
 /// Render a Config as a YAML preview string.
 fn config_to_yaml_preview(config: &Config) -> anyhow::Result<String> {
     let json_value = serde_json::to_value(config)?;
-    Ok(serde_yaml::to_string(&json_value)?)
+    Ok(serde_yml::to_string(&json_value)?)
 }
 
 /// Show YAML preview and ask for write confirmation.
@@ -550,7 +550,7 @@ fn write_config(config: &Config, path: &Path) -> anyhow::Result<()> {
 
 - **Phase 3** (Configuration System) must be complete — `Config`, `PathsConfig`, `StorageConfig`, `SigningConfig`, `VaultConfig` structs with `store()` method
 - `dialoguer` crate for interactive prompts
-- `serde_yaml` for YAML preview and serialization
+- `serde_yml` for YAML preview and serialization
 - `dirs` crate for `home_dir()` (systemd install path)
 - `resolve_path()` helper (located in `rust/cbsbuild/src/cmds/utils.rs`)
 
