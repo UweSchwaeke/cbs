@@ -176,7 +176,7 @@ classDiagram
     class VersionComponent {
         +String name
         +String repo
-        +String ref_
+        +String ref  (Rust field: r#ref or ref_ with serde rename)
     }
 
     VersionDescriptor *-- VersionSignedOffBy
@@ -227,7 +227,7 @@ classDiagram
 
     VersionsCmd --> VersionsCreateArgs : Create variant
 
-    note for VersionDescriptor "Serialized to JSON via serde\nField names match Python (snake_case)\nField order in struct declaration must match Python output\nfor consistent, human-reviewable JSON\nUsed as Pydantic field in cbsd's WorkerBuildEntry"
+    note for VersionDescriptor "Serialized to JSON via serde\nField names match Python (snake_case)\nField order in struct declaration must match Python output\nfor consistent, human-reviewable JSON\nUsed as Pydantic field in cbsd's WorkerBuildEntry\nVersionComponent.ref must use #[serde(rename = 'ref')]\nbecause 'ref' is a Rust keyword (use r#ref or ref_ as field name)"
     note for VersionType "Maps to Python StrEnum\nMust serialize to lowercase via #[serde(rename_all = lowercase)]\nUsed directly for output directory naming and title generation"
     note for CoreComponentLoc "Loaded from cbs.component.yaml\nValidates that requested components exist"
     note for VersionsCreateArgs "Clap derive struct\nMaps CLI options to fields"
