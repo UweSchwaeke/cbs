@@ -210,6 +210,58 @@ Patterns to follow:
 
 This keeps code readable, testable, and aligned with the Single Responsibility Principle.
 
+### Compiler strictness
+
+Warnings must be treated as errors. All crates must enable maximum lint strictness at the crate root:
+
+```rust
+#![deny(warnings)]
+#![deny(clippy::all)]
+#![warn(clippy::pedantic)]
+#![warn(clippy::nursery)]
+#![warn(missing_docs)]
+#![deny(unsafe_code)]
+```
+
+If a specific warning cannot be addressed, it must be suppressed with `#[allow(...)]` at the narrowest possible scope (on the specific item, not the module), accompanied by a justification comment:
+
+```rust
+#[allow(clippy::module_name_repetitions)] // Required by PyO3 naming convention
+pub struct PyVersionDescriptor { ... }
+```
+
+The workspace `Cargo.toml` should also enforce lints globally:
+
+```toml
+[workspace.lints.rust]
+warnings = "deny"
+unsafe_code = "deny"
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+all = "deny"
+pedantic = "warn"
+nursery = "warn"
+```
+
+Each crate inherits via:
+```toml
+[lints]
+workspace = true
+```
+
+### Dead code from Python implementation
+
+The following dead code was identified in the Python codebase. It must be ported to Rust and marked with `#[allow(dead_code)]` plus a comment explaining its status, so that it can be reviewed and either completed or removed:
+
+| Item | Location | Status |
+|------|----------|--------|
+| `sync_image()` | `images/sync.py` | Never called anywhere in the monorepo. Port as dead code with `#[allow(dead_code)]` and `// TODO: evaluate if this function is still needed` |
+| `cmd_advanced` group | `cmds/advanced.py` | Empty hidden command group with no subcommands. Port as empty Clap subcommand (hidden) |
+| `desc = desc` self-assignment | `images/desc.py:84` | Bug in Python — self-assignment does nothing. Fix in Rust (remove the assignment) |
+
+The stray `pass` statements in Python (`builder.py:182`, `signing.py:70,152`) have no Rust equivalent and are simply not ported.
+
 ### Logging
 
 Use the `tracing` ecosystem for structured, hierarchical logging. Log levels can be set **per module** at runtime via environment variable — no recompilation needed.

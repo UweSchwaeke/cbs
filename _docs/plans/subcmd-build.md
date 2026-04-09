@@ -433,6 +433,9 @@ fn build_volume_mounts(
 ) -> HashMap<String, String> { ... }
 
 /// Build the podman command-line arguments.
+///
+/// Includes `--security-opt label=disable` and `--security-opt seccomp=unconfined`
+/// as mandated by the spec for nested container builds (Buildah-in-Podman).
 fn build_podman_args(
     desc_mount_loc: &str,
     tls_verify: bool,
