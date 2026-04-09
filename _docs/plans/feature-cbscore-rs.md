@@ -459,6 +459,56 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 pyo3-log = "0.12"
 ```
 
+### Container deployability
+
+The `cbsbuild` binary runs in two contexts: on the host (launching Podman containers) and inside Podman containers (via `runner build`). The Rust implementation must satisfy container deployment requirements in both contexts.
+
+**Binary & dependencies:**
+
+- Compile with `x86_64-unknown-linux-musl` target for fully static binaries — no glibc dependency, runs on any Linux container image (including distroless)
+- The standalone binary must have zero runtime dependencies on Python, uv, or pip when running `cbsbuild runner build` inside the container. During the transition period the entrypoint installs via `uv tool install`, but the long-term goal is to copy the static binary directly into the container image.
+- Bundle or statically link OpenSSL (use `rustls` instead where possible to avoid this entirely)
+
+**Configuration:**
+
+- All paths must be configurable via config file or CLI flags — no hardcoded host paths compiled into the binary
+- Support configuration via environment variables for container-native deployments (e.g., `CBS_CONFIG_PATH`, `CBS_DEBUG`)
+- Secrets must come from mounted files or environment variables — never baked into images or compiled into the binary
+- The `create_container_config()` function already rewrites all paths to container-local `/runner/...` mounts — this pattern must be preserved
+
+**Logging:**
+
+- Default log output to stdout/stderr — container runtimes (Podman, Kubernetes) capture these automatically
+- Support structured JSON log output as an option (`tracing-subscriber` JSON formatter) for log aggregation systems (Loki, Elasticsearch)
+- No interactive prompts inside the container — `runner build` and the builder pipeline must be fully non-interactive
+- Log output must not contain secrets (the `SecureArg` / `CmdArg::Secure` pattern handles this via display masking)
+
+**Process behavior:**
+
+- Handle SIGTERM gracefully — container stop sends SIGTERM, then SIGKILL after a timeout. The `CancellationToken` pattern (from the Ctrl+C section) must also respond to SIGTERM.
+- Exit with meaningful codes: 0 = success, non-zero = specific error. Avoid `exit(1)` for everything — use distinct codes for config errors, build failures, timeout, cancelled, etc.
+- PID 1 awareness — when running as PID 1 inside a container, the process must forward signals to child processes (rpmbuild, buildah, podman). Consider using `tokio::signal` to catch SIGTERM/SIGINT and propagate via the `CancellationToken`.
+- Reap zombie processes — when spawning subprocesses (rpmbuild, buildah, cosign), ensure all child processes are properly waited on to avoid zombie accumulation
+
+**Filesystem:**
+
+- Treat the container filesystem as ephemeral — all persistent data must go through mounted volumes (scratch, containers storage, ccache, logs)
+- Temp files must use configurable directories (via `TMPDIR` or config), not hardcoded `/tmp`
+- No writes outside designated mount points — the builder should only write to `/runner/scratch`, `/var/lib/containers`, and `/runner/ccache`
+
+**Security:**
+
+- Run as non-root where possible. The current Python implementation uses `use_user_ns=False` and `unconfined=True` for Buildah-in-Podman — document why these are needed and when they can be relaxed
+- Request only the capabilities actually needed (FUSE for buildah overlay, network for registry access)
+- No secrets in image layers — the entrypoint mounts secrets at runtime via volumes
+- Use `seccomp=unconfined` only for the inner build container, not for the outer daemon
+
+**Image size:**
+
+- Multi-stage Dockerfile: compile in a Rust builder stage, copy the static binary to a minimal runtime stage
+- The runtime stage should be the target distro (e.g., `rockylinux:9`) since rpmbuild and buildah need distro packages
+- For the standalone `cbsbuild` binary distribution (outside containers), provide a statically linked binary that runs without any runtime dependencies
+
 ### Error hierarchy
 
 Single top-level `CbsError` enum with `#[from]` conversions for each domain error. Maps to Python exception hierarchy via `_exceptions.py` (pure Python) + Rust `From<CbsError> for PyErr` using `GILOnceCell`-cached exception classes.
