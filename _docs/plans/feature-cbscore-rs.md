@@ -383,6 +383,8 @@ Use `#[serde(rename_all = "kebab-case")]` on config structs to match the hyphena
 
 Custom `Deserialize` implementations. Deserialize to `serde_json::Value` first, inspect `creds` and `type` fields, then deserialize to the correct variant. This mirrors the Python discriminator functions exactly.
 
+**Rust keyword collision**: The `type` field used as a discriminator in 6 secret model structs (`StorageS3Secret`, `GPGPlainSecret`, `GPGVaultSingleSecret`, `GPGVaultPrivateKeySecret`, `GPGVaultPublicKeySecret`, `VaultTransitSecret`) is a strict Rust keyword. Each struct must use `r#type` as the field name (serde automatically serializes `r#type` as `"type"`) or use `type_` with `#[serde(rename = "type")]`. This is the same pattern as `VersionComponent.ref` → `r#ref`.
+
 ### Async command executor (foundation)
 
 ```rust
