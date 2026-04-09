@@ -180,6 +180,7 @@ aws-config = "1"
 aws-sdk-s3 = "1"
 reqwest = { version = "0.12", features = ["json"] }
 vaultrs = "0.7"
+url = "2"
 rand = "0.9"
 tempfile = "3"
 ```
@@ -208,6 +209,93 @@ Patterns to follow:
 - **Named steps**: Extract conditional blocks (e.g., prompt sequences, validation) into their own functions with descriptive names
 
 This keeps code readable, testable, and aligned with the Single Responsibility Principle.
+
+### Logging
+
+Use the `tracing` ecosystem for structured, hierarchical logging. Log levels can be set **per module** at runtime via environment variable — no recompilation needed.
+
+**Crate roles:**
+
+| Crate | Logging dependency | Role |
+|-------|-------------------|------|
+| `cbscore-types` | `tracing` | Emit log events via `tracing::{trace, debug, info, warn, error}` |
+| `cbscore-lib` | `tracing` | Emit log events (the bulk of logging happens here) |
+| `cbsbuild` (CLI) | `tracing-subscriber` with `env-filter` | Initialize the subscriber, configure output format and filtering |
+| `cbscore-python` | `pyo3-log` | Bridge Rust `tracing`/`log` events into Python's `logging` module |
+
+**Per-module filtering via `RUST_LOG`:**
+
+The `tracing-subscriber` `EnvFilter` reads the `RUST_LOG` environment variable at startup. Examples:
+
+```bash
+# Global info, but debug for the builder module
+RUST_LOG=info,cbscore_lib::builder=debug cbsbuild build desc.json
+
+# Trace-level for git operations only
+RUST_LOG=warn,cbscore_lib::utils::git=trace cbsbuild build desc.json
+
+# Debug everything in cbscore-lib
+RUST_LOG=cbscore_lib=debug cbsbuild build desc.json
+```
+
+This provides per-module granularity without recompilation.
+
+**CLI initialization** (`cbsbuild/src/main.rs`):
+
+```rust
+use tracing_subscriber::EnvFilter;
+
+fn init_logging(debug: bool) {
+    let default_filter = if debug { "debug" } else { "info" };
+    let filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new(default_filter));
+
+    tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_target(true)
+        .init();
+}
+```
+
+The `--debug` / `-d` CLI flag sets the default to `debug`, but `RUST_LOG` always takes precedence when set, allowing fine-grained control.
+
+**PyO3 bridge** (`cbscore-python/src/lib.rs`):
+
+```rust
+#[pymodule]
+fn _cbscore(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    // Bridge Rust log/tracing events to Python's logging module.
+    // Events appear under the "cbscore" Python logger hierarchy,
+    // mirroring the Python code's existing logger.getChild() pattern.
+    pyo3_log::init();
+    // ...
+}
+```
+
+When called from Python (cbsd), log levels are controlled by Python's `logging` configuration rather than `RUST_LOG`. The `pyo3-log` crate maps Rust log levels to Python levels (`tracing::debug!` → `logging.DEBUG`, etc.).
+
+**Module-level span pattern:**
+
+Each module should use `tracing` spans or the module path target to maintain the hierarchical logger structure from the Python code (`logger.getChild("builder")`):
+
+```rust
+// In cbscore-lib/src/builder/build.rs
+use tracing::{info, debug, error};
+
+pub async fn run(&self) -> Result<(), BuilderError> {
+    info!("preparing builder");
+    // tracing automatically includes the module path as the target:
+    // cbscore_lib::builder::build
+}
+```
+
+**Workspace dependencies** (already present, listed here for completeness):
+
+```toml
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+pyo3-log = "0.12"
+```
 
 ### Error hierarchy
 
@@ -252,10 +340,25 @@ pub enum CmdArg {
     Secure { display: String, value: String },
 }
 
+/// Structured log events for step-level transparency.
+pub enum CmdEvent<'a> {
+    /// Command is about to execute (includes sanitized command line).
+    Started { cmd: &'a [String] },
+    /// A line was written to stdout.
+    Stdout(&'a str),
+    /// A line was written to stderr.
+    Stderr(&'a str),
+    /// Command finished with an exit code.
+    Finished { exit_code: i32 },
+}
+
+/// Callback receiving structured command events.
+pub type CmdEventCallback = Box<dyn Fn(CmdEvent<'_>) + Send + Sync>;
+
 pub struct CmdOpts<'a> {
     pub cwd: Option<&'a Path>,
     pub timeout: Option<Duration>,
-    pub output_cb: Option<Box<dyn Fn(&str) + Send + Sync>>,
+    pub event_cb: Option<CmdEventCallback>,
     pub env: Option<HashMap<String, String>>,
     pub reset_python_env: bool,
 }

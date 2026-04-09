@@ -103,6 +103,11 @@ sequenceDiagram
 
         Vault->>User: Vault address?
         User-->>Vault: https://vault.example.com
+        Vault->>Vault: Validate URL (scheme + host)
+        alt Invalid URL
+            Vault->>User: "invalid vault address: must be a valid URL"
+            Vault->>CLI: Exit with error
+        end
 
         Vault->>User: Specify user/pass auth for vault?
         alt User chooses UserPass
@@ -266,9 +271,23 @@ fn prompt_token() -> anyhow::Result<String> {
     Ok(token)
 }
 
+/// Validate that a string is a valid URL with scheme and host.
+fn validate_vault_addr(addr: &str) -> anyhow::Result<()> {
+    let url = url::Url::parse(addr)
+        .map_err(|e| anyhow::anyhow!("invalid vault address: {e}"))?;
+    if url.host().is_none() {
+        anyhow::bail!("invalid vault address: missing host");
+    }
+    if url.scheme() != "http" && url.scheme() != "https" {
+        anyhow::bail!("invalid vault address: scheme must be http or https");
+    }
+    Ok(())
+}
+
 /// Prompt for the vault auth method and collect credentials.
 fn prompt_vault_auth() -> anyhow::Result<VaultConfig> {
     let vault_addr: String = Input::new().with_prompt("Vault address").interact_text()?;
+    validate_vault_addr(&vault_addr)?;
 
     let (auth_user, auth_approle, auth_token) =
         if Confirm::new().with_prompt("Specify user/pass auth for vault?").interact()? {
@@ -363,3 +382,4 @@ This is the same pattern as the Python code where `config_init_vault()` is a sta
 - **Unit**: Exactly one auth field is set per config
 - **Integration**: Run `cbsbuild config init-vault --vault /tmp/test-vault.yaml` in a temp dir, verify output file parses correctly
 - **Snapshot**: `cbsbuild config init-vault --help` output matches baseline
+eline
