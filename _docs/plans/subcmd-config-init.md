@@ -158,30 +158,7 @@ sequenceDiagram
     end
     Secrets-->>CLI: Vec<Path>
 
-    CLI->>Vault: Collect vault configuration
-    alt CLI --vault option provided and file exists
-        Vault-->>CLI: Use existing vault config path
-    else Interactive mode
-        Vault->>User: Configure vault authentication?
-        alt User says yes
-            Vault->>User: Vault config path? [default: cbs-build.vault.yaml]
-            User-->>Vault: path
-            Vault->>User: Vault address?
-            User-->>Vault: https://vault.example.com
-            alt User chooses userpass
-                Vault->>User: Username? Password?
-                User-->>Vault: credentials
-            else User chooses approle
-                Vault->>User: Role ID? Secret ID?
-                User-->>Vault: credentials
-            else Token fallback
-                Vault->>User: Vault token?
-                User-->>Vault: token
-            end
-            Vault->>FS: Write vault config YAML
-        end
-    end
-    Vault-->>CLI: Option<Path>
+    Note right of CLI: Vault path is passed through as-is from --vault<br/>option or shortcut flag defaults. No interactive<br/>vault wizard runs here (use config init-vault for that).
 
     CLI->>CLI: Assemble Config struct
 
@@ -433,13 +410,9 @@ fn config_init_secrets_paths(
     secrets_files_paths: Option<Vec<PathBuf>>,
 ) -> anyhow::Result<Vec<PathBuf>> { ... }
 
-/// Collect vault configuration interactively and write vault config file.
-fn config_init_vault(
-    cwd: &Path,
-    vault_config_path: Option<PathBuf>,
-) -> anyhow::Result<Option<PathBuf>> { ... }
-
 /// Main orchestrator: collect all sections, preview, confirm, write.
+/// Note: vault path is passed through as-is from opts.vault — no
+/// interactive vault wizard runs here (use `config init-vault` for that).
 fn config_init(
     config_path: &Path,
     cwd: &Path,

@@ -352,14 +352,11 @@ pub fn handle_config_init_vault(args: ConfigInitVaultArgs) -> anyhow::Result<()>
 }
 ```
 
-### Shared code with `config init`
+### Relationship to `config init`
 
-The `config_init_vault()` function is called from two places:
+The `config_init_vault()` function is used **only** by the standalone `config init-vault` command (`handle_config_init_vault()`). It is **not** called by `config init`.
 
-1. `handle_config_init_vault()` — the standalone `config init-vault` command
-2. `config_init()` — as part of the full `config init` wizard (from `subcmd-config-init.md`)
-
-This is the same pattern as the Python code where `config_init_vault()` is a standalone helper called by both `cmd_config_init_vault` and `config_init`.
+In the Python code, `config_init()` (cmds/config.py:251-309) simply passes the vault path through to the `Config` constructor without running any interactive vault wizard. The `config init-vault` command is the only way to interactively create a vault configuration file.
 
 ### Dependencies
 
