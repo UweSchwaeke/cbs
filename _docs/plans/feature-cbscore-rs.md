@@ -198,6 +198,17 @@ All public functions, structs, enums, traits, and methods must have `///` doc co
 
 Private functions should have doc comments when the intent is not self-evident from the name and signature.
 
+### Function size
+
+Functions must be short and focused — each function does **one thing**. As a guideline, a function body should not exceed ~20-30 lines. When a function grows beyond that, extract logical steps into well-named helper functions. This applies equally to implementation code and CLI command handlers.
+
+Patterns to follow:
+- **Orchestrator + helpers**: A top-level function calls a sequence of small helpers, each handling one step
+- **Early returns**: Use guard clauses and `?` to keep the happy path flat
+- **Named steps**: Extract conditional blocks (e.g., prompt sequences, validation) into their own functions with descriptive names
+
+This keeps code readable, testable, and aligned with the Single Responsibility Principle.
+
 ### Error hierarchy
 
 Single top-level `CbsError` enum with `#[from]` conversions for each domain error. Maps to Python exception hierarchy via `_exceptions.py` (pure Python) + Rust `From<CbsError> for PyErr` using `GILOnceCell`-cached exception classes.
@@ -590,7 +601,7 @@ Each subcommand has its own detailed document with: description, CLI signature, 
 | Subcommand | Detail Plan | Status |
 |------------|-------------|--------|
 | `config init` | [subcmd-config-init.md](subcmd-config-init.md) | Done |
-| `config init-vault` | subcmd-config-init-vault.md | Pending |
+| `config init-vault` | [subcmd-config-init-vault.md](subcmd-config-init-vault.md) | Done |
 | `versions create` | subcmd-versions-create.md | Pending |
 | `versions list` | subcmd-versions-list.md | Pending |
 | `build` | subcmd-build.md | Pending |

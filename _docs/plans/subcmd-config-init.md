@@ -444,47 +444,69 @@ fn config_init(
 
 ### Command handler
 
+The handler is split into small focused functions following the orchestrator + helpers pattern:
+
 ```rust
+/// Pre-filled paths for systemd and containerized deployments.
+struct ContainerDefaults;
+
+impl ContainerDefaults {
+    fn components() -> Vec<PathBuf> { vec![PathBuf::from("/cbs/components")] }
+    fn scratch() -> PathBuf { PathBuf::from("/cbs/scratch") }
+    fn containers_scratch() -> PathBuf { PathBuf::from("/var/lib/containers") }
+    fn ccache() -> PathBuf { PathBuf::from("/cbs/ccache") }
+    fn secrets() -> Vec<PathBuf> { vec![PathBuf::from("/cbs/config/secrets.yaml")] }
+    fn vault() -> PathBuf { PathBuf::from("/cbs/config/vault.yaml") }
+}
+
+/// Convert CLI args to Option types (empty Vec → None).
+fn args_to_options(args: &ConfigInitArgs) -> ConfigInitOptions {
+    ConfigInitOptions {
+        components: non_empty(args.components_paths.clone()),
+        scratch: args.scratch.clone(),
+        containers_scratch: args.containers_scratch.clone(),
+        ccache: args.ccache.clone(),
+        secrets: non_empty(args.secrets.clone()),
+        vault: args.vault.clone(),
+    }
+}
+
+/// Apply container defaults when shortcut flags are set.
+fn apply_container_defaults(opts: &mut ConfigInitOptions) {
+    opts.components = Some(ContainerDefaults::components());
+    opts.scratch = Some(ContainerDefaults::scratch());
+    opts.containers_scratch = Some(ContainerDefaults::containers_scratch());
+    opts.ccache = Some(ContainerDefaults::ccache());
+    opts.secrets = Some(ContainerDefaults::secrets());
+    opts.vault = Some(ContainerDefaults::vault());
+}
+
+/// Resolve the config output path for systemd installs.
+fn systemd_config_path(deployment: &str) -> PathBuf {
+    dirs::home_dir()
+        .expect("home directory")
+        .join(format!(".config/cbsd/{deployment}/worker/cbscore.config.yaml"))
+}
+
+/// Handle the `cbsbuild config init` command.
 pub fn handle_config_init(
     config_path: &Path,
     args: ConfigInitArgs,
 ) -> anyhow::Result<()> {
     let cwd = std::env::current_dir()?;
+    let mut opts = args_to_options(&args);
 
-    let (mut components, mut scratch, mut containers_scratch,
-         mut ccache, mut secrets, mut vault) = (
-        if args.components_paths.is_empty() { None } else { Some(args.components_paths) },
-        args.scratch,
-        args.containers_scratch,
-        args.ccache,
-        if args.secrets.is_empty() { None } else { Some(args.secrets) },
-        args.vault,
-    );
-
-    // Shortcut flags pre-fill all paths
     if args.for_systemd_install || args.for_containerized_run {
-        components = Some(vec![PathBuf::from("/cbs/components")]);
-        scratch = Some(PathBuf::from("/cbs/scratch"));
-        containers_scratch = Some(PathBuf::from("/var/lib/containers"));
-        ccache = Some(PathBuf::from("/cbs/ccache"));
-        secrets = Some(vec![PathBuf::from("/cbs/config/secrets.yaml")]);
-        vault = Some(PathBuf::from("/cbs/config/vault.yaml"));
+        apply_container_defaults(&mut opts);
     }
 
     let config_path = if args.for_systemd_install {
-        dirs::home_dir()
-            .expect("home directory")
-            .join(format!(".config/cbsd/{}/worker/cbscore.config.yaml",
-                          args.systemd_deployment))
+        systemd_config_path(&args.systemd_deployment)
     } else {
         config_path.to_path_buf()
     };
 
-    config_init(
-        &config_path, &cwd,
-        components, scratch, containers_scratch,
-        ccache, vault, secrets,
-    )
+    config_init(&config_path, &cwd, opts)
 }
 ```
 
@@ -510,24 +532,38 @@ Note: The Python code already calls `.resolve()` on interactively prompted paths
 
 ### Config preview and write
 
-The Python code does `json.loads(config.model_dump_json())` then `yaml.safe_dump()`. In Rust:
+The Python code does `json.loads(config.model_dump_json())` then `yaml.safe_dump()`. In Rust, split into focused helpers:
 
 ```rust
-// Serialize Config to serde_json::Value, then to YAML string
-let json_value = serde_json::to_value(&config)?;
-let yaml_preview = serde_yaml::to_string(&json_value)?;
-println!("config:\n\n{yaml_preview}");
-
-if !Confirm::new().with_prompt(format!("Write config to '{}'?", config_path.display())).interact()? {
-    anyhow::bail!("do not write config files");
+/// Render a Config as a YAML preview string.
+fn config_to_yaml_preview(config: &Config) -> anyhow::Result<String> {
+    let json_value = serde_json::to_value(config)?;
+    Ok(serde_yaml::to_string(&json_value)?)
 }
 
-// Create parent dirs and write
-if let Some(parent) = config_path.parent() {
-    std::fs::create_dir_all(parent)?;
+/// Show YAML preview and ask for write confirmation.
+fn confirm_write(config: &Config, path: &Path) -> anyhow::Result<()> {
+    let preview = config_to_yaml_preview(config)?;
+    println!("config:\n\n{preview}");
+
+    if !Confirm::new()
+        .with_prompt(format!("Write config to '{}'?", path.display()))
+        .interact()?
+    {
+        anyhow::bail!("do not write config files");
+    }
+    Ok(())
 }
-config.store(config_path)?;
-println!("wrote config file to '{}'", config_path.display());
+
+/// Ensure parent directory exists, then write config to path.
+fn write_config(config: &Config, path: &Path) -> anyhow::Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    config.store(path)?;
+    println!("wrote config file to '{}'", path.display());
+    Ok(())
+}
 ```
 
 ### Dependencies
