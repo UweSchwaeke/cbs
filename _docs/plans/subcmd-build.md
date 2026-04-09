@@ -264,8 +264,10 @@ pub struct BuildArgs {
     #[arg(long)]
     force: bool,
 
-    /// Verify TLS for registry communication
-    #[arg(long, default_value_t = true)]
+    /// Verify TLS for registry communication.
+    /// Uses BoolishValueParser to accept --tls-verify=true/false/True/False/1/0,
+    /// matching Click's boolean option behavior.
+    #[arg(long, default_value = "true", value_parser = clap::builder::BoolishValueParser::new())]
     tls_verify: bool,
 }
 ```

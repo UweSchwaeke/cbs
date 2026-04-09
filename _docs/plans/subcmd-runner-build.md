@@ -248,8 +248,11 @@ pub struct RunnerBuildArgs {
     #[arg(long)]
     force: bool,
 
-    /// Verify TLS for registry communication
-    #[arg(long, default_value_t = true)]
+    /// Verify TLS for registry communication.
+    /// Uses BoolishValueParser to accept --tls-verify=true/false/True/False/1/0,
+    /// matching Click's boolean option behavior. Required because the runner
+    /// passes `--tls-verify={value}` from the host to the container.
+    #[arg(long, default_value = "true", value_parser = clap::builder::BoolishValueParser::new())]
     tls_verify: bool,
 }
 ```
