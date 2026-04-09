@@ -346,7 +346,7 @@ This is the same pattern as the Python code where `config_init_vault()` is a sta
 
 - **Phase 3** (Configuration System) must be complete — `VaultConfig`, `VaultUserPassConfig`, `VaultAppRoleConfig` structs with `store()` method
 - `dialoguer` crate for interactive prompts
-- `resolve_path()` helper from `config init` (shared within the same module)
+- `resolve_path()` helper (located in `rust/cbsbuild/src/cmds/utils.rs`)
 
 ### Error handling
 

@@ -514,10 +514,12 @@ pub fn handle_config_init(
 
 All paths collected interactively must be canonicalized to absolute paths before assembling the `Config` struct. This ensures the YAML output contains unambiguous, absolute paths regardless of how the user typed them (relative, with `~`, with `..`, etc.).
 
+Located in `rust/cbsbuild/src/cmds/utils.rs` (shared across all config subcommands):
+
 ```rust
 /// Canonicalize a path: resolve to absolute. Use std::fs::canonicalize
 /// for existing paths, or join with cwd and normalize for non-existing ones.
-fn resolve_path(path: &Path, cwd: &Path) -> PathBuf {
+pub fn resolve_path(path: &Path, cwd: &Path) -> PathBuf {
     if path.is_absolute() {
         path.to_path_buf()
     } else {
@@ -572,6 +574,7 @@ fn write_config(config: &Config, path: &Path) -> anyhow::Result<()> {
 - `dialoguer` crate for interactive prompts
 - `serde_yaml` for YAML preview and serialization
 - `dirs` crate for `home_dir()` (systemd install path)
+- `resolve_path()` helper (located in `rust/cbsbuild/src/cmds/utils.rs`)
 
 ### Error handling
 
