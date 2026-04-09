@@ -403,6 +403,16 @@ use cbscore_types::config::*;
 use dialoguer::{Confirm, Input, Password};
 use std::path::{Path, PathBuf};
 
+/// Options collected from CLI args for config initialization.
+struct ConfigInitOptions {
+    components: Option<Vec<PathBuf>>,
+    scratch: Option<PathBuf>,
+    containers_scratch: Option<PathBuf>,
+    ccache: Option<PathBuf>,
+    secrets: Option<Vec<PathBuf>>,
+    vault: Option<PathBuf>,
+}
+
 /// Collect paths configuration interactively.
 fn config_init_paths(
     cwd: &Path,
@@ -433,12 +443,7 @@ fn config_init_vault(
 fn config_init(
     config_path: &Path,
     cwd: &Path,
-    components_paths: Option<Vec<PathBuf>>,
-    scratch_path: Option<PathBuf>,
-    containers_scratch_path: Option<PathBuf>,
-    ccache_path: Option<PathBuf>,
-    vault_config_path: Option<PathBuf>,
-    secrets_files_paths: Option<Vec<PathBuf>>,
+    opts: ConfigInitOptions,
 ) -> anyhow::Result<()> { ... }
 ```
 
