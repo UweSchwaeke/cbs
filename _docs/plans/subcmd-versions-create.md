@@ -407,12 +407,18 @@ pub async fn handle_versions_create(
 ) -> anyhow::Result<()> {
     let (user_name, user_email) = get_sign_off().await?;
 
+    // Parse raw CLI strings into maps before calling the library function.
+    // This matches the Python flow where cmds/versions.py parses first,
+    // and allows cbsd to pass dicts directly via PyO3.
+    let component_refs = parse_component_refs(&args.components)?;
+    let uri_overrides = parse_uri_overrides(&args.component_uri_overrides)?;
+
     let desc = version_create_helper(
         &args.version,
         &args.version_type,
-        &args.components,
+        &component_refs,
         &args.components_paths,
-        &args.component_uri_overrides,
+        &uri_overrides,
         &args.distro,
         args.el_version,
         &args.registry,
@@ -454,12 +460,17 @@ Located in `cbscore-lib/src/versions/create.rs`. This is the **shared** function
 /// This is the primary entry point for both CLI and daemon usage.
 /// It validates inputs, loads components, applies overrides, and
 /// assembles the descriptor.
+///
+/// Note: `component_refs` and `component_uri_overrides` are pre-parsed
+/// maps (name → ref/uri). The CLI handler parses raw "NAME@VERSION" and
+/// "COMPONENT=URI" strings before calling this function. This matches
+/// the Python signature where cbsd passes dicts directly.
 pub fn version_create_helper(
     version: &str,
     version_type_name: &str,
-    component_refs: &[String],
+    component_refs: &HashMap<String, String>,
     components_paths: &[PathBuf],
-    component_uri_overrides: &[String],
+    component_uri_overrides: &HashMap<String, String>,
     distro: &str,
     el_version: i32,
     registry: &str,
@@ -472,7 +483,6 @@ pub fn version_create_helper(
 
 Internally splits into:
 - `resolve_components_paths()` — default to `./components/` if empty
-- `parse_uri_overrides()` — split `COMPONENT=URI` strings
 - `validate_and_create()` — calls `create()` which validates version, builds title, assembles descriptor
 
 ### Dependencies
