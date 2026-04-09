@@ -223,8 +223,11 @@ Commits follow the existing project style (see `main` branch). Each commit must 
 <why — motivation, the problem or need that prompted this change>
 
 Signed-off-by: Name <email>
-Generated-by: Claude Code <noreply@anthropic.com>
 ```
+
+Trailers are managed by tooling, not hardcoded in the message:
+- `Signed-off-by` is added by `git commit -s`
+- `Co-Authored-By` for AI attribution is added automatically by the Claude Code harness
 
 **Rules:**
 
@@ -245,7 +248,6 @@ self-signed certificate, skopeo must not verify the certificate
 to avoid errors.
 
 Signed-off-by: Name <email>
-Generated-by: Claude Code <noreply@anthropic.com>
 ```
 
 ```
