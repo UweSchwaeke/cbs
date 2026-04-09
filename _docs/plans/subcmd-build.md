@@ -69,6 +69,8 @@ Inherits from parent `cbsbuild`:
 | Aggregated components dir | `/runner/components` | Component definitions |
 | `config.paths.ccache` | `/runner/ccache` | Compiler cache (optional) |
 
+Note: The Python code sets `LoggingConfig(log_file=Path("/runner/logs/cbs-build.log"))` in the container config when `--log-file` is specified, but `/runner/logs/` is never volume-mounted. The container-side log file is ephemeral. The actual host-side log capture works via the podman output callback (`output_cb`), which writes to the `--log-file` path on the host. The Rust implementation should either omit `LoggingConfig` from the container config or document this as a known inconsistency from the Python code.
+
 ### Entrypoint script behavior
 
 The entrypoint (`cbscore-entrypoint.sh`) runs inside the container:

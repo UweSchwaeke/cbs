@@ -352,6 +352,10 @@ pub fn handle_config_init_vault(args: ConfigInitVaultArgs) -> anyhow::Result<()>
 }
 ```
 
+### Known UX issue
+
+When `--vault PATH` is provided but the file does not exist, the Python code still prompts "Configure vault authentication?" even though the user already expressed intent to configure vault by providing the flag. The Rust implementation faithfully replicates this behavior. A future improvement could skip the confirmation prompt when `--vault` is explicitly provided.
+
 ### Relationship to `config init`
 
 The `config_init_vault()` function is used **only** by the standalone `config init-vault` command (`handle_config_init_vault()`). It is **not** called by `config init`.
