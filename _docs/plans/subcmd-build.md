@@ -307,18 +307,15 @@ fn validate_log_file(path: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Export secrets to a temporary file, returning the path.
-/// The caller is responsible for cleanup.
-fn export_secrets(config: &Config) -> anyhow::Result<tempfile::NamedTempFile> {
-    let secrets = config.get_secrets()
+/// Validate that secrets can be loaded from config (fail early).
+/// The actual secrets temp file is created inside runner(), not here.
+/// Note: The Python code creates a secrets temp file in cmd_build that
+/// is never passed to runner() — this is dead code in Python that we
+/// intentionally do not replicate.
+fn validate_secrets(config: &Config) -> anyhow::Result<()> {
+    config.get_secrets()
         .map_err(|e| anyhow::anyhow!("unable to obtain secrets from config: {e}"))?;
-    let tmp = tempfile::Builder::new()
-        .prefix("cbs-build-")
-        .suffix(".secrets.yaml")
-        .tempfile()?;
-    secrets.store(tmp.path())
-        .map_err(|e| anyhow::anyhow!("unable to store secrets: {e}"))?;
-    Ok(tmp)
+    Ok(())
 }
 ```
 
@@ -346,8 +343,9 @@ pub async fn handle_build(
         validate_log_file(log_path)?;
     }
 
-    // Secrets temp file is cleaned up automatically when _secrets_tmp drops
-    let _secrets_tmp = export_secrets(&config)?;
+    // Validate secrets can be loaded (fail early before launching container).
+    // The actual secrets temp file is created inside runner().
+    validate_secrets(&config)?;
 
     runner(
         &args.descriptor,
