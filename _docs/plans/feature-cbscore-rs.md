@@ -211,6 +211,51 @@ Patterns to follow:
 
 This keeps code readable, testable, and aligned with the Single Responsibility Principle.
 
+### Git commits
+
+Commits follow the existing project style (see `main` branch). Each commit must be **as small as possible** with a clear, single-purpose subject.
+
+**Format:**
+
+```
+<scope>: <subject in lowercase imperative>
+
+<why — motivation, the problem or need that prompted this change>
+
+Signed-off-by: Name <email>
+Generated-by: Claude Code <noreply@anthropic.com>
+```
+
+**Rules:**
+
+- **Scope**: Use the crate or module name (`cbscore`, `cbscore/builder`, `cbscore-types`, `cbsbuild`, `cbscore-python`)
+- **Subject**: Lowercase imperative, under 60 characters (e.g., `add serde rename for ref keyword`, `fix tls-verify flag parsing`). The subject says *what* changed — it should be self-explanatory from the diff.
+- **Body**: Explain *why* the change was made. 1-3 lines. Omit for trivial changes where the subject is sufficient.
+- **One logical change per commit**: Don't mix unrelated changes. A single function fix is one commit. A new module is one commit. Refactoring + feature is two commits.
+- **DCO required**: Always use `git commit -s` for the `Signed-off-by` line
+- **GPG signing required**: Enforced by project hooks (do not bypass with `--no-verify`)
+
+**Examples:**
+
+```
+cbscore: let skopeo handle local registries
+
+If the image is pushed to a local container registry with a
+self-signed certificate, skopeo must not verify the certificate
+to avoid errors.
+
+Signed-off-by: Name <email>
+Generated-by: Claude Code <noreply@anthropic.com>
+```
+
+```
+cbscore/builder: ignore cosign install if already installed
+```
+
+```
+cbsd/auth: remove plaintext token logging
+```
+
 ### Compiler strictness
 
 Warnings must be treated as errors. All crates must enable maximum lint strictness at the crate root:
@@ -341,6 +386,70 @@ pub async fn run(&self) -> Result<(), BuilderError> {
     // cbscore_lib::builder::build
 }
 ```
+
+**Function entry/exit tracing via `#[instrument]`:**
+
+All public and significant private functions must be annotated with `#[tracing::instrument]` at `TRACE` level. This automatically logs function entry (with argument values) and exit (with duration) without manual `trace!("entering...")` / `trace!("exiting...")` calls.
+
+How it works:
+- `#[instrument]` wraps the function body in a `tracing::Span`
+- On entry: creates a span with the function name and all arguments formatted via `Debug`
+- On exit: closes the span, recording its duration
+- The span appears in log output as a nested context, so all log events inside the function carry the function name and arguments
+- For async functions, the span is correctly attached across `.await` points
+
+```rust
+use tracing::instrument;
+
+#[instrument(skip(secrets, config), level = "trace")]
+pub async fn runner(
+    desc_file_path: &Path,
+    cbscore_path: &Path,
+    config: &Config,
+    secrets: &SecretsMgr,
+    opts: RunnerOpts,
+) -> Result<(), RunnerError> {
+    // Entry logged automatically at TRACE:
+    //   TRACE runner{desc_file_path="/runner/desc.json" cbscore_path="/runner/cbscore"}
+    
+    info!("preparing builder");
+    // This INFO event carries the runner span context
+    
+    // Exit logged automatically at TRACE when the function returns
+}
+```
+
+**Rules for `#[instrument]`:**
+
+- Use `level = "trace"` — entry/exit tracing is off by default, only visible with `RUST_LOG=trace`
+- Use `skip(...)` for large or sensitive arguments (secrets, config, file contents) to avoid bloating log output
+- Use `skip_all` for functions where arguments are not useful in traces
+- Use `ret` to also log the return value: `#[instrument(level = "trace", ret)]`
+- Use `err` to log errors at ERROR level on `Err` return: `#[instrument(level = "trace", err)]`
+
+```rust
+// Logs entry, exit, and error (if Err returned) with argument values
+#[instrument(skip(secrets), level = "trace", err)]
+pub async fn check_release_exists(
+    secrets: &SecretsMgr,
+    url: &str,
+    bucket: &str,
+    bucket_loc: &str,
+    version: &str,
+) -> Result<Option<ReleaseDesc>, ReleaseError> { ... }
+```
+
+**Log level guidelines:**
+
+| Level | Use for | Example |
+|-------|---------|---------|
+| `ERROR` | Failures that stop the operation | `"error building components"` |
+| `WARN` | Degraded but continuing | `"no upload location provided, skip"` |
+| `INFO` | Key milestones and decisions | `"image already exists — do not build"` |
+| `DEBUG` | Diagnostic details | `"components contents: [...]"` |
+| `TRACE` | Function entry/exit (via `#[instrument]`) | Automatic — no manual messages needed |
+
+With `RUST_LOG=trace`, the output shows the full call chain with timing — invaluable for debugging hangs in the async subprocess pipeline (CLI → runner → podman → entrypoint → runner build → builder → rpmbuild → async_run_cmd).
 
 **Workspace dependencies** (already present, listed here for completeness):
 
