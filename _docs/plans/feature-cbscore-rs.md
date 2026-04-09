@@ -165,7 +165,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yml = "0.0.12"
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 dirs = "6"
 regex = "1"
 strum = { version = "0.26", features = ["derive"] }
@@ -457,7 +457,7 @@ With `RUST_LOG=trace`, the output shows the full call chain with timing — inva
 
 ```toml
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 pyo3-log = "0.12"
 ```
 
