@@ -710,7 +710,7 @@ Each subcommand has its own detailed document with: description, CLI signature, 
 |------------|-------------|--------|
 | `config init` | [subcmd-config-init.md](subcmd-config-init.md) | Done |
 | `config init-vault` | [subcmd-config-init-vault.md](subcmd-config-init-vault.md) | Done |
-| `versions create` | subcmd-versions-create.md | Pending |
+| `versions create` | [subcmd-versions-create.md](subcmd-versions-create.md) | Done |
 | `versions list` | subcmd-versions-list.md | Pending |
 | `build` | subcmd-build.md | Pending |
 | `runner build` | subcmd-runner-build.md | Pending |
