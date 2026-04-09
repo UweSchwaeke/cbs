@@ -174,7 +174,7 @@ classDiagram
 
     class VersionsListArgs {
         +bool verbose
-        +String from_address
+        +Option~String~ from_address
     }
 
     class VersionsCmd {
@@ -207,9 +207,9 @@ pub struct VersionsListArgs {
     #[arg(short = 'v', long)]
     verbose: bool,
 
-    /// Address to the S3 service to list from
-    #[arg(long = "from", required = true)]
-    from_address: String,
+    /// Override S3 URL (defaults to config's storage.s3.url)
+    #[arg(long = "from")]
+    from_address: Option<String>,
 }
 ```
 
@@ -238,15 +238,15 @@ fn init_secrets(config: &Config) -> anyhow::Result<SecretsMgr> {
         .map_err(|e| anyhow::anyhow!("error logging in to vault: {e}"))
 }
 
-/// Resolve S3 coordinates: use config for bucket/location, --from for URL override.
+/// Resolve S3 coordinates: --from overrides config URL, bucket/loc always from config.
 fn resolve_s3_params<'a>(
     config: &'a Config,
-    from_address: &'a str,
+    from_address: Option<&'a str>,
 ) -> anyhow::Result<(&'a str, &'a str, &'a str)> {
     let storage = config.storage.as_ref()
         .and_then(|s| s.s3.as_ref())
         .ok_or_else(|| anyhow::anyhow!("S3 storage not configured"))?;
-    let url = if from_address.is_empty() { &storage.url } else { from_address };
+    let url = from_address.unwrap_or(&storage.url);
     Ok((url, &storage.releases.bucket, &storage.releases.loc))
 }
 
@@ -302,7 +302,7 @@ pub async fn handle_versions_list(
 ) -> anyhow::Result<()> {
     let secrets = init_secrets(config)?;
     let (url, bucket, bucket_loc) =
-        resolve_s3_params(config, &args.from_address)?;
+        resolve_s3_params(config, args.from_address.as_deref())?;
 
     let releases = list_releases(&secrets, url, bucket, bucket_loc).await
         .map_err(|e| anyhow::anyhow!("error obtaining releases: {e}"))?;
@@ -358,7 +358,7 @@ Note: The Python implementation has a FIXME about inefficient credential fetchin
 ### Tests
 
 - **Unit**: `display_releases()` — verify output format for both non-verbose and verbose modes
-- **Unit**: `resolve_s3_params()` — from_address overrides config URL; empty from_address uses config
+- **Unit**: `resolve_s3_params()` — Some(from_address) overrides config URL; None uses config URL
 - **Unit**: `ReleaseDesc` JSON round-trip with all nested types
 - **Unit**: Malformed JSON entries are skipped without crashing
 - **Integration**: `list_releases()` against Ceph RGW with pre-populated release descriptors
