@@ -341,7 +341,7 @@ This provides per-module granularity without recompilation.
 **CLI initialization** (`cbsbuild/src/main.rs`):
 
 ```rust
-use tracing_subscriber::EnvFilter;
+use tracing_subscriber::{EnvFilter, fmt::format::FmtSpan};
 
 fn init_logging(debug: bool) {
     let default_filter = if debug { "debug" } else { "info" };
@@ -351,6 +351,7 @@ fn init_logging(debug: bool) {
     tracing_subscriber::fmt()
         .with_env_filter(filter)
         .with_target(true)
+        .with_span_events(FmtSpan::CLOSE)  // Emit log line on span close with duration
         .init();
 }
 ```
@@ -393,10 +394,9 @@ All public and significant private functions must be annotated with `#[tracing::
 
 How it works:
 - `#[instrument]` wraps the function body in a `tracing::Span`
-- On entry: creates a span with the function name and all arguments formatted via `Debug`
-- On exit: closes the span, recording its duration
-- The span appears in log output as a nested context, so all log events inside the function carry the function name and arguments
+- All log events emitted inside the function carry the span's context (function name + arguments) automatically
 - For async functions, the span is correctly attached across `.await` points
+- **Important**: The subscriber must be configured with `FmtSpan::CLOSE` (see `init_logging` above) to emit a log line when the span closes (function exit) with `time.busy` and `time.idle` duration fields. Without this, `#[instrument]` provides nested context but no discrete entry/exit log lines.
 
 ```rust
 use tracing::instrument;
