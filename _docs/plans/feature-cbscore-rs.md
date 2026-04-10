@@ -392,6 +392,7 @@ The following dead code was identified in the Python codebase. It must be ported
 | `sync_image()` | `images/sync.py` | Never called anywhere in the monorepo. Port as dead code with `#[allow(dead_code)]` and `// TODO: evaluate if this function is still needed` |
 | `cmd_advanced` group | `cmds/advanced.py` | Empty hidden command group with no subcommands. Port as empty Clap subcommand (hidden) |
 | `desc = desc` self-assignment | `images/desc.py:84` | Bug in Python — self-assignment does nothing. Fix in Rust (remove the assignment) |
+| regex bug in `_file_matches` | `images/desc.py:50` | Raw string `r"^.*{m[1]}.*.json"` contains `{m[1]}` which is not interpolated — regex matches literal braces instead of the version number. Fix in Rust by interpolating the captured group into the pattern |
 
 The stray `pass` statements in Python (`builder.py:182`, `signing.py:70,152`) have no Rust equivalent and are simply not ported.
 
