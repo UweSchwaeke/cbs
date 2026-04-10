@@ -1,5 +1,82 @@
 # Plan: Rewrite cbscore from Python to Rust
 
+## Table of Contents
+
+- [Design Principles](#design-principles)
+- [Context](#context)
+- [1. Cargo Workspace Structure](#1-cargo-workspace-structure)
+  - [Crate dependency graph](#crate-dependency-graph)
+  - [Root Cargo.toml](#root-cargotoml)
+- [2. Key Design Decisions](#2-key-design-decisions)
+  - [Documentation](#documentation)
+  - [Git commits](#git-commits)
+  - [Compiler strictness](#compiler-strictness)
+  - [Dead code from Python implementation](#dead-code-from-python-implementation)
+  - [Logging](#logging)
+  - [Container deployability](#container-deployability)
+  - [Error hierarchy](#error-hierarchy)
+  - [Config models (serde)](#config-models-serde)
+  - [Secret discriminated unions](#secret-discriminated-unions)
+  - [Async command executor](#async-command-executor-foundation)
+  - [Vault client](#vault-client)
+  - [S3 client](#s3-client)
+  - [Python context managers → Rust RAII guards](#python-context-managers--rust-raii-guards)
+- [3. PyO3 Binding Strategy](#3-pyo3-binding-strategy)
+  - [Module structure](#module-structure)
+  - [Exception hierarchy](#exception-hierarchy)
+  - [Types consumed as Pydantic fields](#types-consumed-as-pydantic-fields)
+  - [Async runner bridge](#async-runner-bridge)
+  - [CLI binary installation](#cli-binary-installation)
+  - [Maturin pyproject.toml](#maturin-pyprojecttoml)
+- [4. Implementation Phases](#4-implementation-phases)
+  - [Phase 0: Scaffolding](#phase-0-scaffolding-s)
+  - [Phase 1: Errors + Logging](#phase-1-errors--logging-s)
+  - [Phase 2: Version Management + Core Components](#phase-2-version-management--core-components-m)
+  - [Phase 3: Configuration System](#phase-3-configuration-system-m)
+  - [Phase 4: Secret Models](#phase-4-secret-models-l)
+  - [Phase 5: Vault + Secure Args](#phase-5-vault--secure-args-m)
+  - [Phase 6: Async Command Executor + Secrets Manager](#phase-6-async-command-executor--secrets-manager-l)
+  - [Phase 7: External Tool Wrappers](#phase-7-external-tool-wrappers-xl--parallelizable)
+  - [Phase 8: Releases + Builder Pipeline](#phase-8-releases--builder-pipeline-xl)
+  - [Phase 9: Container Building + Runner](#phase-9-container-building--runner-l)
+  - [Phase 10: CLI with Clap](#phase-10-cli-with-clap-m)
+  - [Phase 11: Python Shim Cleanup](#phase-11-python-shim-cleanup-m)
+- [5. Critical Path](#5-critical-path)
+- [6. Risks and Mitigations](#6-risks-and-mitigations)
+- [7. Verification Plan](#7-verification-plan)
+- [8. Subcommand Detail Plans](#8-subcommand-detail-plans)
+
+---
+
+## Design Principles
+
+The following principles govern all code written for this rewrite:
+
+**SOLID:**
+- **Single Responsibility** — each struct, function, and module has exactly one reason to change. A function that builds RPMs does not also upload them. A struct that holds config does not also validate it.
+- **Open/Closed** — extend behavior through traits and generics, not by modifying existing code. The `Vault` trait allows new auth backends without changing `SecretsMgr`.
+- **Liskov Substitution** — trait implementations must be interchangeable. Any `VaultClient` implementation (AppRole, UserPass, Token) works identically from the caller's perspective.
+- **Interface Segregation** — keep traits small and focused. A `VaultClient` only reads secrets; it does not manage auth lifecycle. Callers depend only on what they use.
+- **Dependency Inversion** — high-level modules (builder, runner) depend on abstractions (traits), not on concrete implementations. S3 operations go through a trait, not directly through `aws-sdk-s3`.
+
+**KISS:**
+- Prefer the simplest solution that works. No speculative abstractions, no "just in case" generics.
+- If a `match` is clearer than a trait hierarchy, use the `match`.
+- No design patterns for the sake of patterns — only when they reduce complexity.
+
+**DRY:**
+- Extract shared logic into functions, not copy-paste. But three similar lines are better than a premature abstraction.
+- Shared types live in `cbscore-types`. Shared async logic lives in `cbscore-lib`. No duplication across crates.
+- Configuration parsing, secret resolution, and error mapping each exist in exactly one place.
+
+**Function design:**
+- Each function addresses a **single problem** — if you need an "and" to describe what it does, split it.
+- Function bodies should be **10–20 lines**. Exceeding 20 lines is a signal to extract helpers.
+- **Maximum 3–4 parameters**. When more are needed, group related parameters into a struct (e.g., `RunnerOpts`, `ConfigInitOptions`, `CmdOpts`).
+- Use builder patterns or option structs for functions that would otherwise need many optional parameters.
+
+---
+
 ## Context
 
 `cbscore` (~280KB, ~9,800 lines of Python across 55 files) is the core build library of CBS. It handles Ceph RPM building, container image creation, S3 artifact management, and Vault secrets. Three Python packages depend on it: `cbsd` (heavily — runner, config, versions, components), `cbsdcore` (lightly — VersionType, CESError), and `cbc` (lightly — version utilities, errors). The CLI `cbsbuild` is also part of cbscore.
@@ -199,17 +276,6 @@ All public functions, structs, enums, traits, and methods must have `///` doc co
 - **Panics** — if the function can panic, document when
 
 Private functions should have doc comments when the intent is not self-evident from the name and signature.
-
-### Function size
-
-Functions must be short and focused — each function does **one thing**. As a guideline, a function body should not exceed ~20-30 lines. When a function grows beyond that, extract logical steps into well-named helper functions. This applies equally to implementation code and CLI command handlers.
-
-Patterns to follow:
-- **Orchestrator + helpers**: A top-level function calls a sequence of small helpers, each handling one step
-- **Early returns**: Use guard clauses and `?` to keep the happy path flat
-- **Named steps**: Extract conditional blocks (e.g., prompt sequences, validation) into their own functions with descriptive names
-
-This keeps code readable, testable, and aligned with the Single Responsibility Principle.
 
 ### Git commits
 
