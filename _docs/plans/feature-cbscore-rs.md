@@ -45,6 +45,10 @@
 - [6. Risks and Mitigations](#6-risks-and-mitigations)
 - [7. Verification Plan](#7-verification-plan)
 - [8. Subcommand Detail Plans](#8-subcommand-detail-plans)
+- [9. Crate Reference](#9-crate-reference)
+- [10. Unified Class Diagram](#10-unified-class-diagram)
+- [11. CLI Call Graph (DAG)](#11-cli-call-graph-dag)
+- [12. Component / Module Diagram](#12-component--module-diagram)
 
 ---
 
@@ -218,7 +222,7 @@ cbscore/
 ```
 cbscore-types  (serde, thiserror, regex, strum — zero async)
     ↑
-cbscore-lib    (cbscore-types, tokio, aws-sdk-s3, vaultrs, tracing)
+cbscore-lib    (cbscore-types, tokio, tokio-util, aws-sdk-s3, vaultrs, tracing)
     ↑
     ├── cbsbuild        (cbscore-lib, cbscore-types, clap, dialoguer, anyhow)
     └── cbscore-python  (cbscore-lib, cbscore-types, pyo3, pyo3-async-runtimes, pyo3-log)
@@ -237,29 +241,44 @@ version = "2.0.0"
 license = "GPL-3.0-or-later"
 
 [workspace.dependencies]
+# Error handling
 thiserror = "2"
+anyhow = "1"
+
+# Serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yml = "0.0.12"
+
+# Logging / tracing
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
-dirs = "6"
-regex = "1"
-strum = { version = "0.26", features = ["derive"] }
+
+# Async runtime
 tokio = { version = "1", features = ["full"] }
 tokio-util = "0.7"
+
+# CLI
 clap = { version = "4", features = ["derive"] }
-dialoguer = "0.11"
-anyhow = "1"
-pyo3 = { version = "0.23", features = ["extension-module"] }
-pyo3-async-runtimes = { version = "0.23", features = ["tokio-runtime"] }
-pyo3-log = "0.12"
+dialoguer = "0.12"
+
+# PyO3
+pyo3 = { version = "0.28", features = ["extension-module"] }
+pyo3-async-runtimes = { version = "0.28", features = ["tokio-runtime"] }
+pyo3-log = "0.13"
+
+# Cloud / networking
 aws-config = "1"
 aws-sdk-s3 = "1"
-reqwest = { version = "0.12", features = ["json"] }
-vaultrs = "0.7"
+reqwest = { version = "0.13", features = ["json"] }
+vaultrs = "0.8"
+
+# Utilities
+regex = "1"
+strum = { version = "0.28", features = ["derive"] }
+dirs = "6"
 url = "2"
-rand = "0.9"
+rand = "0.10"
 tempfile = "3"
 ```
 
@@ -1015,3 +1034,722 @@ Each subcommand has its own detailed document with: description, CLI signature, 
 | `build` | [subcmd-build.md](subcmd-build.md) | Done |
 | `runner build` | [subcmd-runner-build.md](subcmd-runner-build.md) | Done |
 | `advanced` | — | Empty placeholder, no detail plan needed |
+
+---
+
+## 9. Crate Reference
+
+All external crates used across the workspace, their purpose, which Rust crate(s) consume them, and which subcommand plans reference them.
+
+| Crate | Version | Purpose | Used by | Referenced in |
+|-------|---------|---------|---------|---------------|
+| `thiserror` | 2 | Derive macro for error types | cbscore-types | feature-cbscore-rs |
+| `anyhow` | 1 | Ergonomic error handling for CLI | cbsbuild | all subcmd-*.md |
+| `serde` | 1 (derive) | Serialization/deserialization framework | cbscore-types, cbscore-lib | all subcmd-*.md |
+| `serde_json` | 1 | JSON serialization | cbscore-types, cbscore-lib, cbsbuild | subcmd-versions-create, subcmd-config-init |
+| `serde_yml` | 0.0.12 | YAML serialization (replaces deprecated serde_yaml) | cbscore-types, cbsbuild | subcmd-config-init |
+| `tracing` | 0.1 | Structured logging and instrumentation | cbscore-types, cbscore-lib, cbsbuild | subcmd-runner-build, feature-cbscore-rs |
+| `tracing-subscriber` | 0.3 (env-filter, json) | Log output formatting, filtering, JSON | cbsbuild | feature-cbscore-rs |
+| `tokio` | 1 (full) | Async runtime | cbscore-lib, cbsbuild | subcmd-build, subcmd-runner-build, subcmd-versions-create, subcmd-versions-list |
+| `tokio-util` | 0.7 | CancellationToken for graceful shutdown | cbscore-lib, cbsbuild | subcmd-build |
+| `clap` | 4 (derive) | CLI argument parsing | cbsbuild | all subcmd-*.md |
+| `dialoguer` | 0.12 | Interactive terminal prompts (confirm, input, password) | cbsbuild | subcmd-config-init, subcmd-config-init-vault |
+| `pyo3` | 0.28 (extension-module) | Rust ↔ Python bindings | cbscore-python | feature-cbscore-rs |
+| `pyo3-async-runtimes` | 0.28 (tokio-runtime) | Tokio ↔ asyncio bridge for PyO3 | cbscore-python | subcmd-build, feature-cbscore-rs |
+| `pyo3-log` | 0.13 | Bridge Rust tracing/log to Python logging | cbscore-python | feature-cbscore-rs |
+| `aws-config` | 1 | AWS SDK configuration | cbscore-lib | feature-cbscore-rs |
+| `aws-sdk-s3` | 1 | S3 client (replaces aioboto3) | cbscore-lib | subcmd-versions-list, feature-cbscore-rs |
+| `reqwest` | 0.13 (json) | HTTP client (used by vaultrs internally) | cbscore-lib | feature-cbscore-rs |
+| `vaultrs` | 0.8 | HashiCorp Vault client | cbscore-lib | subcmd-versions-list, feature-cbscore-rs |
+| `regex` | 1 | Version string parsing, component ref matching | cbscore-types | subcmd-versions-create |
+| `strum` | 0.28 (derive) | Enum string conversions (VersionType, ArchType, BuildType) | cbscore-types | subcmd-versions-create |
+| `dirs` | 6 | Home directory resolution (systemd install path) | cbsbuild | subcmd-config-init |
+| `url` | 2 | URL parsing and validation | cbsbuild, cbscore-lib | subcmd-config-init-vault |
+| `rand` | 0.10 | Random name generation (gen_run_name) | cbscore-lib | subcmd-build |
+| `tempfile` | 3 | RAII temporary files and directories | cbscore-lib, cbsbuild | subcmd-build |
+
+**Version policy**: All crates use the latest stable version at time of planning. Versions are pinned at the major level (e.g., `"1"` not `"1.0.228"`) in `[workspace.dependencies]` to allow compatible updates via `cargo update`. The `pyo3` ecosystem crates (`pyo3`, `pyo3-async-runtimes`, `pyo3-log`) must share the same major.minor version to ensure ABI compatibility.
+
+---
+
+## 10. Unified Class Diagram
+
+Combined data model across all subcommands. Classes are grouped by domain: configuration, versions, releases, builder, and CLI.
+
+```mermaid
+classDiagram
+    direction TB
+
+    %% ── Configuration Domain ──────────────────────────────
+
+    class Config {
+        +PathsConfig paths
+        +Option~StorageConfig~ storage
+        +Option~SigningConfig~ signing
+        +Option~LoggingConfig~ logging
+        +Vec~PathBuf~ secrets
+        +Option~PathBuf~ vault
+        +Option~PathBuf~ versions_dir
+        +load(path: &Path) Result~Config~
+        +store(&self, path: &Path) Result~()~
+    }
+
+    class PathsConfig {
+        +Vec~PathBuf~ components
+        +PathBuf scratch
+        +PathBuf scratch_containers
+        +Option~PathBuf~ ccache
+    }
+
+    class StorageConfig {
+        +Option~S3StorageConfig~ s3
+        +Option~RegistryStorageConfig~ registry
+    }
+
+    class S3StorageConfig {
+        +String url
+        +S3LocationConfig artifacts
+        +S3LocationConfig releases
+    }
+
+    class S3LocationConfig {
+        +String bucket
+        +String loc
+    }
+
+    class RegistryStorageConfig {
+        +String url
+    }
+
+    class SigningConfig {
+        +Option~String~ gpg
+        +Option~String~ transit
+    }
+
+    class LoggingConfig {
+        +PathBuf log_file
+    }
+
+    class VaultConfig {
+        +String vault_addr
+        +Option~VaultUserPassConfig~ auth_user
+        +Option~VaultAppRoleConfig~ auth_approle
+        +Option~String~ auth_token
+        +load(path: &Path) Result~VaultConfig~
+        +store(&self, path: &Path) Result~()~
+    }
+
+    class VaultUserPassConfig {
+        +String username
+        +String password
+    }
+
+    class VaultAppRoleConfig {
+        +String role_id
+        +String secret_id
+    }
+
+    Config *-- PathsConfig
+    Config *-- StorageConfig : optional
+    Config *-- SigningConfig : optional
+    Config *-- LoggingConfig : optional
+    StorageConfig *-- S3StorageConfig : optional
+    StorageConfig *-- RegistryStorageConfig : optional
+    S3StorageConfig *-- S3LocationConfig : artifacts
+    S3StorageConfig *-- S3LocationConfig : releases
+    VaultConfig *-- VaultUserPassConfig : optional
+    VaultConfig *-- VaultAppRoleConfig : optional
+
+    %% ── Version Domain ────────────────────────────────────
+
+    class VersionDescriptor {
+        +String version
+        +String title
+        +VersionSignedOffBy signed_off_by
+        +VersionImage image
+        +Vec~VersionComponent~ components
+        +String distro
+        +i32 el_version
+        +read(path: &Path) Result~VersionDescriptor~
+        +write(&self, path: &Path) Result~()~
+    }
+
+    class VersionSignedOffBy {
+        +String user
+        +String email
+    }
+
+    class VersionImage {
+        +String registry
+        +String name
+        +String tag
+    }
+
+    class VersionComponent {
+        +String name
+        +String repo
+        +String r#ref
+    }
+
+    class VersionType {
+        <<enumeration>>
+        Release
+        Dev
+        Test
+        Ci
+    }
+
+    VersionDescriptor *-- VersionSignedOffBy
+    VersionDescriptor *-- VersionImage
+    VersionDescriptor *-- VersionComponent : 1..*
+
+    %% ── Core Component Domain ─────────────────────────────
+
+    class CoreComponent {
+        +String name
+        +String repo
+        +CoreComponentBuildSection build
+        +CoreComponentContainersSection containers
+    }
+
+    class CoreComponentLoc {
+        +PathBuf path
+        +CoreComponent comp
+    }
+
+    CoreComponentLoc *-- CoreComponent
+
+    %% ── Release Domain ────────────────────────────────────
+
+    class ReleaseDesc {
+        +String version
+        +HashMap~ArchType, ReleaseBuildEntry~ builds
+        +load(path: &Path) Result~ReleaseDesc~
+    }
+
+    class ReleaseBuildEntry {
+        +ArchType arch
+        +BuildType build_type
+        +String os_version
+        +HashMap~String, ReleaseComponentVersion~ components
+    }
+
+    class ReleaseComponentVersion {
+        +String name
+        +String version
+        +String sha1
+        +ArchType arch
+        +BuildType build_type
+        +String os_version
+        +String repo_url
+        +ReleaseRPMArtifacts artifacts
+    }
+
+    class ReleaseRPMArtifacts {
+        +String loc
+        +String release_rpm_loc
+    }
+
+    class ArchType {
+        <<enumeration>>
+        x86_64
+    }
+
+    class BuildType {
+        <<enumeration>>
+        rpm
+    }
+
+    ReleaseDesc *-- ReleaseBuildEntry : per architecture
+    ReleaseBuildEntry *-- ReleaseComponentVersion : per component
+    ReleaseComponentVersion *-- ReleaseRPMArtifacts
+    ReleaseBuildEntry --> ArchType
+    ReleaseBuildEntry --> BuildType
+
+    %% ── Builder Domain ────────────────────────────────────
+
+    class Builder {
+        -VersionDescriptor desc
+        -Config config
+        -PathBuf scratch_path
+        -HashMap~String, CoreComponentLoc~ components
+        -Option~StorageConfig~ storage_config
+        -Option~SigningConfig~ signing_config
+        -SecretsMgr secrets
+        -Option~PathBuf~ ccache_path
+        -BuildFlags flags
+        +new(desc, config, flags) Result~Builder~
+        +run(&self) Result~()~
+    }
+
+    class BuildFlags {
+        +bool skip_build
+        +bool force
+        +bool tls_verify
+    }
+
+    class ContainerBuilder {
+        -VersionDescriptor desc
+        -ReleaseDesc release_desc
+        -HashMap~String, CoreComponentLoc~ components
+        +new(desc, release_desc, components) ContainerBuilder
+        +build(&self) Result~()~
+        +finish(&self, secrets, sign_with_transit) Result~()~
+    }
+
+    Builder --> BuildFlags
+    Builder --> Config : reads
+    Builder --> VersionDescriptor : reads
+    Builder --> CoreComponentLoc : loads
+    Builder --> ReleaseDesc : produces
+    Builder --> ContainerBuilder : creates
+    ContainerBuilder --> ReleaseDesc : reads
+
+    %% ── Runner / CLI Domain ───────────────────────────────
+
+    class RunnerOpts {
+        +Option~String~ run_name
+        +bool replace_run
+        +Option~PathBuf~ entrypoint_path
+        +f64 timeout
+        +Option~PathBuf~ log_file_path
+        +Option~CmdEventCallback~ log_out_cb
+        +bool skip_build
+        +bool force
+        +bool tls_verify
+        +CancellationToken cancel_token
+    }
+
+    class MountSources {
+        +PathBuf desc_path
+        +PathBuf cbscore_path
+        +PathBuf entrypoint
+        +PathBuf config_tmp
+        +PathBuf secrets_tmp
+        +PathBuf components_dir
+    }
+
+    class ConfigInitOptions {
+        +Option~Vec~PathBuf~~ components
+        +Option~PathBuf~ scratch
+        +Option~PathBuf~ containers_scratch
+        +Option~PathBuf~ ccache
+        +Option~Vec~PathBuf~~ secrets
+        +Option~PathBuf~ vault
+    }
+
+    class VersionCreateParams {
+        +String version
+        +String version_type_name
+        +HashMap~String, String~ component_refs
+        +Vec~PathBuf~ components_paths
+        +HashMap~String, String~ component_uri_overrides
+        +String distro
+        +i32 el_version
+    }
+
+    class ImageTarget {
+        +String registry
+        +String name
+        +Option~String~ tag
+    }
+
+    RunnerOpts --> MountSources : builds
+    RunnerOpts --> Config : creates container config
+
+    %% ── CLI Command Enums ─────────────────────────────────
+
+    class ConfigCmd {
+        <<enumeration>>
+        Init(ConfigInitArgs)
+        InitVault(ConfigInitVaultArgs)
+    }
+
+    class VersionsCmd {
+        <<enumeration>>
+        Create(VersionsCreateArgs)
+        List(VersionsListArgs)
+    }
+
+    class RunnerCmd {
+        <<enumeration>>
+        Build(RunnerBuildArgs)
+    }
+
+    class BuildArgs {
+        +PathBuf descriptor
+        +PathBuf cbscore_path
+        +Option~PathBuf~ cbs_entrypoint
+        +f64 timeout
+        +Option~String~ sign_with_gpg_id
+        +Option~String~ sign_with_transit
+        +Option~PathBuf~ log_file
+        +bool skip_build
+        +bool force
+        +bool tls_verify
+    }
+
+    BuildArgs --> RunnerOpts : converted to
+```
+
+---
+
+## 11. CLI Call Graph (DAG)
+
+Directed acyclic graph showing the complete call chain from CLI commands through library functions to external tools.
+
+```mermaid
+graph TD
+    %% ── CLI Root ──────────────────────────────────────────
+    cbsbuild["cbsbuild<br/><i>-d/--debug, -c/--config</i>"]
+
+    cbsbuild --> config_cmd["config"]
+    cbsbuild --> versions_cmd["versions"]
+    cbsbuild --> build_cmd["build DESCRIPTOR"]
+    cbsbuild --> runner_cmd["runner <i>(hidden)</i>"]
+    cbsbuild --> advanced_cmd["advanced <i>(hidden, empty)</i>"]
+
+    %% ── config init ──────────────────────────────────────
+    config_cmd --> config_init["config init"]
+    config_cmd --> config_init_vault_cmd["config init-vault"]
+
+    config_init --> config_init_paths["config_init_paths()"]
+    config_init --> config_init_storage["config_init_storage()"]
+    config_init --> config_init_signing["config_init_signing()"]
+    config_init --> config_init_secrets["config_init_secrets_paths()"]
+    config_init --> config_store["Config::store()"]
+
+    config_init_paths --> dialoguer["dialoguer<br/><i>Confirm, Input, Password</i>"]
+    config_init_storage --> dialoguer
+    config_init_signing --> dialoguer
+    config_init_secrets --> dialoguer
+    config_store --> fs_yaml["Filesystem<br/><i>YAML write</i>"]
+
+    %% ── config init-vault ────────────────────────────────
+    config_init_vault_cmd --> config_init_vault_fn["config_init_vault()"]
+    config_init_vault_fn --> validate_vault_addr["validate_vault_addr()"]
+    config_init_vault_fn --> prompt_vault_auth["prompt_vault_auth()"]
+    config_init_vault_fn --> vault_store["VaultConfig::store()"]
+
+    validate_vault_addr --> url_crate["url::Url::parse()"]
+    prompt_vault_auth --> dialoguer
+    vault_store --> fs_yaml
+
+    %% ── versions create ──────────────────────────────────
+    versions_cmd --> versions_create["versions create VERSION"]
+    versions_cmd --> versions_list["versions list"]
+
+    versions_create --> get_sign_off["get_sign_off()"]
+    versions_create --> parse_refs["parse_component_refs()"]
+    versions_create --> version_create_helper["version_create_helper()"]
+    versions_create --> resolve_output["resolve_output_dir()"]
+    versions_create --> write_desc["VersionDescriptor::write()"]
+    versions_create --> check_image["get_image_desc()"]
+
+    get_sign_off --> git_user["get_git_user()"]
+    git_user --> git["git"]
+    resolve_output --> git_root["get_git_repo_root()"]
+    git_root --> git
+    version_create_helper --> load_components["load_components()"]
+    load_components --> fs_yaml_read["Filesystem<br/><i>YAML read</i>"]
+    write_desc --> fs_json["Filesystem<br/><i>JSON write</i>"]
+
+    %% ── versions list ────────────────────────────────────
+    versions_list --> init_secrets["init_secrets()"]
+    versions_list --> resolve_s3["resolve_s3_params()"]
+    versions_list --> list_releases["list_releases()"]
+    versions_list --> display["display_releases()"]
+
+    init_secrets --> secrets_mgr["SecretsMgr::new()"]
+    secrets_mgr --> vault_api["Vault API<br/><i>AppRole / UserPass / Token</i>"]
+    list_releases --> s3_list["s3_list()"]
+    list_releases --> s3_download["s3_download_str_obj()<br/><i>parallel via JoinSet</i>"]
+    s3_list --> s3["S3 / Ceph RGW"]
+    s3_download --> s3
+
+    %% ── build (host-side) ────────────────────────────────
+    build_cmd --> apply_signing["apply_signing_overrides()"]
+    build_cmd --> validate_log["validate_log_file()"]
+    build_cmd --> validate_secrets_fn["validate_secrets()"]
+    build_cmd --> runner_fn["runner()"]
+
+    runner_fn --> validate_entry["validate_entrypoint()"]
+    runner_fn --> read_desc["VersionDescriptor::read()"]
+    runner_fn --> setup_comp["setup_components_dir()"]
+    runner_fn --> create_ctr_config["create_container_config()"]
+    runner_fn --> build_mounts["build_volume_mounts()"]
+    runner_fn --> podman_run["podman_run()"]
+    runner_fn --> podman_stop["podman_stop()<br/><i>on CancellationToken</i>"]
+
+    podman_run --> podman["podman run<br/><i>--security-opt label=disable<br/>--device /dev/fuse<br/>--network host</i>"]
+    podman_stop --> podman
+
+    %% ── Entrypoint (inside container) ────────────────────
+    podman --> entrypoint["entrypoint.sh<br/><i>install uv, venv, cbscore</i>"]
+    entrypoint --> runner_build_cmd
+
+    %% ── runner build (container-side) ────────────────────
+    runner_cmd --> runner_build_cmd["runner build --desc PATH"]
+
+    runner_build_cmd --> load_desc_rb["VersionDescriptor::read()"]
+    runner_build_cmd --> builder_new["Builder::new()"]
+    runner_build_cmd --> builder_run["Builder::run()"]
+
+    builder_new --> secrets_mgr
+    builder_new --> load_components
+
+    builder_run --> prepare["prepare()<br/><i>dnf install deps + cosign</i>"]
+    builder_run --> image_exists["image_already_exists()"]
+    builder_run --> resolve_release["resolve_or_build_release()"]
+    builder_run --> build_container["build_container()"]
+
+    prepare --> dnf["dnf"]
+    image_exists --> skopeo_inspect["skopeo inspect"]
+    skopeo_inspect --> skopeo["skopeo"]
+
+    resolve_release --> check_release["check_release_exists()"]
+    resolve_release --> build_release["build_release()"]
+    check_release --> s3
+
+    build_release --> check_components["check_released_components()<br/><i>parallel</i>"]
+    build_release --> build_rpms["build_rpms()<br/><i>parallel via JoinSet</i>"]
+    build_release --> sign_rpms["sign_rpms()<br/><i>parallel</i>"]
+    build_release --> upload_rpms["s3_upload_rpms()"]
+    build_release --> release_upload["release_desc_upload()"]
+
+    check_components --> s3
+    build_rpms --> rpmbuild["rpmbuild / mock"]
+    sign_rpms --> rpm_sign["rpm --addsign<br/><i>GPG</i>"]
+    upload_rpms --> s3
+    release_upload --> s3
+
+    build_container --> ctr_build["ContainerBuilder::build()"]
+    build_container --> ctr_finish["ContainerBuilder::finish()"]
+
+    ctr_build --> buildah_from["buildah from"]
+    ctr_build --> buildah_run["buildah run<br/><i>PRE/POST/CONFIG scripts</i>"]
+    ctr_finish --> buildah_commit["buildah commit --squash"]
+    ctr_finish --> buildah_push["buildah push"]
+    ctr_finish --> cosign_sign["cosign sign<br/><i>Vault Transit</i>"]
+
+    buildah_from --> buildah["buildah"]
+    buildah_run --> buildah
+    buildah_commit --> buildah
+    buildah_push --> registry["Container Registry"]
+    cosign_sign --> cosign["cosign"]
+    cosign_sign --> vault_api
+
+    %% ── Styling ──────────────────────────────────────────
+    classDef cmd fill:#4a9eff,color:#fff,stroke:#2a7fff
+    classDef lib fill:#50c878,color:#fff,stroke:#30a858
+    classDef ext fill:#ff6b6b,color:#fff,stroke:#dd4444
+    classDef io fill:#ffa726,color:#fff,stroke:#dd8800
+
+    class cbsbuild,config_cmd,config_init,config_init_vault_cmd,versions_cmd,versions_create,versions_list,build_cmd,runner_cmd,runner_build_cmd,advanced_cmd cmd
+    class config_init_paths,config_init_storage,config_init_signing,config_init_secrets,config_store,config_init_vault_fn,validate_vault_addr,prompt_vault_auth,vault_store,get_sign_off,parse_refs,version_create_helper,resolve_output,write_desc,check_image,git_user,git_root,load_components,init_secrets,resolve_s3,list_releases,display,apply_signing,validate_log,validate_secrets_fn,runner_fn,validate_entry,read_desc,setup_comp,create_ctr_config,build_mounts,load_desc_rb,builder_new,builder_run,prepare,image_exists,resolve_release,build_release,build_container,check_release,check_components,build_rpms,sign_rpms,upload_rpms,release_upload,ctr_build,ctr_finish,secrets_mgr,s3_list,s3_download lib
+    class git,podman,skopeo,dnf,rpmbuild,rpm_sign,buildah,cosign,registry,vault_api,s3 ext
+    class dialoguer,url_crate,fs_yaml,fs_yaml_read,fs_json,entrypoint,podman_run,podman_stop,skopeo_inspect,buildah_from,buildah_run,buildah_commit,buildah_push,cosign_sign io
+```
+
+**Legend:**
+- Blue: CLI commands (Clap handlers)
+- Green: Library functions (cbscore-lib / cbscore-types)
+- Red: External tools and services (git, podman, buildah, skopeo, cosign, dnf, rpmbuild, S3, Vault, registry)
+- Orange: I/O operations and tool wrappers
+
+---
+
+## 12. Component / Module Diagram
+
+Shows the 4 Rust crates, their internal modules, and dependencies between them. External systems and Python consumers are included at the boundaries.
+
+```mermaid
+graph TB
+    subgraph Python["Python Consumers"]
+        cbsd["cbsd<br/><i>Celery workers, FastAPI</i>"]
+        cbsdcore["cbsdcore<br/><i>Shared daemon models</i>"]
+        cbc["cbc<br/><i>CLI client</i>"]
+    end
+
+    subgraph cbscore_python["cbscore-python (cdylib)"]
+        py_errors["errors.rs<br/><i>Rust→Python exception mapping</i>"]
+        py_config["config.rs<br/><i>PyConfig wrapper</i>"]
+        py_versions["versions.rs<br/><i>PyVersionDescriptor, VersionType</i>"]
+        py_runner["runner.rs<br/><i>Async bridge via pyo3-async-runtimes</i>"]
+        py_core["core.rs<br/><i>load_components wrapper</i>"]
+        py_logging["logging.rs<br/><i>pyo3-log bridge</i>"]
+    end
+
+    subgraph cbsbuild_crate["cbsbuild (binary)"]
+        main["main.rs<br/><i>#[tokio::main], Clap root</i>"]
+        cmds_config["cmds/config.rs<br/><i>init, init-vault</i>"]
+        cmds_versions["cmds/versions.rs<br/><i>create, list</i>"]
+        cmds_builds["cmds/builds.rs<br/><i>build, runner build</i>"]
+        cmds_advanced["cmds/advanced.rs<br/><i>empty placeholder</i>"]
+        cmds_utils["cmds/utils.rs<br/><i>resolve_path, init_secrets</i>"]
+
+        main --> cmds_config
+        main --> cmds_versions
+        main --> cmds_builds
+        main --> cmds_advanced
+        cmds_config --> cmds_utils
+        cmds_versions --> cmds_utils
+        cmds_builds --> cmds_utils
+    end
+
+    subgraph cbscore_lib["cbscore-lib (async library)"]
+        cmd["cmd.rs<br/><i>async_run_cmd, CmdArg, CmdEvent</i>"]
+        runner["runner.rs<br/><i>runner(), gen_run_name(), stop()</i>"]
+        vault["vault.rs<br/><i>Vault trait + backends (vaultrs)</i>"]
+        s3_mod["s3.rs<br/><i>S3 operations (aws-sdk-s3)</i>"]
+        logging_mod["logging.rs<br/><i>tracing setup</i>"]
+
+        subgraph secrets_mod["secrets/"]
+            secrets_mgr["mgr.rs<br/><i>SecretsMgr</i>"]
+            secrets_git["git.rs<br/><i>SSH key RAII guard</i>"]
+            secrets_storage["storage.rs<br/><i>S3 credential resolution</i>"]
+            secrets_signing["signing.rs<br/><i>GPG keyring RAII guard</i>"]
+            secrets_registry["registry.rs<br/><i>Registry credentials</i>"]
+            secrets_utils["utils.rs<br/><i>find_best_secret_candidate</i>"]
+        end
+
+        subgraph utils_mod["utils/"]
+            utils_git["git.rs<br/><i>clone, checkout, worktree, fetch</i>"]
+            utils_podman["podman.rs<br/><i>podman_run, podman_stop</i>"]
+            utils_buildah["buildah.rs<br/><i>BuildahContainer</i>"]
+            utils_containers["containers.rs<br/><i>canonical URI</i>"]
+            utils_uris["uris.rs<br/><i>matches_uri</i>"]
+        end
+
+        subgraph builder_mod["builder/"]
+            builder_build["build.rs<br/><i>Builder struct + run()</i>"]
+            builder_prepare["prepare.rs<br/><i>prepare_builder, prepare_components</i>"]
+            builder_rpmbuild["rpmbuild.rs<br/><i>build_rpms (parallel)</i>"]
+            builder_signing["signing.rs<br/><i>sign_rpms (GPG)</i>"]
+            builder_upload["upload.rs<br/><i>s3_upload_rpms</i>"]
+        end
+
+        subgraph containers_mod["containers/"]
+            ctr_build["build.rs<br/><i>ContainerBuilder</i>"]
+            ctr_component["component.rs<br/><i>ComponentContainer</i>"]
+            ctr_repos["repos.rs<br/><i>File/URL/COPR repos</i>"]
+        end
+
+        subgraph images_mod["images/"]
+            img_skopeo["skopeo.rs<br/><i>inspect, copy, tags</i>"]
+            img_signing["signing.rs<br/><i>cosign Transit</i>"]
+            img_sync["sync.rs<br/><i>image sync</i>"]
+        end
+
+        subgraph releases_mod["releases/"]
+            rel_s3["s3.rs<br/><i>check/upload releases</i>"]
+            rel_utils["utils.rs<br/><i>component release RPM</i>"]
+        end
+
+        subgraph versions_mod["versions/"]
+            ver_create["create.rs<br/><i>version_create_helper</i>"]
+        end
+
+        %% Internal dependencies
+        runner --> cmd
+        runner --> utils_podman
+        builder_build --> builder_prepare
+        builder_build --> builder_rpmbuild
+        builder_build --> builder_signing
+        builder_build --> builder_upload
+        builder_build --> ctr_build
+        builder_rpmbuild --> cmd
+        builder_signing --> cmd
+        ctr_build --> utils_buildah
+        utils_git --> cmd
+        utils_podman --> cmd
+        utils_buildah --> cmd
+        img_skopeo --> cmd
+        img_signing --> cmd
+        secrets_mgr --> vault
+        secrets_mgr --> secrets_git
+        secrets_mgr --> secrets_storage
+        secrets_mgr --> secrets_signing
+        secrets_mgr --> secrets_registry
+        builder_upload --> s3_mod
+        rel_s3 --> s3_mod
+        s3_mod --> secrets_mgr
+    end
+
+    subgraph cbscore_types["cbscore-types (pure types, no I/O)"]
+        errors["errors.rs<br/><i>CbsError hierarchy (thiserror)</i>"]
+        config_types["config.rs<br/><i>Config, PathsConfig, StorageConfig, etc.</i>"]
+        ver_desc["versions/desc.rs<br/><i>VersionDescriptor, VersionComponent</i>"]
+        ver_utils["versions/utils.rs<br/><i>VersionType, parse_version</i>"]
+        ver_errors["versions/errors.rs<br/><i>VersionError variants</i>"]
+        core_comp["core/component.rs<br/><i>CoreComponent, CoreComponentLoc</i>"]
+        secrets_models["secrets/models.rs<br/><i>16 secret types + 4 unions</i>"]
+        rel_desc["releases/desc.rs<br/><i>ReleaseDesc, ArchType, BuildType</i>"]
+        ctr_desc["containers/desc.rs<br/><i>ContainerDescriptor + template vars</i>"]
+        img_desc["images/desc.rs<br/><i>ImageDescriptor</i>"]
+        img_errors["images/errors.rs<br/><i>SkopeoError, ImageNotFoundError</i>"]
+    end
+
+    subgraph external["External Systems"]
+        ext_git["Git"]
+        ext_podman["Podman"]
+        ext_buildah["Buildah"]
+        ext_skopeo["Skopeo"]
+        ext_cosign["Cosign"]
+        ext_dnf["dnf"]
+        ext_rpmbuild["rpmbuild / mock"]
+        ext_rpm["rpm --addsign"]
+        ext_s3["S3 / Ceph RGW"]
+        ext_vault["HashiCorp Vault"]
+        ext_registry["Container Registry"]
+    end
+
+    %% Crate dependencies
+    cbscore_lib --> cbscore_types
+    cbsbuild_crate --> cbscore_lib
+    cbsbuild_crate --> cbscore_types
+    cbscore_python --> cbscore_lib
+    cbscore_python --> cbscore_types
+
+    %% Python consumer dependencies
+    cbsd --> cbscore_python
+    cbsdcore --> cbscore_python
+    cbc --> cbscore_python
+
+    %% External tool dependencies
+    utils_git --> ext_git
+    utils_podman --> ext_podman
+    utils_buildah --> ext_buildah
+    img_skopeo --> ext_skopeo
+    img_signing --> ext_cosign
+    builder_prepare --> ext_dnf
+    builder_rpmbuild --> ext_rpmbuild
+    builder_signing --> ext_rpm
+    s3_mod --> ext_s3
+    vault --> ext_vault
+    utils_buildah --> ext_registry
+
+    %% Styling
+    classDef types fill:#b39ddb,color:#fff,stroke:#7e57c2
+    classDef lib fill:#81c784,color:#fff,stroke:#4caf50
+    classDef cli fill:#64b5f6,color:#fff,stroke:#2196f3
+    classDef pybridge fill:#ffb74d,color:#fff,stroke:#ff9800
+    classDef consumer fill:#e0e0e0,color:#333,stroke:#9e9e9e
+    classDef external fill:#ef5350,color:#fff,stroke:#c62828
+
+    class cbscore_types types
+    class cbscore_lib lib
+    class cbsbuild_crate cli
+    class cbscore_python pybridge
+    class Python consumer
+    class external external
+```
+
+**Crate roles:**
+
+| Crate | Role | Dependencies | Consumers |
+|-------|------|-------------|-----------|
+| **cbscore-types** | Pure domain types, errors, serde models. No async, no I/O. | serde, thiserror, regex, strum | cbscore-lib, cbsbuild, cbscore-python |
+| **cbscore-lib** | Async library: subprocess execution, S3, Vault, builder pipeline, runner. | cbscore-types, tokio, aws-sdk-s3, vaultrs, tracing | cbsbuild, cbscore-python |
+| **cbsbuild** | CLI binary: Clap command tree, interactive prompts, tokio runtime owner. | cbscore-lib, cbscore-types, clap, dialoguer, anyhow | End users, entrypoint script |
+| **cbscore-python** | PyO3 bindings: thin wrappers exposing Rust types and async functions to Python. | cbscore-lib, cbscore-types, pyo3, pyo3-async-runtimes | cbsd, cbsdcore, cbc |
