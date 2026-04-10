@@ -728,14 +728,43 @@ fn map_error_to_pyerr(err: CbsError) -> PyErr {
 impl PyVersionDescriptor {
     #[classmethod]
     fn __get_pydantic_core_schema__(
-        _cls: &Bound<'_, PyType>,
+        cls: &Bound<'_, PyType>,
         _source_type: &Bound<'_, PyAny>,
         _handler: &Bound<'_, PyAny>,
     ) -> PyResult<PyObject> {
-        // Return a pydantic_core schema:
-        // - validate from JSON: call cls.model_validate_json()
-        // - validate from dict: construct from fields
-        // - serialize: call .model_dump_json()
+        let py = cls.py();
+        let core_schema = py.import("pydantic_core.core_schema")?;
+
+        // Validator: accept PyVersionDescriptor instances as-is,
+        // or construct from dict via cls(**dict)
+        let validator = core_schema.call_method1(
+            "no_info_plain_validator_function",
+            (cls.getattr("_pydantic_validate")?,),
+        )?;
+
+        // Serializer: call .to_dict() to produce a plain dict
+        let serializer = core_schema.call_method1(
+            "plain_serializer_function_ser_schema",
+            (cls.getattr("to_dict")?,),
+        )?;
+
+        core_schema
+            .call_method(
+                "no_info_plain_validator_function",
+                (cls.getattr("_pydantic_validate")?,),
+                Some(&[("serialization", serializer)].into_py_dict(py)?),
+            )?
+            .extract()
+    }
+
+    #[classmethod]
+    fn _pydantic_validate(cls: &Bound<'_, PyType>, value: &Bound<'_, PyAny>) -> PyResult<PyObject> {
+        if value.is_instance(cls)? {
+            return Ok(value.into_py_any(cls.py())?);
+        }
+        // dict → construct via cls(**dict)
+        let dict = value.downcast::<pyo3::types::PyDict>()?;
+        cls.call((), Some(dict))?.extract()
     }
 }
 ```
