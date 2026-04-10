@@ -350,6 +350,14 @@ pub async fn handle_build(
     // The actual secrets temp file is created inside runner().
     validate_secrets(&config)?;
 
+    let cancel_token = CancellationToken::new();
+    let token_clone = cancel_token.clone();
+    tokio::spawn(async move {
+        let _ = tokio::signal::ctrl_c().await;
+        tracing::info!("received interrupt, cancelling build...");
+        token_clone.cancel();
+    });
+
     runner(
         &args.descriptor,
         &args.cbscore_path,
@@ -364,7 +372,7 @@ pub async fn handle_build(
             skip_build: args.skip_build,
             force: args.force,
             tls_verify: args.tls_verify,
-            cancel_token: CancellationToken::new(),
+            cancel_token,
         },
     )
     .await
@@ -466,7 +474,7 @@ tokio::select! {
     result = podman_run(/* ... */) => {
         result?;
     }
-    _ = cancel_token.cancelled() => {
+    _ = opts.cancel_token.cancelled() => {
         tracing::info!("build cancelled, stopping container...");
         podman_stop(Some(&container_name), 1).await?;
         tracing::info!("container stopped");
@@ -486,17 +494,17 @@ tokio::spawn(async move {
     token_clone.cancel();
 });
 
-runner(/* ..., */ cancel_token).await?;
+runner(/* ..., */ RunnerOpts { /* ..., */ cancel_token }).await?;
 ```
 
 ```rust
 // In cbsd's WorkerBuilder — daemon wires its own shutdown signal
 let cancel_token = CancellationToken::new();
 // Store token_clone for WorkerBuilder.shutdown() to call .cancel()
-runner(/* ..., */ cancel_token).await?;
+runner(/* ..., */ RunnerOpts { /* ..., */ cancel_token }).await?;
 ```
 
-The `RunnerOpts` struct gains a `cancel_token: CancellationToken` field. Add `tokio-util` to workspace dependencies.
+Add `tokio-util` to workspace dependencies.
 
 ### Temp file cleanup
 
