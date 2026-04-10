@@ -905,45 +905,29 @@ Also: `utils/containers.rs`, `utils/paths.rs`
 - `containers/build.rs`: `ContainerBuilder` with `build()`, `finish()`
 - `containers/component.rs`: `ComponentContainer` with PRE/POST/CONFIG
 - `containers/repos.rs`: File/URL/COPR repository types
-- `containers/desc.rs`: `ContainerDescriptor` with template variable substitution
-
-  `ContainerDescriptor::load()` accepts an optional `HashMap<String, String>` of template variables. Before YAML parsing, all `{key}` placeholders in the raw file content are replaced with their corresponding values using a single-pass string substitution (no regex or template engine needed).
-
-  **Template variables** (passed by `ContainerBuilder.get_components()`):
-
-  | Variable | Source | Example |
-  |----------|--------|---------|
-  | `version` | `release_comp.version` | `ces-v24.11.0-ga.1` |
-  | `el` | `version_desc.el_version` | `9` |
-  | `git_ref` | `release_comp.version` | `ces-v24.11.0-ga.1` |
-  | `git_sha1` | `release_comp.sha1` | `a1b2c3d4e5f6` |
-  | `git_repo_url` | `release_comp.repo_url` | `https://github.com/ceph/ceph.git` |
-  | `component_name` | `release_comp.name` | `ceph` |
-  | `distro` | `version_desc.distro` | `rockylinux:9` |
-
-  **Implementation**: A `substitute_vars()` helper function performs single-pass replacement of `{key}` patterns. This avoids re-substitution issues (if a value contains `{another_key}` syntax) and requires zero external dependencies. Unknown keys are preserved as-is. This matches Python's `str.format(**vars)` behavior for the simple `{name}` patterns used in the YAML files.
-
-  ```rust
-  /// Substitute `{key}` placeholders in a template string.
-  fn substitute_vars(template: &str, vars: &HashMap<String, String>) -> String { ... }
-
-  impl ContainerDescriptor {
-      pub fn load(path: &Path, vars: Option<&HashMap<String, String>>) -> Result<Self, ContainerError> {
-          let raw = std::fs::read_to_string(path)?;
-          let content = match vars {
-              Some(v) => substitute_vars(&raw, v),
-              None => raw,
-          };
-          let yaml: serde_yml::Value = serde_yml::from_str(&content)?;
-          // ... validate and return
-      }
-  }
-  ```
+- `containers/desc.rs`: `ContainerDescriptor::load()` performs **template variable substitution** before YAML parsing
+  - The raw YAML file content may contain `{key}` placeholders (Python `str.format()` syntax)
+  - Before deserializing, all `{key}` patterns are replaced with values from an optional `HashMap<String, String>`
+  - Implementation: single-pass parser (~20 lines, no external deps) — iterate through the template, match `{key}` patterns, replace with values from the map, error on unresolved placeholders (matches Python's `KeyError` behavior, caught as `ContainerError`)
+  - **Do not** use a multi-pass `str::replace` loop (re-substitution bug if a value contains `{another_key}`)
+  - **Do not** use an external templating crate (no conditionals, loops, or format specs are used — KISS)
+  - Signature: `fn substitute_vars(template: &str, vars: &HashMap<String, String>) -> Result<String, ContainerError>`
+  - 7 known template variables (constructed in `ContainerBuilder::get_components()`):
+    | Variable | Source | Type |
+    |----------|--------|------|
+    | `version` | `ReleaseComponentVersion.version` | `String` |
+    | `el` | `VersionDescriptor.el_version` | `i32` → `.to_string()` |
+    | `git_ref` | `ReleaseComponentVersion.version` | `String` |
+    | `git_sha1` | `ReleaseComponentVersion.sha1` | `String` |
+    | `git_repo_url` | `ReleaseComponentVersion.repo_url` | `String` |
+    | `component_name` | `ReleaseComponentVersion.name` | `String` (currently unused in YAML files) |
+    | `distro` | `VersionDescriptor.distro` | `String` |
+  - Used by all Ceph `container.yaml` files (v17.2, v18.2, v19.2, v20.2) for env vars, labels, and RPM repo URLs
 - `runner.rs`: `runner()`, `gen_run_name()`, `stop()`
 - **Entrypoint verification**: Verify that `cbscore-entrypoint.sh` correctly installs the Rust-backed wheel inside the Podman container and that the `cbsbuild` binary is available on `PATH` for the recursive `cbsbuild runner build` call. This may require updating the entrypoint script to use `maturin` or `pip install` for the wheel instead of `uv tool install .`.
 - **Critical**: PyO3 async binding for `runner()` using `pyo3-async-runtimes`
 
-**Test**: Container descriptor YAML loading; runner integration test with Podman.
+**Test**: Container descriptor YAML loading with template variable substitution (known vars, unknown var error, no vars pass-through); runner integration test with Podman.
 
 ### Phase 10: CLI with Clap (M)
 
