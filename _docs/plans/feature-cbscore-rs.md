@@ -116,7 +116,7 @@ cbscore/
 │   │       │   └── desc.rs          # ArchType, BuildType, ReleaseDesc, etc.
 │   │       ├── containers.rs        # mod declarations for containers submodules
 │   │       ├── containers/
-│   │       │   └── desc.rs          # ContainerDescriptor, repos, scripts
+│   │       │   └── desc.rs          # ContainerDescriptor (with template variable substitution), repos, scripts
 │   │       ├── images.rs            # mod declarations for images submodules
 │   │       └── images/
 │   │           ├── desc.rs          # ImageDescriptor
@@ -905,6 +905,40 @@ Also: `utils/containers.rs`, `utils/paths.rs`
 - `containers/build.rs`: `ContainerBuilder` with `build()`, `finish()`
 - `containers/component.rs`: `ComponentContainer` with PRE/POST/CONFIG
 - `containers/repos.rs`: File/URL/COPR repository types
+- `containers/desc.rs`: `ContainerDescriptor` with template variable substitution
+
+  `ContainerDescriptor::load()` accepts an optional `HashMap<String, String>` of template variables. Before YAML parsing, all `{key}` placeholders in the raw file content are replaced with their corresponding values using a single-pass string substitution (no regex or template engine needed).
+
+  **Template variables** (passed by `ContainerBuilder.get_components()`):
+
+  | Variable | Source | Example |
+  |----------|--------|---------|
+  | `version` | `release_comp.version` | `ces-v24.11.0-ga.1` |
+  | `el` | `version_desc.el_version` | `9` |
+  | `git_ref` | `release_comp.version` | `ces-v24.11.0-ga.1` |
+  | `git_sha1` | `release_comp.sha1` | `a1b2c3d4e5f6` |
+  | `git_repo_url` | `release_comp.repo_url` | `https://github.com/ceph/ceph.git` |
+  | `component_name` | `release_comp.name` | `ceph` |
+  | `distro` | `version_desc.distro` | `rockylinux:9` |
+
+  **Implementation**: A `substitute_vars()` helper function performs single-pass replacement of `{key}` patterns. This avoids re-substitution issues (if a value contains `{another_key}` syntax) and requires zero external dependencies. Unknown keys are preserved as-is. This matches Python's `str.format(**vars)` behavior for the simple `{name}` patterns used in the YAML files.
+
+  ```rust
+  /// Substitute `{key}` placeholders in a template string.
+  fn substitute_vars(template: &str, vars: &HashMap<String, String>) -> String { ... }
+
+  impl ContainerDescriptor {
+      pub fn load(path: &Path, vars: Option<&HashMap<String, String>>) -> Result<Self, ContainerError> {
+          let raw = std::fs::read_to_string(path)?;
+          let content = match vars {
+              Some(v) => substitute_vars(&raw, v),
+              None => raw,
+          };
+          let yaml: serde_yml::Value = serde_yml::from_str(&content)?;
+          // ... validate and return
+      }
+  }
+  ```
 - `runner.rs`: `runner()`, `gen_run_name()`, `stop()`
 - **Entrypoint verification**: Verify that `cbscore-entrypoint.sh` correctly installs the Rust-backed wheel inside the Podman container and that the `cbsbuild` binary is available on `PATH` for the recursive `cbsbuild runner build` call. This may require updating the entrypoint script to use `maturin` or `pip install` for the wheel instead of `uv tool install .`.
 - **Critical**: PyO3 async binding for `runner()` using `pyo3-async-runtimes`
