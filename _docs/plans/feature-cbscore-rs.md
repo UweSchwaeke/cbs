@@ -891,13 +891,16 @@ bindings = "pyo3"
 Can split into 4 independent tracks:
 
 **7a. Git** — `utils/git.rs`: all git async operations (clone, checkout, worktree, fetch, etc.)
+
 **7b. Podman + Buildah** — `utils/podman.rs`, `utils/buildah.rs`: `BuildahContainer`, `podman_run`, `podman_stop`
 - `podman_run` must support a `persist_on_failure: bool` flag — when set, the container is **not** removed after a failed run, allowing manual `podman exec` into the container for debugging
 - `podman_run` must replicate the Python implementation's security and device options required for Buildah-in-Podman:
   - `--security-opt label=disable` (disable SELinux labeling)
   - `--security-opt seccomp=unconfined` (when `unconfined` flag is set)
   - `--device /dev/fuse:/dev/fuse:rw` (FUSE device for overlay mounts inside the container)
+
 **7c. S3** — `s3.rs`: `aws-sdk-s3` replacing `aioboto3` (upload, download, list)
+
 **7d. Skopeo + Images** — `images/skopeo.rs`, `images/signing.rs`, `images/sync.rs`, `images/desc.rs`
 
 Also: `utils/containers.rs`, `utils/paths.rs`
@@ -1234,6 +1237,13 @@ classDiagram
         +HashMap~String, ReleaseComponentVersion~ components
     }
 
+    class ReleaseComponent {
+        +String name
+        +String version
+        +String sha1
+        +Vec~ReleaseComponentVersion~ versions
+    }
+
     class ReleaseComponentVersion {
         +String name
         +String version
@@ -1261,6 +1271,7 @@ classDiagram
     }
 
     ReleaseDesc *-- ReleaseBuildEntry : per architecture
+    ReleaseComponent *-- ReleaseComponentVersion : per build variant
     ReleaseBuildEntry *-- ReleaseComponentVersion : per component
     ReleaseComponentVersion *-- ReleaseRPMArtifacts
     ReleaseBuildEntry --> ArchType
