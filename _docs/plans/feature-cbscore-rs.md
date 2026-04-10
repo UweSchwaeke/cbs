@@ -393,6 +393,7 @@ The following dead code was identified in the Python codebase. It must be ported
 | `cmd_advanced` group | `cmds/advanced.py` | Empty hidden command group with no subcommands. Port as empty Clap subcommand (hidden) |
 | `desc = desc` self-assignment | `images/desc.py:84` | Bug in Python — self-assignment does nothing. Fix in Rust (remove the assignment) |
 | regex bug in `_file_matches` | `images/desc.py:50` | Raw string `r"^.*{m[1]}.*.json"` contains `{m[1]}` which is not interpolated — regex matches literal braces instead of the version number. Fix in Rust by interpolating the captured group into the pattern |
+| `ReleaseComponentSet` | `releases/desc.py:98` | `TypeAdapter` alias defined but never used anywhere in the codebase. Do not port to Rust |
 
 The stray `pass` statements in Python (`builder.py:182`, `signing.py:70,152`) have no Rust equivalent and are simply not ported.
 
