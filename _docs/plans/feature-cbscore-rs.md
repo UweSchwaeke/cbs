@@ -764,6 +764,8 @@ Two approaches were evaluated for the log streaming callback:
 
 **Decision: Option 2 (full async bridge)**. Non-blocking is required. Use `pyo3-async-runtimes` with tokio feature for true async end-to-end. The cbsd per-thread event loop compatibility must be validated early in Phase 9.
 
+**GIL batching for log callbacks**: Use `tokio::sync::mpsc` to batch log lines on the Rust side. One GIL acquisition per batch instead of per line — reduces GIL contention during high-volume build output (rpmbuild, dnf). The channel receiver drains all available messages before acquiring the GIL once.
+
 Regardless of callback approach, the runner itself uses `pyo3-async-runtimes::tokio::future_into_py` to return a Python awaitable:
 
 ```rust
