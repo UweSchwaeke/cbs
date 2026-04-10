@@ -423,15 +423,20 @@ fn create_container_config(
     log_file: bool,
 ) -> Config { ... }
 
+/// Paths to mount into the build container.
+struct MountSources<'a> {
+    desc_path: &'a Path,
+    cbscore_path: &'a Path,
+    entrypoint: &'a Path,
+    config_tmp: &'a Path,
+    secrets_tmp: &'a Path,
+    components_dir: &'a Path,
+}
+
 /// Build the volume mount map for podman.
 fn build_volume_mounts(
-    desc_path: &Path,
-    cbscore_path: &Path,
-    entrypoint: &Path,
-    config_tmp: &Path,
-    secrets_tmp: &Path,
+    sources: &MountSources<'_>,
     config: &Config,
-    components_dir: &Path,
 ) -> HashMap<String, String> { ... }
 
 /// Build the podman command-line arguments.

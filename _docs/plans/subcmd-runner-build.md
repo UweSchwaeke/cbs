@@ -207,7 +207,15 @@ classDiagram
 
     RunnerCmd --> RunnerBuildArgs : Build variant
 
-    note for Builder "Core build orchestrator\nRuns inside the Podman container\nThree-level caching: image → release → component"
+    class BuildFlags {
+        +bool skip_build
+        +bool force
+        +bool tls_verify
+    }
+
+    Builder --> BuildFlags : constructor param
+
+    note for Builder "Core build orchestrator\nRuns inside the Podman container\nThree-level caching: image → release → component\nS3/registry/signing deps injected via traits at impl time\n(simplified to concrete types in this plan)"
     note for RunnerBuildArgs "Clap derive struct\nHidden command (not shown in --help)\nAll paths are container-local (/runner/...)"
     note for ContainerBuilder "Creates container image via Buildah\nApplies component PRE/POST/CONFIG scripts\nPushes to registry and optionally signs"
 ```
@@ -260,32 +268,30 @@ pub struct RunnerBuildArgs {
 ### Implementation functions
 
 ```rust
-/// Log a debug summary of all build parameters.
-fn log_build_params(config: &Config, desc_path: &Path, args: &RunnerBuildArgs) {
-    let upload_to = config.storage.as_ref()
+/// Extract display-friendly config summaries for logging.
+fn config_summary(config: &Config) -> (String, String, String, String) {
+    let upload = config.storage.as_ref()
         .and_then(|s| s.s3.as_ref())
-        .map(|s| s.url.as_str())
-        .unwrap_or("not uploading");
+        .map_or("not uploading".into(), |s| s.url.clone());
     let gpg = config.signing.as_ref()
-        .and_then(|s| s.gpg.as_deref())
-        .unwrap_or("not signing with gpg");
+        .and_then(|s| s.gpg.clone())
+        .unwrap_or_else(|| "not signing with gpg".into());
     let transit = config.signing.as_ref()
-        .and_then(|s| s.transit.as_deref())
-        .unwrap_or("not signing with transit");
+        .and_then(|s| s.transit.clone())
+        .unwrap_or_else(|| "not signing with transit".into());
     let registry = config.storage.as_ref()
         .and_then(|s| s.registry.as_ref())
-        .map(|r| r.url.as_str())
-        .unwrap_or("not pushing to registry");
+        .map_or("not pushing to registry".into(), |r| r.url.clone());
+    (upload, gpg, transit, registry)
+}
 
+/// Log a debug summary of all build parameters.
+fn log_build_params(config: &Config, desc_path: &Path, flags: &BuildFlags) {
+    let (upload, gpg, transit, registry) = config_summary(config);
     tracing::debug!(
         desc = %desc_path.display(),
-        scratch = %config.paths.scratch.display(),
-        components = ?config.paths.components,
-        %upload_to, %gpg, %transit, %registry,
-        skip_build = args.skip_build,
-        force = args.force,
-        tls_verify = args.tls_verify,
-        "runner build called"
+        %upload, %gpg, %transit, %registry,
+        ?flags, "runner build called"
     );
 }
 
@@ -302,9 +308,9 @@ fn load_descriptor(path: &Path) -> anyhow::Result<VersionDescriptor> {
 fn create_builder(
     desc: VersionDescriptor,
     config: &Config,
-    args: &RunnerBuildArgs,
+    flags: BuildFlags,
 ) -> anyhow::Result<Builder> {
-    Builder::new(desc, config, args.skip_build, args.force, args.tls_verify)
+    Builder::new(desc, config, flags)
         .map_err(|e| anyhow::anyhow!("unable to initialize builder: {e}"))
 }
 ```
@@ -320,10 +326,15 @@ pub async fn handle_runner_build(
     config: &Config,
     args: RunnerBuildArgs,
 ) -> anyhow::Result<()> {
-    log_build_params(config, &args.desc, &args);
+    let flags = BuildFlags {
+        skip_build: args.skip_build,
+        force: args.force,
+        tls_verify: args.tls_verify,
+    };
+    log_build_params(config, &args.desc, &flags);
 
     let desc = load_descriptor(&args.desc)?;
-    let builder = create_builder(desc, config, &args)?;
+    let builder = create_builder(desc, config, flags)?;
 
     builder.run().await
         .map_err(|e| anyhow::anyhow!("unable to run build: {e}"))
@@ -363,9 +374,7 @@ impl Builder {
     pub fn new(
         desc: VersionDescriptor,
         config: &Config,
-        skip_build: bool,
-        force: bool,
-        tls_verify: bool,
+        flags: BuildFlags,
     ) -> Result<Self, BuilderError> { ... }
 
     /// Run the full build pipeline.

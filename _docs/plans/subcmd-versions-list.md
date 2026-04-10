@@ -229,6 +229,7 @@ pub enum VersionsCmd {
 
 ```rust
 /// Initialize the SecretsMgr from config (loads secrets, authenticates to Vault).
+/// Located in `rust/cbsbuild/src/cmds/utils.rs` — shared by all commands needing S3/Vault.
 fn init_secrets(config: &Config) -> anyhow::Result<SecretsMgr> {
     let vault_config = config.get_vault_config()
         .map_err(|e| anyhow::anyhow!("unable to obtain vault config: {e}"))?;

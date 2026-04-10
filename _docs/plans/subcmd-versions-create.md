@@ -327,7 +327,7 @@ async fn resolve_output_dir(
 }
 ```
 
-The config model (`Config` in `cbscore-types`) gains an optional field:
+The config model (`Config` in `cbscore-types`) gains an optional field (resolves the Python FIXME at `cmds/versions.py:88` — "make this configurable". This enables deployments where the git repo root is not available, e.g., cbsd workers):
 
 ```rust
 pub struct Config {
@@ -400,53 +400,54 @@ async fn check_image_descriptor(version: &str) {
 ### Command handler
 
 ```rust
+/// Build a VersionDescriptor from CLI args.
+async fn create_descriptor(
+    args: &VersionsCreateArgs,
+) -> anyhow::Result<VersionDescriptor> {
+    let sign_off = get_sign_off().await?;
+    let params = VersionCreateParams {
+        version: args.version.clone(),
+        version_type_name: args.version_type.clone(),
+        component_refs: parse_component_refs(&args.components)?,
+        components_paths: args.components_paths.clone(),
+        component_uri_overrides: parse_uri_overrides(&args.component_uri_overrides)?,
+        distro: args.distro.clone(),
+        el_version: args.el_version,
+    };
+    let image = ImageTarget {
+        registry: args.registry.clone(),
+        name: args.image_name.clone(),
+        tag: args.image_tag.clone(),
+    };
+    version_create_helper(&params, &image, &sign_off)
+        .map_err(Into::into)
+}
+
+/// Write descriptor to disk and check for image descriptor.
+async fn write_and_verify(
+    desc: &VersionDescriptor,
+    output_dir: &Path,
+    version_type: &str,
+) -> anyhow::Result<()> {
+    let path = resolve_descriptor_path(output_dir, version_type, &desc.version)?;
+    write_descriptor(desc, &path)?;
+    check_image_descriptor(&desc.version).await;
+    Ok(())
+}
+
 /// Handle the `cbsbuild versions create` command.
 pub async fn handle_versions_create(
     config: Option<&Config>,
     args: VersionsCreateArgs,
 ) -> anyhow::Result<()> {
-    let (user_name, user_email) = get_sign_off().await?;
-
-    // Parse raw CLI strings into maps before calling the library function.
-    // This matches the Python flow where cmds/versions.py parses first,
-    // and allows cbsd to pass dicts directly via PyO3.
-    let component_refs = parse_component_refs(&args.components)?;
-    let uri_overrides = parse_uri_overrides(&args.component_uri_overrides)?;
-
-    let desc = version_create_helper(
-        &args.version,
-        &args.version_type,
-        &component_refs,
-        &args.components_paths,
-        &uri_overrides,
-        &args.distro,
-        args.el_version,
-        &args.registry,
-        &args.image_name,
-        args.image_tag.as_deref(),
-        &user_name,
-        &user_email,
-    )?;
-
+    let desc = create_descriptor(&args).await?;
     println!("version: {}", desc.version);
     println!("version title: {}", desc.title);
 
-    let config_versions_dir = config.and_then(|c| c.versions_dir.as_deref());
-    let output_dir = resolve_output_dir(
-        args.output_dir.as_deref(),
-        config_versions_dir,
-    ).await?;
+    let config_dir = config.and_then(|c| c.versions_dir.as_deref());
+    let output_dir = resolve_output_dir(args.output_dir.as_deref(), config_dir).await?;
 
-    let path = resolve_descriptor_path(
-        &output_dir,
-        &args.version_type,
-        &desc.version,
-    )?;
-
-    write_descriptor(&desc, &path)?;
-    check_image_descriptor(&desc.version).await;
-
-    Ok(())
+    write_and_verify(&desc, &output_dir, &args.version_type).await
 }
 ```
 
@@ -465,19 +466,34 @@ Located in `cbscore-lib/src/versions/create.rs`. This is the **shared** function
 /// maps (name → ref/uri). The CLI handler parses raw "NAME@VERSION" and
 /// "COMPONENT=URI" strings before calling this function. This matches
 /// the Python signature where cbsd passes dicts directly.
+/// Parameters describing what to build.
+pub struct VersionCreateParams {
+    pub version: String,
+    pub version_type_name: String,
+    pub component_refs: HashMap<String, String>,
+    pub components_paths: Vec<PathBuf>,
+    pub component_uri_overrides: HashMap<String, String>,
+    pub distro: String,
+    pub el_version: i32,
+}
+
+/// Target container image coordinates.
+pub struct ImageTarget {
+    pub registry: String,
+    pub name: String,
+    pub tag: Option<String>,
+}
+
+/// Author sign-off information.
+pub struct SignOff {
+    pub user_name: String,
+    pub user_email: String,
+}
+
 pub fn version_create_helper(
-    version: &str,
-    version_type_name: &str,
-    component_refs: &HashMap<String, String>,
-    components_paths: &[PathBuf],
-    component_uri_overrides: &HashMap<String, String>,
-    distro: &str,
-    el_version: i32,
-    registry: &str,
-    image_name: &str,
-    image_tag: Option<&str>,
-    user_name: &str,
-    user_email: &str,
+    params: &VersionCreateParams,
+    image: &ImageTarget,
+    sign_off: &SignOff,
 ) -> Result<VersionDescriptor, CbsError> { ... }
 ```
 

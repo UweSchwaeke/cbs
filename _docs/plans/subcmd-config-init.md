@@ -391,12 +391,10 @@ struct ConfigInitOptions {
 }
 
 /// Collect paths configuration interactively.
+/// Reads path fields from opts; prompts interactively for any that are None.
 fn config_init_paths(
     cwd: &Path,
-    components_paths: Option<Vec<PathBuf>>,
-    scratch_path: Option<PathBuf>,
-    containers_scratch_path: Option<PathBuf>,
-    ccache_path: Option<PathBuf>,
+    opts: &ConfigInitOptions,
 ) -> anyhow::Result<PathsConfig> { ... }
 
 /// Collect storage configuration interactively.
