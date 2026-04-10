@@ -1341,6 +1341,8 @@ classDiagram
         +PathBuf components_dir
     }
 
+    note for MountSources "Fields use borrowed &'a Path at runtime.\nMermaid cannot express lifetimes;\nsee subcmd-build.md for the actual struct."
+
     class ConfigInitOptions {
         +Option~Vec~PathBuf~~ components
         +Option~PathBuf~ scratch
