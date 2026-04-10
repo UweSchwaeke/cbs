@@ -191,6 +191,7 @@ classDiagram
         +bool skip_build
         +bool force
         +bool tls_verify
+        +CancellationToken cancel_token
     }
 
     class ContainerConfig {
@@ -363,6 +364,7 @@ pub async fn handle_build(
             skip_build: args.skip_build,
             force: args.force,
             tls_verify: args.tls_verify,
+            cancel_token: CancellationToken::new(),
         },
     )
     .await
@@ -386,6 +388,7 @@ pub struct RunnerOpts {
     pub skip_build: bool,
     pub force: bool,
     pub tls_verify: bool,
+    pub cancel_token: CancellationToken,
 }
 
 /// Launch a containerized build via Podman.
