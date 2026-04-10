@@ -886,6 +886,8 @@ bindings = "pyo3"
 - `cbscore-lib/src/secrets/signing.rs`: GPG keyring RAII guard
 - `cbscore-lib/src/secrets/storage.rs`, `registry.rs`
 
+**SecretsMgr construction follows Interface Segregation**: `SecretsMgr::new()` is sync (no I/O) — it only stores references to secrets and vault config. A separate `async fn check_connection(&self)` verifies vault connectivity. A convenience `async fn connect(secrets, vault_config) -> Result<SecretsMgr>` combines both steps. Callers without vault (e.g. local builds) pay no async cost.
+
 **Test**: `async_run_cmd("echo", "hello")`; timeout + kill; SecretsMgr with mock Vault.
 
 ### Phase 7: External Tool Wrappers (XL — parallelizable)

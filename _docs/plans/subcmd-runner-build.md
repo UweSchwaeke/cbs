@@ -94,8 +94,9 @@ sequenceDiagram
         CLI->>CLI: Exit with error
     end
 
-    CLI->>Builder: Builder::new(desc, config, skip_build, force, tls_verify)
-    Builder->>Secrets: Initialize SecretsMgr (load secrets, Vault auth)
+    CLI->>Builder: Builder::new(desc, config, flags)
+    Builder->>Secrets: SecretsMgr::new() (sync, no I/O)
+    Builder->>Secrets: secrets_mgr.check_connection().await (vault verification)
     Builder->>Builder: load_components(config.paths.components)
     alt No components found
         Builder->>CLI: BuilderError
