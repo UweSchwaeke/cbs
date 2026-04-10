@@ -344,9 +344,10 @@ Split into focused helpers following the orchestrator pattern:
 
 ```rust
 /// Fetch the git user (name, email) for sign-off.
-async fn get_sign_off() -> anyhow::Result<(String, String)> {
-    get_git_user().await
-        .map_err(|e| anyhow::anyhow!("error obtaining git user info: {e}"))
+async fn get_sign_off() -> anyhow::Result<VersionSignedOffBy> {
+    let (user, email) = get_git_user().await
+        .map_err(|e| anyhow::anyhow!("error obtaining git user info: {e}"))?;
+    Ok(VersionSignedOffBy { user, email })
 }
 
 /// Determine the output file path and check it doesn't already exist.
@@ -484,16 +485,10 @@ pub struct ImageTarget {
     pub tag: Option<String>,
 }
 
-/// Author sign-off information.
-pub struct SignOff {
-    pub user_name: String,
-    pub user_email: String,
-}
-
 pub fn version_create_helper(
     params: &VersionCreateParams,
     image: &ImageTarget,
-    sign_off: &SignOff,
+    sign_off: &VersionSignedOffBy,
 ) -> Result<VersionDescriptor, CbsError> { ... }
 ```
 
