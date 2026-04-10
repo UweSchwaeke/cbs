@@ -1699,7 +1699,7 @@ graph TB
         ver_errors["versions/errors.rs<br/><i>VersionError variants</i>"]
         core_comp["core/component.rs<br/><i>CoreComponent, CoreComponentLoc</i>"]
         secrets_models["secrets/models.rs<br/><i>16 secret types + 4 unions</i>"]
-        rel_desc["releases/desc.rs<br/><i>ReleaseDesc, ArchType, BuildType</i>"]
+        rel_desc["releases/desc.rs<br/><i>ReleaseDesc, ReleaseComponent, ReleaseBuildEntry, ReleaseComponentVersion, ArchType, BuildType</i>"]
         ctr_desc["containers/desc.rs<br/><i>ContainerDescriptor + template vars</i>"]
         img_desc["images/desc.rs<br/><i>ImageDescriptor</i>"]
         img_errors["images/errors.rs<br/><i>SkopeoError, ImageNotFoundError</i>"]
