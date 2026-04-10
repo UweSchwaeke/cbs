@@ -36,7 +36,7 @@ Inherits from parent `cbsbuild`:
 | Section | Interactive prompts | Pre-filled by shortcut flags |
 |---------|-------------------|------------------------------|
 | **Paths** | components dirs, scratch, containers-scratch, ccache | `/cbs/components`, `/cbs/scratch`, `/var/lib/containers`, `/cbs/ccache` |
-| **Vault** | vault config file path + auth method | `/cbs/config/vault.yaml` |
+| **Vault** | vault config file path (pass-through, no wizard) | `/cbs/config/vault.yaml` |
 | **Storage** | S3 URL/buckets/locations, registry URL | Not pre-filled (always interactive) |
 | **Signing** | GPG secret name, Transit secret name | Not pre-filled (always interactive) |
 | **Secrets** | paths to secrets files | `/cbs/config/secrets.yaml` |
@@ -80,7 +80,6 @@ sequenceDiagram
     actor User
     participant CLI as cbsbuild config init
     participant Paths as config_init_paths()
-    participant Vault as config_init_vault()
     participant Storage as config_init_storage()
     participant Signing as config_init_signing()
     participant Secrets as config_init_secrets_paths()

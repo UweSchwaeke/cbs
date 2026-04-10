@@ -2,7 +2,7 @@
 
 ## Description
 
-`cbsbuild config init-vault` is a standalone interactive wizard that generates **only** the Vault authentication configuration file (default: `cbs-build.vault.yaml`). It is the same Vault configuration logic used by `config init`, extracted as its own command for cases where the main config already exists but Vault credentials need to be set up or rotated independently.
+`cbsbuild config init-vault` is a standalone interactive wizard that generates **only** the Vault authentication configuration file (default: `cbs-build.vault.yaml`). It is a separate command for cases where the main config already exists but Vault credentials need to be set up or rotated independently. It is not called by `config init`.
 
 The generated file is referenced by the main config's `vault:` field and is loaded at runtime to authenticate against HashiCorp Vault for secrets retrieval.
 
@@ -225,7 +225,7 @@ pub enum ConfigCmd {
 
 ### Implementation function
 
-The `config_init_vault()` function is **shared** between `config init` and `config init-vault` — `config init` calls it as part of its wizard, and `config init-vault` calls it directly. This avoids duplication (DRY).
+The `config_init_vault()` function is used only by the standalone `config init-vault` command. It is not called by `config init`, which passes the vault path through as-is to the `Config` constructor without running any interactive vault wizard.
 
 ```rust
 /// Prompt for the vault config output path, with a default.
