@@ -630,7 +630,7 @@ Use `#[serde(rename_all = "kebab-case")]` on config structs to match the hyphena
 
 ### Secret discriminated unions
 
-Custom `Deserialize` implementations. Deserialize to `serde_json::Value` first, inspect `creds` and `type` fields, then deserialize to the correct variant. This mirrors the Python discriminator functions exactly.
+Custom `Deserialize` implementations. Deserialize to `serde_yml::Value` first, inspect `creds` and `type` fields, then deserialize to the correct variant. This mirrors the Python discriminator functions exactly. Using `serde_yml::Value` (not `serde_json::Value`) preserves YAML line/column positions in error messages, since secret files are YAML.
 
 **Rust keyword collision**: The `type` field used as a discriminator in 6 secret model structs (`StorageS3Secret`, `GPGPlainSecret`, `GPGVaultSingleSecret`, `GPGVaultPrivateKeySecret`, `GPGVaultPublicKeySecret`, `VaultTransitSecret`) is a strict Rust keyword. Each struct must use `r#type` as the field name (serde automatically serializes `r#type` as `"type"`) or use `type_` with `#[serde(rename = "type")]`. This is the same pattern as `VersionComponent.ref` → `r#ref`.
 
@@ -1004,7 +1004,7 @@ Phase 0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 (parallel tracks) → 8 → 9 
 | Risk | Severity | Mitigation |
 |------|----------|------------|
 | PyO3 async bridge for `runner()` | High | Use simplified sync callback wrapper in Python shim; test the bridge in Phase 0 with a minimal async function |
-| Secret discriminated unions (multi-field dispatch) | Medium | Custom `Deserialize` via `serde_json::Value` intermediary; comprehensive round-trip tests |
+| Secret discriminated unions (multi-field dispatch) | Medium | Custom `Deserialize` via `serde_yml::Value` intermediary; comprehensive round-trip tests |
 | Maturin + uv workspace coexistence | Medium | Validate in Phase 0 before any real code; `maturin develop` must work alongside `uv sync` |
 | `VersionDescriptor` as Pydantic field in `cbsd` | Medium | Implement `__get_pydantic_core_schema__` on `#[pyclass]` so Pydantic can validate/serialize the Rust type natively |
 | `aioboto3` → `aws-sdk-s3` API differences | Medium | Focus on the 6 operations used; test with Ceph RGW |
