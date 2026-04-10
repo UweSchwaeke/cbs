@@ -687,6 +687,8 @@ Replace `aioboto3` with `aws-sdk-s3`. Explicit `Credentials::new()` from `Secret
 `gpg_signing_key()` → `GpgKeyringGuard` with `Drop` that erases the temp keyring.
 `git_url_for()` → `GitUrlGuard` with `Drop` that cleans up SSH key/config.
 
+**Drop error handling**: `Drop` impls log cleanup failures at `WARN` level and never panic. Each guard provides an explicit `async fn cleanup(self) -> Result<()>` as the primary cleanup path — callers should prefer this for proper error propagation. The `Drop` impl is a best-effort fallback only, for cases where the guard is dropped without explicit cleanup (e.g. early return, panic unwinding).
+
 ---
 
 ## 3. PyO3 Binding Strategy
