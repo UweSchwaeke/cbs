@@ -672,6 +672,8 @@ pub fn run_cmd(args: &[CmdArg], env: Option<&HashMap<String, String>>) -> Result
 
 Uses `tokio::process::Command` with `BufReader` on stdout/stderr for streaming. Timeout via `tokio::time::timeout` with `child.kill()` on expiry.
 
+**Borrowed vs owned events**: `CmdEvent<'a>` uses borrowed data for internal use (zero-copy within `async_run_cmd`). An `OwnedCmdEvent` variant with owned `String` fields is provided for crossing async boundaries — specifically the PyO3 callback that must acquire the GIL and cannot hold borrows. Use `CmdEvent::to_owned() -> OwnedCmdEvent` at the boundary.
+
 ### Vault client
 
 Use the `vaultrs` crate for full Vault client support. Although only 3 endpoints are currently needed (AppRole login, UserPass login, KVv2 read), using the established crate provides better API coverage for future needs and avoids maintaining a custom HTTP client.
