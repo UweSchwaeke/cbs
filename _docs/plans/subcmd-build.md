@@ -483,6 +483,8 @@ tokio::select! {
 }
 ```
 
+**Note**: Dropping the `podman_run` future (when the cancellation branch wins) kills the `podman run` CLI process but does NOT stop the container itself — the container continues running. The explicit `podman_stop` call is still required to stop the container. This is intentional, not a double-kill bug.
+
 ```rust
 // In handle_build() — CLI wires Ctrl+C to the token
 let cancel_token = CancellationToken::new();
