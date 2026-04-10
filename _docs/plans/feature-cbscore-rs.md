@@ -543,7 +543,7 @@ With `RUST_LOG=trace`, the output shows the full call chain with timing — inva
 ```toml
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
-pyo3-log = "0.12"
+pyo3-log = "0.13"
 ```
 
 ### Container deployability
