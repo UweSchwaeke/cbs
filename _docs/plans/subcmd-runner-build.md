@@ -166,10 +166,8 @@ classDiagram
         -Option~SigningConfig~ signing_config
         -SecretsMgr secrets
         -Option~PathBuf~ ccache_path
-        -bool skip_build
-        -bool force
-        -bool tls_verify
-        +new(desc, config, skip_build, force, tls_verify) Result~Builder~
+        -BuildFlags flags
+        +new(desc, config, flags) Result~Builder~
         +run(&self) Result~()~
         -build_release(&self) Result~Option~ReleaseDesc~~
         -do_build_release(&self, components) Result~Option~ReleaseDesc~~
@@ -360,9 +358,7 @@ pub struct Builder {
     signing_config: Option<SigningConfig>,
     secrets: SecretsMgr,
     ccache_path: Option<PathBuf>,
-    skip_build: bool,
-    force: bool,
-    tls_verify: bool,
+    flags: BuildFlags,
 }
 ```
 
