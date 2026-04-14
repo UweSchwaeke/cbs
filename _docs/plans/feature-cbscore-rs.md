@@ -176,7 +176,7 @@ graph TB
         subgraph containers_mod["containers/"]
             ctr_build["build.rs<br/><i>ContainerBuilder</i>"]
             ctr_component["component.rs<br/><i>ComponentContainer</i>"]
-            ctr_repos["repos.rs<br/><i>File/URL/COPR repos</i>"]
+            ctr_repos["repos.rs<br/><i>ContainerRepo enum (File/URL/COPR)</i>"]
         end
 
         subgraph images_mod["images/"]
@@ -346,7 +346,7 @@ cbscore/
 │   │       ├── containers/
 │   │       │   ├── build.rs         # ContainerBuilder
 │   │       │   ├── component.rs     # ComponentContainer
-│   │       │   └── repos.rs         # File/URL/COPR repository impls
+│   │       │   └── repos.rs         # ContainerRepo enum (File/URL/COPR) + install()
 │   │       ├── images.rs            # mod declarations for images submodules
 │   │       ├── images/
 │   │       │   ├── skopeo.rs        # skopeo_get_tags, _copy, _inspect, _image_exists
@@ -1653,7 +1653,7 @@ Also: `utils/containers.rs`, `utils/paths.rs`
 
 - `containers/build.rs`: `ContainerBuilder` with `build()`, `finish()`
 - `containers/component.rs`: `ComponentContainer` with PRE/POST/CONFIG
-- `containers/repos.rs`: File/URL/COPR repository types
+- `containers/repos.rs`: `ContainerRepo` enum (File/URL/COPR variants) with `install()` method — enum + match, not a trait hierarchy (same pattern as `VaultAuth`)
 - `containers/desc.rs`: `ContainerDescriptor::load()` performs **template variable substitution** before YAML parsing
   - The raw YAML file content may contain `{key}` placeholders (Python `str.format()` syntax)
   - Before deserializing, all `{key}` patterns are replaced with values from an optional `HashMap<String, String>`
