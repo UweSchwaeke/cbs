@@ -91,8 +91,13 @@ pub enum CbsError {
     #[error("runner error: {0}")]          Runner(String),
     #[error("vault error: {0}")]           Vault(String),
     #[error("secrets error: {0}")]         Secrets(String),
-    #[error(transparent)]                  Other(#[from] anyhow::Error),
+    #[error(transparent)]                  Other(anyhow::Error),
 }
+
+// No `#[from] anyhow::Error` — boundary functions must explicitly map internal
+// errors to the correct `CbsError` variant using
+// `.map_err(|e| CbsError::Builder(format!("{e:#}")))` or similar.
+// This prevents accidental silent conversion.
 
 // cbscore-lib/src/logging.rs
 /// Initialize tracing subscriber. `verbose = true` sets DEBUG level.
@@ -141,12 +146,12 @@ Implement version parsing/normalization utilities, the version descriptor type, 
 
 | Function | Input | Output | Error | Example |
 |----------|-------|--------|-------|---------|
-| `parse_version` | `version: &str` | `ParsedVersion` | `CbsError::MalformedVersion` | `"ces-v99.99.1-asd"` -> `ParsedVersion { prefix: Some("ces"), major: "99", minor: Some("99"), patch: Some("1"), suffix: Some("asd-qwe") }` |
-| `normalize_version` | `version: &str` | `String` | `CbsError::MalformedVersion` | `"ces-99.99.1-asd"` -> `"ces-v99.99.1-asd"` |
-| `get_version_type` | `type_name: &str` | `VersionType` | `CbsError::Version` | `"release"` -> `VersionType::Release` |
-| `parse_component_refs` | `components: &[String]` | `HashMap<String, String>` | `CbsError::Version` | `["ceph@v18.2.4"]` -> `{"ceph": "v18.2.4"}` |
-| `get_major_version` | `version: &str` | `String` | `CbsError::MalformedVersion` | `"ces-v18.2.4"` -> `"18.2"` |
-| `get_minor_version` | `version: &str` | `Option<String>` | `CbsError::MalformedVersion` | `"ces-v18.2.4"` -> `Some("18.2.4")` |
+| `parse_version` | `version: &str` | `ParsedVersion` | `anyhow::Error` | `"ces-v99.99.1-asd"` -> `ParsedVersion { prefix: Some("ces"), major: "99", minor: Some("99"), patch: Some("1"), suffix: Some("asd-qwe") }` |
+| `normalize_version` | `version: &str` | `String` | `anyhow::Error` | `"ces-99.99.1-asd"` -> `"ces-v99.99.1-asd"` |
+| `get_version_type` | `type_name: &str` | `VersionType` | `anyhow::Error` | `"release"` -> `VersionType::Release` |
+| `parse_component_refs` | `components: &[String]` | `HashMap<String, String>` | `anyhow::Error` | `["ceph@v18.2.4"]` -> `{"ceph": "v18.2.4"}` |
+| `get_major_version` | `version: &str` | `String` | `anyhow::Error` | `"ces-v18.2.4"` -> `"18.2"` |
+| `get_minor_version` | `version: &str` | `Option<String>` | `anyhow::Error` | `"ces-v18.2.4"` -> `Some("18.2.4")` |
 
 ```rust
 // cbscore-lib/src/types/versions/utils.rs
@@ -169,14 +174,16 @@ pub enum VersionType {
     Ci,
 }
 
-pub fn parse_version(version: &str) -> Result<ParsedVersion, CbsError>;
-pub fn normalize_version(version: &str) -> Result<String, CbsError>;
-pub fn get_version_type(type_name: &str) -> Result<VersionType, CbsError>;
-pub fn get_version_type_desc(version_type: VersionType) -> Result<&'static str, CbsError>;
-pub fn parse_component_refs(components: &[String]) -> Result<HashMap<String, String>, CbsError>;
-pub fn get_major_version(version: &str) -> Result<String, CbsError>;
-pub fn get_minor_version(version: &str) -> Result<Option<String>, CbsError>;
+pub fn parse_version(version: &str) -> anyhow::Result<ParsedVersion>;
+pub fn normalize_version(version: &str) -> anyhow::Result<String>;
+pub fn get_version_type(type_name: &str) -> anyhow::Result<VersionType>;
+pub fn get_version_type_desc(version_type: VersionType) -> &'static str;
+pub fn parse_component_refs(components: &[String]) -> anyhow::Result<HashMap<String, String>>;
+pub fn get_major_version(version: &str) -> anyhow::Result<String>;
+pub fn get_minor_version(version: &str) -> anyhow::Result<Option<String>>;
 ```
+
+Version utility functions return `anyhow::Result` (internal). The CLI handler and `version_create_helper` (the boundary) map to `CbsError::MalformedVersion` / `CbsError::Version`.
 
 Test vectors from Python inline tests (33 cases for `parse_version`, 19 for `normalize_version`):
 
@@ -208,8 +215,8 @@ Test vectors from Python inline tests (33 cases for `parse_version`, 19 for `nor
 
 | Function | Input | Output | Error | Example |
 |----------|-------|--------|-------|---------|
-| `VersionDescriptor::read` | `path: &Path` | `VersionDescriptor` | `CbsError::NoSuchVersion`, `CbsError::Version` | reads JSON file |
-| `VersionDescriptor::write` | `&self, path: &Path` | `()` | `CbsError::Version` | writes JSON with indent=2 |
+| `VersionDescriptor::read` | `path: &Path` | `VersionDescriptor` | `anyhow::Error` | reads JSON file |
+| `VersionDescriptor::write` | `&self, path: &Path` | `()` | `anyhow::Error` | writes JSON with indent=2 |
 
 ```rust
 // cbscore-lib/src/types/versions/desc.rs
@@ -247,8 +254,8 @@ pub struct VersionDescriptor {
 }
 
 impl VersionDescriptor {
-    pub fn read(path: &Path) -> Result<Self, CbsError>;
-    pub fn write(&self, path: &Path) -> Result<(), CbsError>;
+    pub fn read(path: &Path) -> anyhow::Result<Self>;
+    pub fn write(&self, path: &Path) -> anyhow::Result<()>;
 }
 ```
 
