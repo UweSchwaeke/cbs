@@ -374,7 +374,7 @@ As specified in the main plan (Phase 8), the builder checks for existing artifac
 
 ### Dependencies
 
-Implemented in Phase 9. See [feature-cbscore-rs.md §7](feature-cbscore-rs.md).
+Implemented in Phase 9. See [plan-cbscore-rs.md](plan-cbscore-rs.md).
 
 ### Error handling
 

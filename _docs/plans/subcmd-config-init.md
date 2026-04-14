@@ -437,7 +437,7 @@ fn write_config(config: &Config, path: &Path) -> anyhow::Result<()> {
 
 ### Dependencies
 
-Implemented in Phase 3. See [feature-cbscore-rs.md §7](feature-cbscore-rs.md).
+Implemented in Phase 3. See [plan-cbscore-rs.md](plan-cbscore-rs.md).
 
 ### Error handling
 

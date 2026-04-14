@@ -399,7 +399,7 @@ Internally splits into:
 
 ### Dependencies
 
-Implemented in Phase 2. See [feature-cbscore-rs.md §7](feature-cbscore-rs.md).
+Implemented in Phase 2. See [plan-cbscore-rs.md](plan-cbscore-rs.md).
 
 ### Error handling
 

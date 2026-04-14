@@ -465,7 +465,7 @@ This replaces the Python `try/finally` cleanup pattern with Rust's `Drop` guaran
 
 ### Dependencies
 
-Implemented in Phase 9. See [feature-cbscore-rs.md §7](feature-cbscore-rs.md).
+Implemented in Phase 9. See [plan-cbscore-rs.md](plan-cbscore-rs.md).
 
 ### Error handling
 

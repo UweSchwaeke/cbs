@@ -259,7 +259,7 @@ Note: The Python implementation has a FIXME about inefficient credential fetchin
 
 ### Dependencies
 
-Implemented in Phase 8. See [feature-cbscore-rs.md §7](feature-cbscore-rs.md).
+Implemented in Phase 8. See [plan-cbscore-rs.md](plan-cbscore-rs.md).
 
 ### Error handling
 
