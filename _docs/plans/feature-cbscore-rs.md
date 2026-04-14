@@ -68,9 +68,9 @@ The following principles govern all code written for this rewrite:
 
 **SOLID:**
 - **Single Responsibility** — each struct, function, and module has exactly one reason to change. A function that builds RPMs does not also upload them. A struct that holds config does not also validate it.
-- **Open/Closed** — extend behavior through traits and generics, not by modifying existing code. The `Vault` trait allows new auth backends without changing `SecretsMgr`.
-- **Liskov Substitution** — trait implementations must be interchangeable. Any `VaultClient` implementation (AppRole, UserPass, Token) works identically from the caller's perspective.
-- **Interface Segregation** — keep traits small and focused. A `VaultClient` only reads secrets; it does not manage auth lifecycle. Callers depend only on what they use.
+- **Open/Closed** — extend behavior through traits and generics, not by modifying existing code. S3 operations go through a trait so storage backends can be swapped.
+- **Liskov Substitution** — trait implementations must be interchangeable. Any trait impl works identically from the caller's perspective.
+- **Interface Segregation** — keep traits small and focused. Callers depend only on what they use.
 - **Dependency Inversion** — high-level modules (builder, runner) depend on abstractions (traits), not on concrete implementations. S3 operations go through a trait, not directly through `aws-sdk-s3`.
 
 **KISS:**
@@ -134,7 +134,7 @@ graph TB
     subgraph cbscore_lib["cbscore-lib (async library)"]
         cmd["cmd.rs<br/><i>async_run_cmd, CmdArg, CmdEvent</i>"]
         runner["runner.rs<br/><i>runner(), gen_run_name(), stop()</i>"]
-        vault["vault.rs<br/><i>Vault trait + backends (vaultrs)</i>"]
+        vault["vault.rs<br/><i>VaultClient + VaultAuth enum (vaultrs)</i>"]
         s3_mod["s3.rs<br/><i>S3 operations (aws-sdk-s3)</i>"]
         logging_mod["logging.rs<br/><i>tracing setup</i>"]
 
@@ -332,7 +332,7 @@ cbscore/
 │   │       ├── logging.rs           # tracing-based logging
 │   │       ├── cmd.rs               # CmdArg, async_run_cmd, run_cmd, SecureArg types
 │   │       ├── runner.rs            # runner(), gen_run_name(), stop()
-│   │       ├── vault.rs             # Vault trait + backends (reqwest)
+│   │       ├── vault.rs             # VaultClient + VaultAuth enum (vaultrs)
 │   │       ├── s3.rs                # S3 operations (aws-sdk-s3)
 │   │       ├── secrets.rs           # mod declarations for secrets submodules
 │   │       ├── secrets/
@@ -1310,6 +1310,36 @@ Uses `tokio::process::Command` with `BufReader` on stdout/stderr for streaming. 
 
 Use the `vaultrs` crate for full Vault client support. Although only 3 endpoints are currently needed (AppRole login, UserPass login, KVv2 read), using the established crate provides better API coverage for future needs and avoids maintaining a custom HTTP client.
 
+A single concrete `VaultClient` struct replaces the trait hierarchy originally considered. The Python code only varies by which `hvac.Client` auth method it calls (3 lines across 3 backends), and `vaultrs` already handles all 3 auth methods internally. A `VaultAuth` enum with a `match` is simpler, more idiomatic Rust, and avoids `dyn` boxing or generics infection — consistent with the KISS principle ("if a `match` is clearer than a trait hierarchy, use the `match`").
+
+```rust
+/// Authentication method for Vault.
+pub enum VaultAuth {
+    AppRole { role_id: String, secret_id: String },
+    UserPass { username: String, password: String },
+    Token(String),
+}
+
+/// Concrete Vault client. Authenticates and reads secrets via `vaultrs`.
+pub struct VaultClient {
+    addr: String,
+    auth: VaultAuth,
+}
+
+impl VaultClient {
+    /// Build a `VaultClient` from the deserialized `VaultConfig`.
+    pub fn new(config: &VaultConfig) -> Result<Self> { /* match config auth type */ }
+
+    /// Read a KVv2 secret at the given path.
+    pub async fn read_secret(&self, path: &str) -> Result<HashMap<String, String>> { /* vaultrs */ }
+
+    /// Verify that the Vault server is reachable and the credentials are valid.
+    pub async fn check_connection(&self) -> Result<()> { /* vaultrs */ }
+}
+```
+
+No trait is needed because there will never be a Vault backend that `vaultrs` does not already support, and `SecretsMgr` always talks to exactly one `VaultClient` instance.
+
 ### 5.7 S3 Client
 
 Replace `aioboto3` with `aws-sdk-s3`. Explicit `Credentials::new()` from `SecretsMgr` (no env-based credential loading).
@@ -1604,7 +1634,7 @@ bindings = "pyo3"
 
 ### Phase 5: Vault + Secure Args (M)
 
-- `cbscore-lib/src/vault.rs`: `Vault` trait, AppRole/UserPass/Token backends via `vaultrs` crate
+- `cbscore-lib/src/vault.rs`: `VaultClient` struct + `VaultAuth` enum via `vaultrs` crate (concrete implementation, no trait hierarchy)
 - `cbscore-lib/src/cmd.rs` (partial): `CmdArg`, `SecureArg`, sanitize, `run_cmd()` (sync)
 
 **Test**: SecureArg display masking; sanitize_cmd behavior; Vault integration test (dev Vault container).
