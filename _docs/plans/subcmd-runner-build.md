@@ -95,8 +95,7 @@ sequenceDiagram
     end
 
     CLI->>Builder: Builder::new(desc, config, flags)
-    Builder->>Secrets: SecretsMgr::new() (sync, no I/O)
-    Builder->>Secrets: secrets_mgr.check_connection().await (vault verification)
+    Builder->>Secrets: SecretsMgr::new(secrets, vault_config).await
     Builder->>Builder: load_components(config.paths.components)
     alt No components found
         Builder->>CLI: CbsError::Builder
