@@ -66,10 +66,10 @@ The following principles govern all code written for this rewrite:
 
 **SOLID:**
 - **Single Responsibility** — each struct, function, and module has exactly one reason to change. A function that builds RPMs does not also upload them. A struct that holds config does not also validate it.
-- **Open/Closed** — extend behavior through traits and generics, not by modifying existing code. S3 operations go through a trait so storage backends can be swapped.
+- **Open/Closed** — extend behavior through traits and generics where multiple implementations exist, not by modifying existing code.
 - **Liskov Substitution** — trait implementations must be interchangeable. Any trait impl works identically from the caller's perspective.
 - **Interface Segregation** — keep traits small and focused. Callers depend only on what they use.
-- **Dependency Inversion** — high-level modules (builder, runner) depend on abstractions (traits), not on concrete implementations. S3 operations go through a trait, not directly through `aws-sdk-s3`.
+- **Dependency Inversion** — high-level modules (builder, runner) depend on abstractions (traits) where substitutability is needed. Concrete modules (S3, Vault) use direct implementations when only one backend exists.
 
 **KISS:**
 - Prefer the simplest solution that works. No speculative abstractions, no "just in case" generics.
