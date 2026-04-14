@@ -80,7 +80,7 @@ The following principles govern all code written for this rewrite:
 
 **DRY:**
 - Extract shared logic into functions, not copy-paste. But three similar lines are better than a premature abstraction.
-- Shared types live in `cbscore-types`. Shared async logic lives in `cbscore-lib`. No duplication across crates.
+- Shared types live in the `types` module of `cbscore-lib`. Shared async logic lives in the top-level modules of `cbscore-lib`. No duplication across crates.
 - Configuration parsing, secret resolution, and error mapping each exist in exactly one place.
 
 **Function design:**
@@ -95,7 +95,7 @@ The following principles govern all code written for this rewrite:
 
 ### 3.1 Component / Module Diagram
 
-Shows the 4 Rust crates, their internal modules, and dependencies between them. External systems and Python consumers are included at the boundaries.
+Shows the 3 Rust crates, their internal modules, and dependencies between them. External systems and Python consumers are included at the boundaries.
 
 ```mermaid
 graph TB
@@ -131,12 +131,24 @@ graph TB
         cmds_builds --> cmds_utils
     end
 
-    subgraph cbscore_lib["cbscore-lib (async library)"]
+    subgraph cbscore_lib["cbscore-lib (library)"]
         cmd["cmd.rs<br/><i>async_run_cmd, CmdArg, CmdEvent</i>"]
         runner["runner.rs<br/><i>runner(), gen_run_name(), stop()</i>"]
         vault["vault.rs<br/><i>VaultClient + VaultAuth enum (vaultrs)</i>"]
         s3_mod["s3.rs<br/><i>S3 operations (aws-sdk-s3)</i>"]
         logging_mod["logging.rs<br/><i>tracing setup</i>"]
+
+        subgraph types_mod["types/ (pure domain types, no I/O)"]
+            errors["errors.rs<br/><i>CbsError enum (~8 variants, thiserror)</i>"]
+            config_types["config.rs<br/><i>Config, PathsConfig, StorageConfig, etc.</i>"]
+            ver_desc["versions/desc.rs<br/><i>VersionDescriptor, VersionComponent</i>"]
+            ver_utils["versions/utils.rs<br/><i>VersionType, parse_version</i>"]
+            core_comp["core/component.rs<br/><i>CoreComponent, CoreComponentLoc</i>"]
+            secrets_models["secrets/models.rs<br/><i>16 secret types + 4 unions</i>"]
+            rel_desc["releases/desc.rs<br/><i>ReleaseDesc, ReleaseComponent,<br/>ReleaseComponentVersion, ArchType, BuildType</i>"]
+            ctr_desc["containers/desc.rs<br/><i>ContainerDescriptor + template vars</i>"]
+            img_desc["images/desc.rs<br/><i>ImageDescriptor</i>"]
+        end
 
         subgraph secrets_mod["secrets/"]
             secrets_mgr["mgr.rs<br/><i>SecretsMgr</i>"]
@@ -210,18 +222,6 @@ graph TB
         s3_mod --> secrets_mgr
     end
 
-    subgraph cbscore_types["cbscore-types (pure types, no I/O)"]
-        errors["errors.rs<br/><i>CbsError enum (~8 variants, thiserror)</i>"]
-        config_types["config.rs<br/><i>Config, PathsConfig, StorageConfig, etc.</i>"]
-        ver_desc["versions/desc.rs<br/><i>VersionDescriptor, VersionComponent</i>"]
-        ver_utils["versions/utils.rs<br/><i>VersionType, parse_version</i>"]
-        core_comp["core/component.rs<br/><i>CoreComponent, CoreComponentLoc</i>"]
-        secrets_models["secrets/models.rs<br/><i>16 secret types + 4 unions</i>"]
-        rel_desc["releases/desc.rs<br/><i>ReleaseDesc, ReleaseComponent,<br/>ReleaseComponentVersion, ArchType, BuildType</i>"]
-        ctr_desc["containers/desc.rs<br/><i>ContainerDescriptor + template vars</i>"]
-        img_desc["images/desc.rs<br/><i>ImageDescriptor</i>"]
-    end
-
     subgraph external["External Systems"]
         ext_git["Git"]
         ext_podman["Podman"]
@@ -237,11 +237,8 @@ graph TB
     end
 
     %% Crate dependencies
-    cbscore_lib --> cbscore_types
     cbsbuild_crate --> cbscore_lib
-    cbsbuild_crate --> cbscore_types
     cbscore_python --> cbscore_lib
-    cbscore_python --> cbscore_types
 
     %% Python consumer dependencies
     cbsd --> cbscore_python
@@ -262,14 +259,12 @@ graph TB
     utils_buildah --> ext_registry
 
     %% Styling
-    classDef types fill:#b39ddb,color:#fff,stroke:#7e57c2
     classDef lib fill:#81c784,color:#fff,stroke:#4caf50
     classDef cli fill:#64b5f6,color:#fff,stroke:#2196f3
     classDef pybridge fill:#ffb74d,color:#fff,stroke:#ff9800
     classDef consumer fill:#e0e0e0,color:#333,stroke:#9e9e9e
     classDef external fill:#ef5350,color:#fff,stroke:#c62828
 
-    class cbscore_types types
     class cbscore_lib lib
     class cbsbuild_crate cli
     class cbscore_python pybridge
@@ -281,10 +276,9 @@ graph TB
 
 | Crate | Role | Dependencies | Consumers |
 |-------|------|-------------|-----------|
-| **cbscore-types** | Pure domain types, errors, serde models. No async, no I/O. | serde, thiserror, regex, strum | cbscore-lib, cbsbuild, cbscore-python |
-| **cbscore-lib** | Async library: subprocess execution, S3, Vault, builder pipeline, runner. | cbscore-types, anyhow, tokio, aws-sdk-s3, vaultrs, tracing | cbsbuild, cbscore-python |
-| **cbsbuild** | CLI binary: Clap command tree, interactive prompts, tokio runtime owner. | cbscore-lib, cbscore-types, clap, dialoguer, anyhow | End users, entrypoint script |
-| **cbscore-python** | PyO3 bindings: thin wrappers exposing Rust types and async functions to Python. | cbscore-lib, cbscore-types, pyo3, pyo3-async-runtimes | cbsd, cbsdcore, cbc |
+| **cbscore-lib** | Core library: pure domain types, errors, serde models in `types/` module; async subprocess execution, S3, Vault, builder pipeline, runner in top-level modules. | anyhow, thiserror, serde, regex, strum, tokio, aws-sdk-s3, vaultrs, tracing | cbsbuild, cbscore-python |
+| **cbsbuild** | CLI binary: Clap command tree, interactive prompts, tokio runtime owner. | cbscore-lib, clap, dialoguer, anyhow | End users, entrypoint script |
+| **cbscore-python** | PyO3 bindings: thin wrappers exposing Rust types and async functions to Python. | cbscore-lib, pyo3, pyo3-async-runtimes | cbsd, cbsdcore, cbc |
 
 ### 3.2 Cargo Workspace Structure
 
@@ -295,41 +289,38 @@ cbscore/
 ├── Cargo.toml                      # Workspace root
 ├── pyproject.toml                   # Maturin build config (replaces uv_build)
 ├── rust/
-│   ├── cbscore-types/               # Pure domain types — NO async, NO I/O
+│   ├── cbscore-lib/                 # Core library — types, async operations, S3, Vault, builder, runner
 │   │   ├── Cargo.toml
 │   │   └── src/
-│   │       ├── lib.rs
-│   │       ├── errors.rs            # CbsError enum (~8 variants, thiserror)
-│   │       ├── config.rs            # Config, PathsConfig, StorageConfig, etc. (serde)
-│   │       ├── versions.rs          # mod declarations for versions submodules
-│   │       ├── versions/
-│   │       │   ├── desc.rs          # VersionDescriptor, VersionImage, etc.
-│   │       │   └── utils.rs         # VersionType, parse_version, parse_component_refs
-│   │       ├── core.rs              # mod declarations for core submodules
-│   │       ├── core/
-│   │       │   └── component.rs     # CoreComponent, CoreComponentLoc, load_components
-│   │       ├── secrets.rs           # mod declarations for secrets submodules
-│   │       ├── secrets/
-│   │       │   └── models.rs        # All 16 secret types + 4 discriminated unions
-│   │       ├── releases.rs          # mod declarations for releases submodules
-│   │       ├── releases/
-│   │       │   └── desc.rs          # ArchType, BuildType, ReleaseDesc, etc.
-│   │       ├── containers.rs        # mod declarations for containers submodules
-│   │       ├── containers/
-│   │       │   └── desc.rs          # ContainerDescriptor (with template variable substitution), repos, scripts
-│   │       ├── images.rs            # mod declarations for images submodules
-│   │       └── images/
-│   │           └── desc.rs          # ImageDescriptor
-│   │
-│   ├── cbscore-lib/                 # Async library — subprocess, S3, Vault, builder, runner
-│   │   ├── Cargo.toml
-│   │   └── src/
-│   │       ├── lib.rs
+│   │       ├── lib.rs               # pub mod types; pub mod cmd; etc.
 │   │       ├── logging.rs           # tracing-based logging
 │   │       ├── cmd.rs               # CmdArg, async_run_cmd, run_cmd, SecureArg types
 │   │       ├── runner.rs            # runner(), gen_run_name(), stop()
 │   │       ├── vault.rs             # VaultClient + VaultAuth enum (vaultrs)
 │   │       ├── s3.rs                # S3 operations (aws-sdk-s3)
+│   │       ├── types.rs             # mod declarations for types submodules (pure domain types, no I/O)
+│   │       ├── types/
+│   │       │   ├── errors.rs        # CbsError enum (~8 variants, thiserror)
+│   │       │   ├── config.rs        # Config, PathsConfig, StorageConfig, etc. (serde)
+│   │       │   ├── versions.rs      # mod declarations for versions submodules
+│   │       │   ├── versions/
+│   │       │   │   ├── desc.rs      # VersionDescriptor, VersionImage, etc.
+│   │       │   │   └── utils.rs     # VersionType, parse_version, parse_component_refs
+│   │       │   ├── core.rs          # mod declarations for core submodules
+│   │       │   ├── core/
+│   │       │   │   └── component.rs # CoreComponent, CoreComponentLoc, load_components
+│   │       │   ├── secrets.rs       # mod declarations for secrets submodules
+│   │       │   ├── secrets/
+│   │       │   │   └── models.rs    # All 16 secret types + 4 discriminated unions
+│   │       │   ├── releases.rs      # mod declarations for releases submodules
+│   │       │   ├── releases/
+│   │       │   │   └── desc.rs      # ArchType, BuildType, ReleaseDesc, etc.
+│   │       │   ├── containers.rs    # mod declarations for containers submodules
+│   │       │   ├── containers/
+│   │       │   │   └── desc.rs      # ContainerDescriptor (with template variable substitution), repos, scripts
+│   │       │   ├── images.rs        # mod declarations for images submodules
+│   │       │   └── images/
+│   │       │       └── desc.rs      # ImageDescriptor
 │   │       ├── secrets.rs           # mod declarations for secrets submodules
 │   │       ├── secrets/
 │   │       │   ├── mgr.rs           # SecretsMgr
@@ -415,13 +406,13 @@ cbscore/
 ### 3.3 Crate Dependency Graph
 
 ```
-cbscore-types  (serde, thiserror, regex, strum — zero async)
+cbscore-lib    (anyhow, thiserror, serde, regex, strum, tokio, tokio-util, aws-sdk-s3, vaultrs, tracing)
     ↑
-cbscore-lib    (cbscore-types, anyhow, tokio, tokio-util, aws-sdk-s3, vaultrs, tracing)
-    ↑
-    ├── cbsbuild        (cbscore-lib, cbscore-types, clap, dialoguer, anyhow)
-    └── cbscore-python  (cbscore-lib, cbscore-types, pyo3, pyo3-async-runtimes, pyo3-log)
+    ├── cbsbuild        (cbscore-lib, clap, dialoguer, anyhow)
+    └── cbscore-python  (cbscore-lib, pyo3, pyo3-async-runtimes, pyo3-log)
 ```
+
+The `types` module within cbscore-lib contains the pure domain types (errors, config, versions, releases, images, secrets models, containers descriptors). These modules use only synchronous I/O (serde, `std::fs`) and do not depend on tokio or async. The separation is maintained at the module level rather than the crate level.
 
 ### 3.4 Unified Class Diagram
 
@@ -912,7 +903,7 @@ graph TD
 
 **Legend:**
 - Blue: CLI commands (Clap handlers)
-- Green: Library functions (cbscore-lib / cbscore-types)
+- Green: Library functions (cbscore-lib)
 - Red: External tools and services (git, podman, buildah, skopeo, cosign, dnf, rpmbuild, S3, Vault, registry)
 - Orange: I/O operations and tool wrappers
 
@@ -922,7 +913,7 @@ graph TD
 
 ### 4.1 Documentation
 
-All public functions, structs, enums, traits, and methods must have `///` doc comments. This is enforced via `#![warn(missing_docs)]` at the crate level for all four crates. Doc comments should describe:
+All public functions, structs, enums, traits, and methods must have `///` doc comments. This is enforced via `#![warn(missing_docs)]` at the crate level for all three crates. Doc comments should describe:
 - **What** the item does (not how — the code shows that)
 - **Parameters** and return values for non-obvious signatures
 - **Errors** — which error variants can be returned
@@ -950,7 +941,7 @@ Trailers are managed by tooling, not hardcoded in the message:
 
 **Rules:**
 
-- **Scope**: Use the crate or module name (`cbscore`, `cbscore/builder`, `cbscore-types`, `cbsbuild`, `cbscore-python`)
+- **Scope**: Use the crate or module name (`cbscore`, `cbscore/builder`, `cbscore/types`, `cbsbuild`, `cbscore-python`)
 - **Subject**: Lowercase imperative, max 72 characters including the scope prefix (e.g., `add serde rename for ref keyword`, `fix tls-verify flag parsing`). The subject says *what* changed — it should be self-explanatory from the diff.
 - **Body**: Explain *why* the change was made. 1-3 lines. Omit for trivial changes where the subject is sufficient.
 - **One logical change per commit**: Don't mix unrelated changes. A single function fix is one commit. A new module is one commit. Refactoring + feature is two commits.
@@ -1025,8 +1016,7 @@ Use the `tracing` ecosystem for structured, hierarchical logging. Log levels can
 
 | Crate | Logging dependency | Role |
 |-------|-------------------|------|
-| `cbscore-types` | `tracing` | Emit log events via `tracing::{trace, debug, info, warn, error}` |
-| `cbscore-lib` | `tracing` | Emit log events (the bulk of logging happens here) |
+| `cbscore-lib` | `tracing` | Emit log events (all library modules including types) |
 | `cbsbuild` (CLI) | `tracing-subscriber` with `env-filter` | Initialize the subscriber, configure output format and filtering |
 | `cbscore-python` | `pyo3-log` | Bridge Rust `tracing`/`log` events into Python's `logging` module |
 
@@ -1176,7 +1166,7 @@ pyo3-log = "0.13"
 
 ```toml
 [workspace]
-members = ["rust/*"]
+members = ["rust/cbscore-lib", "rust/cbsbuild", "rust/cbscore-python"]
 resolver = "3"
 
 [workspace.package]
@@ -1235,7 +1225,7 @@ The top-level `CbsError` enum has ~8 variants matching the Python exception hier
 Maps to Python exception hierarchy via `_exceptions.py` (pure Python) + Rust `From<CbsError> for PyErr` using `GILOnceCell`-cached exception classes.
 
 ```rust
-// cbscore-types/src/errors.rs
+// cbscore-lib/src/types/errors.rs
 #[derive(Debug, Error)]
 pub enum CbsError {
     #[error("config error: {0}")]          Config(String),
@@ -1272,7 +1262,7 @@ Types that were previously standalone error enums (`S3Error`, `CommandError`, `I
 
 ### 5.3 Config Models (serde)
 
-Use `#[serde(rename_all = "kebab-case")]` on config structs to match the hyphenated YAML keys from the Python implementation (e.g., `scratch_containers` ↔ `scratch-containers`, `vault_addr` ↔ `vault-addr`). For fields where the kebab-case convention doesn't apply, use explicit `#[serde(alias = "...")]` or `#[serde(rename = "...")]`. `Config::load()` and `Config::store()` use synchronous `std::fs` in `cbscore-types` since config I/O is simple file read/write.
+Use `#[serde(rename_all = "kebab-case")]` on config structs to match the hyphenated YAML keys from the Python implementation (e.g., `scratch_containers` ↔ `scratch-containers`, `vault_addr` ↔ `vault-addr`). For fields where the kebab-case convention doesn't apply, use explicit `#[serde(alias = "...")]` or `#[serde(rename = "...")]`. `Config::load()` and `Config::store()` use synchronous `std::fs` in the `types` module since config I/O is simple file read/write.
 
 ### 5.4 Secret Discriminated Unions
 
@@ -1588,7 +1578,7 @@ bindings = "pyo3"
 
 ### Phase 0: Scaffolding (S)
 
-- Create Cargo workspace, all 4 crate skeletons
+- Create Cargo workspace, all 3 crate skeletons
 - Configure Maturin in `pyproject.toml`
 - Expose a trivial `cbscore._cbscore.version()` via PyO3
 - Verify `maturin develop` + `uv sync --all-packages` work together
@@ -1610,7 +1600,7 @@ bindings = "pyo3"
 
 ### Phase 1: Errors + Logging (S)
 
-- `cbscore-types/src/errors.rs`: `CbsError` enum (~8 variants, `thiserror`) — public API boundary errors only; internal modules use `anyhow::Result`
+- `cbscore-lib/src/types/errors.rs`: `CbsError` enum (~8 variants, `thiserror`) — public API boundary errors only; internal modules use `anyhow::Result`
 - `cbscore-lib/src/logging.rs`: `tracing` setup
 - `src/cbscore/_exceptions.py`: Pure Python exception hierarchy
 - PyO3 error mapping in `cbscore-python/src/errors.rs`
@@ -1620,8 +1610,8 @@ bindings = "pyo3"
 
 ### Phase 2: Version Management + Core Components (M)
 
-- `cbscore-types/src/versions/`: `VersionType`, `parse_version()`, `normalize_version()`, `get_version_type()`, `parse_component_refs()`, `VersionDescriptor` + sub-types with serde JSON
-- `cbscore-types/src/core/component.rs`: `CoreComponent`, `CoreComponentLoc`, `load_components()` with serde YAML
+- `cbscore-lib/src/types/versions/`: `VersionType`, `parse_version()`, `normalize_version()`, `get_version_type()`, `parse_component_refs()`, `VersionDescriptor` + sub-types with serde JSON
+- `cbscore-lib/src/types/core/component.rs`: `CoreComponent`, `CoreComponentLoc`, `load_components()` with serde YAML
 - `cbscore-lib/src/versions/create.rs`: `version_create_helper()`
 - PyO3 bindings for all above — pure `#[pyclass]` types, `VersionType` as PyO3 enum with string conversion, `VersionDescriptor` with `__get_pydantic_core_schema__` for cbsd compatibility
 
@@ -1635,7 +1625,7 @@ bindings = "pyo3"
 
 ### Phase 3: Configuration System (M)
 
-- `cbscore-types/src/config.rs`: All config models with serde aliases, `Config::load()`, `Config::store()`
+- `cbscore-lib/src/types/config.rs`: All config models with serde aliases, `Config::load()`, `Config::store()`
 - PyO3 `PyConfig` wrapper with getters and `model_dump_json()`
 - Python shim `config.py`
 
@@ -1643,10 +1633,10 @@ bindings = "pyo3"
 
 ### Phase 4: Secret Models (L)
 
-- `cbscore-types/src/secrets/models.rs`: All 16 secret struct types + 4 discriminated union enums with custom `Deserialize`
+- `cbscore-lib/src/types/secrets/models.rs`: All 16 secret struct types + 4 discriminated union enums with custom `Deserialize`
 - `Secrets` container with `load()`, `store()`, `merge()`
 - `cbscore-lib/src/secrets/utils.rs`: `find_best_secret_candidate()`
-- `cbscore-types/src/utils/uris.rs` (if needed for matching logic)
+- `cbscore-lib/src/utils/uris.rs` (if needed for matching logic)
 
 **Test**: YAML round-trip for each secret variant; discriminator logic tests; merge tests.
 
@@ -1692,7 +1682,7 @@ Also: `utils/containers.rs`, `utils/paths.rs`
 
 ### Phase 8: Releases + Builder Pipeline (XL)
 
-- `releases/desc.rs`: Release descriptor types (already in cbscore-types from Phase 4 area, but S3 operations here)
+- `releases/desc.rs`: Release descriptor types (already in `types/` from Phase 4 area, but S3 operations here)
 - `releases/s3.rs`: `check_release_exists`, `release_desc_upload`, `release_upload_components`, `check_released_components`, `list_releases`
 - `builder/`: `Builder.run()`, `prepare_builder()`, `prepare_components()`, `build_rpms()`, `sign_rpms()`, `s3_upload_rpms()`
 - **State Checkpointing**: The builder pipeline must check for existing artifacts (in scratch dir and S3) before starting each stage, allowing resume-on-failure. This follows the KISS approach — no external state store, just check if the output of a stage already exists before running it. Stages to checkpoint:
@@ -1813,12 +1803,12 @@ All external crates used across the workspace, their purpose, which Rust crate(s
 
 | Crate | Version | Purpose | Used by | Referenced in |
 |-------|---------|---------|---------|---------------|
-| `thiserror` | 2 | Derive macro for `CbsError` enum (public API boundary) | cbscore-types | feature-cbscore-rs |
+| `thiserror` | 2 | Derive macro for `CbsError` enum (public API boundary) | cbscore-lib | feature-cbscore-rs |
 | `anyhow` | 1 | Ergonomic internal error handling with `.context()` | cbscore-lib, cbsbuild | all subcmd-*.md, feature-cbscore-rs |
-| `serde` | 1 (derive) | Serialization/deserialization framework | cbscore-types, cbscore-lib | all subcmd-*.md |
-| `serde_json` | 1 | JSON serialization | cbscore-types, cbscore-lib, cbsbuild | subcmd-versions-create, subcmd-config-init |
-| `serde_yml` | 0.0.12 | YAML serialization (replaces deprecated serde_yaml) | cbscore-types, cbsbuild | subcmd-config-init |
-| `tracing` | 0.1 | Structured logging and instrumentation | cbscore-types, cbscore-lib, cbsbuild | subcmd-runner-build, feature-cbscore-rs |
+| `serde` | 1 (derive) | Serialization/deserialization framework | cbscore-lib | all subcmd-*.md |
+| `serde_json` | 1 | JSON serialization | cbscore-lib, cbsbuild | subcmd-versions-create, subcmd-config-init |
+| `serde_yml` | 0.0.12 | YAML serialization (replaces deprecated serde_yaml) | cbscore-lib, cbsbuild | subcmd-config-init |
+| `tracing` | 0.1 | Structured logging and instrumentation | cbscore-lib, cbsbuild | subcmd-runner-build, feature-cbscore-rs |
 | `tracing-subscriber` | 0.3 (env-filter, json) | Log output formatting, filtering, JSON | cbsbuild | feature-cbscore-rs |
 | `tokio` | 1 (full) | Async runtime | cbscore-lib, cbsbuild | subcmd-build, subcmd-runner-build, subcmd-versions-create, subcmd-versions-list |
 | `tokio-util` | 0.7 | CancellationToken for graceful shutdown | cbscore-lib, cbsbuild | subcmd-build |
@@ -1831,8 +1821,8 @@ All external crates used across the workspace, their purpose, which Rust crate(s
 | `aws-sdk-s3` | 1 | S3 client (replaces aioboto3) | cbscore-lib | subcmd-versions-list, feature-cbscore-rs |
 | `reqwest` | 0.13 (json) | HTTP client (used by vaultrs internally) | cbscore-lib | feature-cbscore-rs |
 | `vaultrs` | 0.8 | HashiCorp Vault client | cbscore-lib | subcmd-versions-list, feature-cbscore-rs |
-| `regex` | 1 | Version string parsing, component ref matching | cbscore-types | subcmd-versions-create |
-| `strum` | 0.28 (derive) | Enum string conversions (VersionType, ArchType, BuildType) | cbscore-types | subcmd-versions-create |
+| `regex` | 1 | Version string parsing, component ref matching | cbscore-lib | subcmd-versions-create |
+| `strum` | 0.28 (derive) | Enum string conversions (VersionType, ArchType, BuildType) | cbscore-lib | subcmd-versions-create |
 | `dirs` | 6 | Home directory resolution (systemd install path) | cbsbuild | subcmd-config-init |
 | `url` | 2 | URL parsing and validation | cbsbuild, cbscore-lib | subcmd-config-init-vault |
 | `rand` | 0.10 | Random name generation (gen_run_name) | cbscore-lib | subcmd-build |
