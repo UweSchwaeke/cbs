@@ -788,10 +788,10 @@ Complete the async command executor with streaming, timeout, and cancellation; i
 | `async_run_cmd` | `args: &[CmdArg]`, `opts: &CmdOpts` | `CmdResult` | `anyhow::Error` | `async_run_cmd(&[Plain("echo"), Plain("hi")], &default_opts)` -> `CmdResult { exit_code: 0, .. }` |
 | `SecretsMgr::new` | `secrets: Secrets`, `vault_config: Option<&VaultConfig>` | `SecretsMgr` | `anyhow::Error` | constructs vault client + verifies connection |
 | `SecretsMgr::git_url_for` | `&self`, `url: &str` | `GitUrlGuard` | `anyhow::Error` | `git_url_for("https://github.com/ceph/ceph")` -> guard with SSH or HTTPS URL |
-| `SecretsMgr::s3_creds` (async) | `&self`, `url: &str` | `(String, String, String)` | `anyhow::Error` | `s3_creds("s3.example.com")` -> `("s3.example.com", "AKID...", "secret...")` |
+| `SecretsMgr::s3_creds` (async) | `&self`, `url: &str` | `S3Credentials` | `anyhow::Error` | `s3_creds("s3.example.com")` -> `S3Credentials { host, access_id, secret_id }` |
 | `SecretsMgr::gpg_signing_key` (async) | `&self`, `id: &str` | `GpgKeyringGuard` | `anyhow::Error` | guard yields `(keyring_path, passphrase, email)` |
-| `SecretsMgr::transit` | `&self`, `id: &str` | `(String, String)` | `anyhow::Error` | `transit("cosign")` -> `("transit-mount", "cosign-key")` |
-| `SecretsMgr::registry_creds` (async) | `&self`, `uri: &str` | `(String, String, String)` | `anyhow::Error` | `registry_creds("harbor.example.com/proj")` -> `("harbor.example.com", "user", "pass")` |
+| `SecretsMgr::transit` | `&self`, `id: &str` | `TransitKeyInfo` | `anyhow::Error` | `transit("cosign")` -> `TransitKeyInfo { mount: "transit-mount", key: "cosign-key" }` |
+| `SecretsMgr::registry_creds` (async) | `&self`, `uri: &str` | `RegistryCredentials` | `anyhow::Error` | `registry_creds("harbor.example.com/proj")` -> `RegistryCredentials { address: "harbor.example.com", username: "user", password: "pass" }` |
 | `SecretsMgr::has_vault` | `&self` | `bool` | -- | `true` if vault client is configured |
 | `SecretsMgr::has_s3_creds` | `&self`, `url: &str` | `bool` | -- | checks storage map for url |
 | `SecretsMgr::has_gpg_signing_key` | `&self`, `id: &str` | `bool` | -- | `true` for GPGPlain/VaultSingle/VaultPrivateKey variants |
@@ -818,6 +818,23 @@ pub async fn async_run_cmd(args: &[CmdArg], opts: &CmdOpts) -> anyhow::Result<Cm
 
 // cbscore-lib/src/secrets/mgr.rs
 
+pub struct S3Credentials {
+    pub host: String,
+    pub access_id: String,
+    pub secret_id: String,
+}
+
+pub struct TransitKeyInfo {
+    pub mount: String,
+    pub key: String,
+}
+
+pub struct RegistryCredentials {
+    pub address: String,
+    pub username: String,
+    pub password: String,
+}
+
 pub struct SecretsMgr {
     secrets: Secrets,
     vault: Option<VaultClient>,
@@ -836,9 +853,8 @@ impl SecretsMgr {
     pub async fn git_url_for(&self, url: &str) -> anyhow::Result<GitUrlGuard>;
 
     /// Obtain S3 credentials for the given URL.
-    /// Returns (host, access_id, secret_id).
     /// Vault-backed secret variants require async resolution via VaultClient::read_secret.
-    pub async fn s3_creds(&self, url: &str) -> anyhow::Result<(String, String, String)>;
+    pub async fn s3_creds(&self, url: &str) -> anyhow::Result<S3Credentials>;
 
     /// Obtain a GPG signing keyring for the given signing key ID.
     /// Returns a RAII guard that erases the temp keyring on drop.
@@ -846,13 +862,11 @@ impl SecretsMgr {
     pub async fn gpg_signing_key(&self, id: &str) -> anyhow::Result<GpgKeyringGuard>;
 
     /// Obtain Vault Transit key info for the given ID.
-    /// Returns (transit_mount, transit_key).
-    pub fn transit(&self, id: &str) -> anyhow::Result<(String, String)>;
+    pub fn transit(&self, id: &str) -> anyhow::Result<TransitKeyInfo>;
 
     /// Obtain registry credentials for the given URI.
-    /// Returns (address, username, password).
     /// Vault-backed secret variants require async resolution via VaultClient::read_secret.
-    pub async fn registry_creds(&self, uri: &str) -> anyhow::Result<(String, String, String)>;
+    pub async fn registry_creds(&self, uri: &str) -> anyhow::Result<RegistryCredentials>;
 
     pub fn has_vault(&self) -> bool;
     pub fn has_s3_creds(&self, url: &str) -> bool;
@@ -922,10 +936,10 @@ impl Drop for GpgKeyringGuard {
 
 #### Internal Functions
 
-- `storage_get_s3_creds(host, secrets, vault) -> Result<(String, String, String)>` -- resolves S3 credentials from storage secret map
-- `registry_get_creds(uri, secrets, vault) -> Result<(String, String, String)>` -- resolves registry credentials from registry secret map
+- `storage_get_s3_creds(host, secrets, vault) -> Result<S3Credentials>` -- resolves S3 credentials from storage secret map
+- `registry_get_creds(uri, secrets, vault) -> Result<RegistryCredentials>` -- resolves registry credentials from registry secret map
 - `gpg_private_keyring(id, secrets, vault) -> Result<GpgKeyringGuard>` -- creates temp GPG keyring with imported private key
-- `signing_transit(id, secrets) -> Result<(String, String)>` -- extracts transit mount and key from signing secrets
+- `signing_transit(id, secrets) -> Result<TransitKeyInfo>` -- extracts transit mount and key from signing secrets
 - `git_url_for_inner(url, secrets, vault) -> Result<GitUrlGuard>` -- dispatches to SSH/HTTPS/Token URL construction
 - `ssh_git_url_for(url, entry, vault) -> Result<GitUrlGuard>` -- creates SSH key file, config entry, returns remote alias
 - `https_git_url_for(url, entry, vault) -> Result<String>` -- constructs HTTPS URL with embedded credentials
@@ -947,7 +961,7 @@ impl Drop for GpgKeyringGuard {
 - Unit: `async_run_cmd` with 1-second timeout on `sleep 60` kills the process and returns a timeout error
 - Unit: `async_run_cmd` with `event_cb` receives `Started`, `Stdout("hello\n")`, `Finished { exit_code: 0 }` events in order
 - Unit: `SecretsMgr::has_vault` returns `false` when no vault_config provided; `true` otherwise
-- Unit: `SecretsMgr::transit("cosign")` with a `VaultTransitSecret { mount: "transit", key: "cosign-key" }` returns `("transit", "cosign-key")`
+- Unit: `SecretsMgr::transit("cosign")` with a `VaultTransitSecret { mount: "transit", key: "cosign-key" }` returns `TransitKeyInfo { mount: "transit", key: "cosign-key" }`
 - Unit: `SecretsMgr::has_gpg_signing_key` returns `true` for GPGPlainSecret, GPGVaultSingleSecret, GPGVaultPrivateKeySecret; `false` for VaultTransitSecret and GPGVaultPublicKeySecret
 - Integration: `SecretsMgr::new` with mock Vault verifies connection is checked during construction
 - Integration: `GitUrlGuard` for SSH variant creates key file and config, cleanup removes them
@@ -973,11 +987,11 @@ All git async operations (clone, checkout, worktree, fetch, etc.)
 | `get_git_user` | -- | `(String, String)` | `anyhow::Error` | `()` -> `("John Doe", "john@example.com")` |
 | `get_git_repo_root` | -- | `PathBuf` | `anyhow::Error` | `()` -> `/home/user/repo` |
 | `get_git_modified_paths` | `base_sha: &str`, `r#ref: &str`, `in_repo_path: Option<&str>`, `repo_path: Option<&Path>` | `(Vec<PathBuf>, Vec<PathBuf>)` | `anyhow::Error` | returns (modified, deleted) paths |
-| `git_clone` | `repo: MaybeSecure`, `base_path: &Path`, `repo_name: &str` | `PathBuf` | `anyhow::Error` | clones mirror or updates existing; returns repo path |
+| `git_clone` | `repo: CmdArg`, `base_path: &Path`, `repo_name: &str` | `PathBuf` | `anyhow::Error` | clones mirror or updates existing; returns repo path |
 | `git_checkout` | `repo_path: &Path`, `r#ref: &str`, `worktrees_base: &Path` | `PathBuf` | `anyhow::Error` | creates worktree; returns worktree path |
 | `git_remove_worktree` | `repo_path: &Path`, `worktree_path: &Path` | `()` | `anyhow::Error` | force-removes a worktree |
 | `git_fetch` | `remote: &str`, `from_ref: &str`, `to_branch: &str`, `repo_path: Option<&Path>` | `()` | `anyhow::Error` | fetches ref from remote to local branch |
-| `git_pull` | `remote: MaybeSecure`, `from_branch: Option<&str>`, `to_branch: Option<&str>`, `repo_path: Option<&Path>` | `()` | `anyhow::Error` | pulls from remote |
+| `git_pull` | `remote: CmdArg`, `from_branch: Option<&str>`, `to_branch: Option<&str>`, `repo_path: Option<&Path>` | `()` | `anyhow::Error` | pulls from remote |
 | `git_cherry_pick` | `sha: &str`, `sha_end: Option<&str>`, `repo_path: Option<&Path>` | `()` | `anyhow::Error` | cherry-picks commit(s) |
 | `git_apply` | `repo_path: &Path`, `patch_path: &Path` | `()` | `anyhow::Error` | applies patch file |
 | `git_get_sha1` | `repo_path: &Path` | `String` | `anyhow::Error` | returns HEAD sha1 |
@@ -985,9 +999,6 @@ All git async operations (clone, checkout, worktree, fetch, etc.)
 
 ```rust
 // cbscore-lib/src/utils/git.rs
-
-/// Type alias: a command argument that may carry a secret (e.g. a credential-bearing URL).
-pub type MaybeSecure = CmdArg;
 
 pub async fn run_git(args: &[CmdArg], path: Option<&Path>) -> anyhow::Result<String>;
 pub async fn get_git_user() -> anyhow::Result<(String, String)>;
@@ -999,7 +1010,7 @@ pub async fn get_git_modified_paths(
     repo_path: Option<&Path>,
 ) -> anyhow::Result<(Vec<PathBuf>, Vec<PathBuf>)>;
 pub async fn git_clone(
-    repo: MaybeSecure, base_path: &Path, repo_name: &str,
+    repo: CmdArg, base_path: &Path, repo_name: &str,
 ) -> anyhow::Result<PathBuf>;
 pub async fn git_checkout(
     repo_path: &Path, r#ref: &str, worktrees_base: &Path,
@@ -1011,7 +1022,7 @@ pub async fn git_fetch(
     remote: &str, from_ref: &str, to_branch: &str, repo_path: Option<&Path>,
 ) -> anyhow::Result<()>;
 pub async fn git_pull(
-    remote: MaybeSecure, from_branch: Option<&str>,
+    remote: CmdArg, from_branch: Option<&str>,
     to_branch: Option<&str>, repo_path: Option<&Path>,
 ) -> anyhow::Result<()>;
 pub async fn git_cherry_pick(
@@ -1116,15 +1127,22 @@ pub async fn buildah_new_container(
 
 | Function | Input | Output | Error | Example |
 |----------|-------|--------|-------|---------|
-| `s3_upload_str_obj` | `secrets: &SecretsMgr`, `url`, `dst_bucket`, `location`, `contents`, `content_type` | `()` | `anyhow::Error` | uploads string as S3 object |
-| `s3_download_str_obj` | `secrets: &SecretsMgr`, `url`, `src_bucket`, `location`, `content_type: Option<&str>` | `Option<String>` | `anyhow::Error` | returns `None` if object not found |
-| `s3_upload_json` | `secrets: &SecretsMgr`, `url`, `bucket`, `location`, `contents` | `()` | `anyhow::Error` | convenience wrapper: content_type = `"application/json"` |
-| `s3_download_json` | `secrets: &SecretsMgr`, `url`, `bucket`, `location` | `Option<String>` | `anyhow::Error` | convenience wrapper: content_type = `"application/json"` |
-| `s3_upload_files` | `secrets: &SecretsMgr`, `url`, `dst_bucket`, `file_locs: &[S3FileLocator]`, `public: bool` | `()` | `anyhow::Error` | uploads list of local files |
-| `s3_list` | `secrets: &SecretsMgr`, `url`, `target_bucket`, `prefix: Option<&str>`, `prefix_as_directory: bool` | `S3ListResult` | `anyhow::Error` | paginated listing with CommonPrefixes support |
+| `s3_upload_str_obj` | `ctx: &S3Context`, `location`, `contents`, `content_type` | `()` | `anyhow::Error` | uploads string as S3 object |
+| `s3_download_str_obj` | `ctx: &S3Context`, `location`, `content_type: Option<&str>` | `Option<String>` | `anyhow::Error` | returns `None` if object not found |
+| `s3_upload_json<T: Serialize>` | `ctx: &S3Context`, `key`, `value: &T` | `()` | `anyhow::Error` | convenience wrapper: content_type = `"application/json"` |
+| `s3_download_json<T: DeserializeOwned>` | `ctx: &S3Context`, `key` | `Option<T>` | `anyhow::Error` | convenience wrapper: content_type = `"application/json"` |
+| `s3_upload_files` | `ctx: &S3Context`, `file_locs: &[S3FileLocator]`, `public: bool` | `()` | `anyhow::Error` | uploads list of local files |
+| `s3_list` | `ctx: &S3Context`, `prefix: Option<&str>`, `prefix_as_directory: bool` | `S3ListResult` | `anyhow::Error` | paginated listing with CommonPrefixes support |
 
 ```rust
 // cbscore-lib/src/s3.rs
+
+/// Reusable S3 connection context. Constructed once from Config + SecretsMgr.
+pub struct S3Context<'a> {
+    pub secrets: &'a SecretsMgr,
+    pub url: &'a str,
+    pub bucket: &'a str,
+}
 
 pub struct S3FileLocator {
     pub src: PathBuf,
@@ -1149,32 +1167,29 @@ pub struct S3ListResult {
 }
 
 pub async fn s3_upload_str_obj(
-    secrets: &SecretsMgr, url: &str, dst_bucket: &str, location: &str,
+    ctx: &S3Context<'_>, location: &str,
     contents: &str, content_type: &str,
 ) -> anyhow::Result<()>;
 
 pub async fn s3_download_str_obj(
-    secrets: &SecretsMgr, url: &str, src_bucket: &str, location: &str,
+    ctx: &S3Context<'_>, location: &str,
     content_type: Option<&str>,
 ) -> anyhow::Result<Option<String>>;
 
-pub async fn s3_upload_json(
-    secrets: &SecretsMgr, url: &str, bucket: &str, location: &str,
-    contents: &str,
+pub async fn s3_upload_json<T: Serialize>(
+    ctx: &S3Context<'_>, key: &str, value: &T,
 ) -> anyhow::Result<()>;
 
-pub async fn s3_download_json(
-    secrets: &SecretsMgr, url: &str, bucket: &str, location: &str,
-) -> anyhow::Result<Option<String>>;
+pub async fn s3_download_json<T: DeserializeOwned>(
+    ctx: &S3Context<'_>, key: &str,
+) -> anyhow::Result<Option<T>>;
 
 pub async fn s3_upload_files(
-    secrets: &SecretsMgr, url: &str, dst_bucket: &str,
-    file_locs: &[S3FileLocator], public: bool,
+    ctx: &S3Context<'_>, file_locs: &[S3FileLocator], public: bool,
 ) -> anyhow::Result<()>;
 
 pub async fn s3_list(
-    secrets: &SecretsMgr, url: &str, target_bucket: &str,
-    prefix: Option<&str>, prefix_as_directory: bool,
+    ctx: &S3Context<'_>, prefix: Option<&str>, prefix_as_directory: bool,
 ) -> anyhow::Result<S3ListResult>;
 ```
 
@@ -1284,57 +1299,47 @@ Implement release S3 operations (check, upload, list) and the full `Builder` pip
 
 | Function | Input | Output | Error | Example |
 |----------|-------|--------|-------|---------|
-| `check_release_exists` | `&SecretsMgr`, `url`, `bucket`, `bucket_loc`, `version` | `Option<ReleaseDesc>` | `anyhow::Error` | `"18.2.4"` with existing release -> `Some(ReleaseDesc{...})` |
-| `release_desc_upload` | `&SecretsMgr`, `url`, `bucket`, `bucket_loc`, `version`, `&ReleaseBuildEntry` | `ReleaseDesc` | `anyhow::Error` | uploads `{bucket_loc}/18.2.4.json` to S3 |
-| `release_upload_components` | `&SecretsMgr`, `url`, `bucket`, `bucket_loc`, `&HashMap<String, ReleaseComponent>` | `()` | `anyhow::Error` | parallel upload of per-component JSON descriptors |
-| `check_released_components` | `&SecretsMgr`, `url`, `bucket`, `bucket_loc`, `&HashMap<String, String>` | `HashMap<String, ReleaseComponent>` | `anyhow::Error` | `{"ceph": "18.2.4-1.clyso"}` -> existing components in S3 |
-| `list_releases` | `&SecretsMgr`, `url`, `bucket`, `bucket_loc` | `HashMap<String, ReleaseDesc>` | `anyhow::Error` | lists all `*.json` under `{bucket_loc}/` |
+| `check_release_exists` | `ctx: &S3Context`, `bucket_loc`, `version` | `Option<ReleaseDesc>` | `anyhow::Error` | `"18.2.4"` with existing release -> `Some(ReleaseDesc{...})` |
+| `release_desc_upload` | `ctx: &S3Context`, `bucket_loc`, `version`, `&ReleaseBuildEntry` | `ReleaseDesc` | `anyhow::Error` | uploads `{bucket_loc}/18.2.4.json` to S3 |
+| `release_upload_components` | `ctx: &S3Context`, `bucket_loc`, `&HashMap<String, ReleaseComponent>` | `()` | `anyhow::Error` | parallel upload of per-component JSON descriptors |
+| `check_released_components` | `ctx: &S3Context`, `bucket_loc`, `&HashMap<String, String>` | `HashMap<String, ReleaseComponent>` | `anyhow::Error` | `{"ceph": "18.2.4-1.clyso"}` -> existing components in S3 |
+| `list_releases` | `ctx: &S3Context`, `bucket_loc` | `HashMap<String, ReleaseDesc>` | `anyhow::Error` | lists all `*.json` under `{bucket_loc}/` |
 | `get_component_release_rpm` | `&CoreComponentLoc`, `el_version: i32` | `Option<String>` | `anyhow::Error` | runs release RPM script, returns RPM name |
 | `Builder::new` | `desc: VersionDescriptor`, `config: &Config`, `flags: BuildFlags` | `Builder` | `CbsError` | constructs builder, loads components, initializes `SecretsMgr` |
 | `Builder::run` | `&mut self` | `()` | `CbsError` | full pipeline: prepare -> check existing -> build RPMs -> sign -> upload -> container |
 | `build_rpms` | `rpms_path`, `el_version`, `components_locs`, `components`, opts | `HashMap<String, ComponentBuild>` | `anyhow::Error` | parallel RPM build via `JoinSet` |
 | `sign_rpms` | `&SecretsMgr`, `gpg_key_id: &str`, `&HashMap<String, ComponentBuild>` | `()` | `anyhow::Error` | parallel GPG signing of all RPMs per component |
-| `s3_upload_rpms` | `&SecretsMgr`, `url`, `bucket`, `bucket_loc`, `&HashMap<String, ComponentBuild>`, `el_version` | `HashMap<String, S3ComponentLocation>` | `anyhow::Error` | parallel upload of RPMs + repodata to S3 |
+| `s3_upload_rpms` | `ctx: &S3Context`, `bucket_loc`, `&HashMap<String, ComponentBuild>`, `el_version` | `HashMap<String, S3ComponentLocation>` | `anyhow::Error` | parallel upload of RPMs + repodata to S3 |
 
 ```rust
 // releases/s3.rs
 pub async fn check_release_exists(
-    secrets: &SecretsMgr,
-    url: &str,
-    bucket: &str,
+    ctx: &S3Context<'_>,
     bucket_loc: &str,
     version: &str,
 ) -> anyhow::Result<Option<ReleaseDesc>>;
 
 pub async fn release_desc_upload(
-    secrets: &SecretsMgr,
-    url: &str,
-    bucket: &str,
+    ctx: &S3Context<'_>,
     bucket_loc: &str,
     version: &str,
     release_build: &ReleaseBuildEntry,
 ) -> anyhow::Result<ReleaseDesc>;
 
 pub async fn release_upload_components(
-    secrets: &SecretsMgr,
-    url: &str,
-    bucket: &str,
+    ctx: &S3Context<'_>,
     bucket_loc: &str,
     component_releases: &HashMap<String, ReleaseComponent>,
 ) -> anyhow::Result<()>;
 
 pub async fn check_released_components(
-    secrets: &SecretsMgr,
-    url: &str,
-    bucket: &str,
+    ctx: &S3Context<'_>,
     bucket_loc: &str,
     components: &HashMap<String, String>,
 ) -> anyhow::Result<HashMap<String, ReleaseComponent>>;
 
 pub async fn list_releases(
-    secrets: &SecretsMgr,
-    url: &str,
-    bucket: &str,
+    ctx: &S3Context<'_>,
     bucket_loc: &str,
 ) -> anyhow::Result<HashMap<String, ReleaseDesc>>;
 
@@ -1398,9 +1403,7 @@ pub struct S3ComponentLocation {
 }
 
 pub async fn s3_upload_rpms(
-    secrets: &SecretsMgr,
-    url: &str,
-    bucket: &str,
+    ctx: &S3Context<'_>,
     bucket_loc: &str,
     components: &HashMap<String, ComponentBuild>,
     el_version: i32,
