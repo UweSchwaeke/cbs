@@ -1274,35 +1274,33 @@ pub enum CmdArg {
 }
 
 /// Structured log events for step-level transparency.
-pub enum CmdEvent<'a> {
+pub enum CmdEvent {
     /// Command is about to execute (includes sanitized command line).
-    Started { cmd: &'a [String] },
+    Started { cmd: Vec<String> },
     /// A line was written to stdout.
-    Stdout(&'a str),
+    Stdout(String),
     /// A line was written to stderr.
-    Stderr(&'a str),
+    Stderr(String),
     /// Command finished with an exit code.
     Finished { exit_code: i32 },
 }
 
-/// Callback receiving structured command events.
-pub type CmdEventCallback = Box<dyn Fn(CmdEvent<'_>) + Send + Sync>;
+/// Callback receiving structured command events (borrows for read, callers clone if needed).
+pub type CmdEventCallback = Box<dyn Fn(&CmdEvent) + Send + Sync>;
 
-pub struct CmdOpts<'a> {
-    pub cwd: Option<&'a Path>,
+pub struct CmdOpts {
+    pub cwd: Option<PathBuf>,
     pub timeout: Option<Duration>,
     pub event_cb: Option<CmdEventCallback>,
     pub env: Option<HashMap<String, String>>,
     pub reset_python_env: bool,
 }
 
-pub async fn async_run_cmd(args: &[CmdArg], opts: CmdOpts<'_>) -> anyhow::Result<CmdResult>;
+pub async fn async_run_cmd(args: &[CmdArg], opts: &CmdOpts) -> anyhow::Result<CmdResult>;
 pub fn run_cmd(args: &[CmdArg], env: Option<&HashMap<String, String>>) -> anyhow::Result<CmdResult>;
 ```
 
-Uses `tokio::process::Command` with `BufReader` on stdout/stderr for streaming. Timeout via `tokio::time::timeout` with `child.kill()` on expiry.
-
-**Borrowed vs owned events**: `CmdEvent<'a>` uses borrowed data for internal use (zero-copy within `async_run_cmd`). An `OwnedCmdEvent` variant with owned `String` fields is provided for crossing async boundaries — specifically the PyO3 callback that must acquire the GIL and cannot hold borrows. Use `CmdEvent::to_owned() -> OwnedCmdEvent` at the boundary.
+Uses `tokio::process::Command` with `BufReader` on stdout/stderr for streaming. Timeout via `tokio::time::timeout` with `child.kill()` on expiry. `CmdEvent` uses owned `String` fields — the source data (`BufReader::read_line`) already produces owned strings, and the events carry single log lines where allocation cost is negligible vs subprocess I/O latency.
 
 ### 5.6 Vault Client
 
