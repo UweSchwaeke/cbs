@@ -371,8 +371,6 @@ As specified in the main plan (Phase 8), the builder checks for existing artifac
 | Image exists | `skopeo inspect` | Container image in registry |
 | Release exists | S3 download `<version>.json` | Release descriptor |
 | Component exists | S3 download `<component>/<version>.json` | Component build |
-| RPMs built | Check scratch dir | RPM files in `scratch/rpms/` |
-| RPMs signed | Check GPG signature on RPMs | Signed `.rpm` files |
 
 ### Dependencies
 

@@ -1640,12 +1640,10 @@ Also: `utils/containers.rs`, `utils/paths.rs`
 - `releases/desc.rs`: Release descriptor types (already in `types/` from Phase 4 area, but S3 operations here)
 - `releases/s3.rs`: `check_release_exists`, `release_desc_upload`, `release_upload_components`, `check_released_components`, `list_releases`
 - `builder/`: `Builder.run()`, `prepare_builder()`, `prepare_components()`, `build_rpms()`, `sign_rpms()`, `s3_upload_rpms()`
-- **State Checkpointing**: The builder pipeline must check for existing artifacts (in scratch dir and S3) before starting each stage, allowing resume-on-failure. This follows the KISS approach — no external state store, just check if the output of a stage already exists before running it. Stages to checkpoint:
-  - Component source checkout (scratch dir exists with correct SHA?)
-  - RPM build (RPMs already in scratch/rpms/?)
-  - RPM signing (signed RPMs present?)
-  - S3 upload (artifacts already in S3 bucket?)
-  - Container image (already in registry? — this already exists in the Python code via `skopeo_image_exists`)
+- **State Checkpointing**: The builder checks for existing remote artifacts before starting each stage (matching the Python implementation — no local scratch dir checks):
+  - Container image already in registry? (`skopeo inspect`)
+  - Release descriptor already in S3? (`s3_download_str_obj`)
+  - Component builds already in S3? (per-component check)
 - Parallel RPM builds via `tokio::task::JoinSet`
 - CLI handler: `cmds/versions.rs` — `handle_versions_list()` wiring the `versions list` subcommand to `list_releases()` (see [subcmd-versions-list.md](subcmd-versions-list.md))
 
