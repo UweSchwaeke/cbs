@@ -259,23 +259,11 @@ Note: The Python implementation has a FIXME about inefficient credential fetchin
 
 ### Dependencies
 
-- **Phase 3** (Configuration System) — `Config` with `get_vault_config()`, `get_secrets()`, S3 storage config
-- **Phase 4** (Secret Models) — `Secrets` types
-- **Phase 5** (Vault) — Vault authentication backends
-- **Phase 6** (Secrets Manager) — `SecretsMgr` initialization
-- **Phase 7c** (S3) — `s3_list()`, `s3_download_str_obj()`
-- **Phase 8** (Releases) — `list_releases()`, `ReleaseDesc` and all sub-types
-- `init_secrets()` helper — shared with any other command that needs S3/Vault access
+Implemented in Phase 8. See [feature-cbscore-rs.md §7](feature-cbscore-rs.md).
 
 ### Error handling
 
-| Python exit code | Rust equivalent |
-|-----------------|-----------------|
-| `sys.exit(errno.ENOTRECOVERABLE)` — vault config error | `anyhow::bail!("unable to obtain vault config: {e}")` |
-| `sys.exit(errno.ENOTRECOVERABLE)` — secrets error | `anyhow::bail!("error obtaining secrets: {e}")` |
-| `sys.exit(errno.EACCES)` — vault login error | `anyhow::bail!("error logging in to vault: {e}")` |
-| `sys.exit(1)` — S3 list error | Propagated from `list_releases()` |
-| Malformed release JSON | Logged and skipped (non-fatal, matches Python behavior) |
+Error handling follows [feature-cbscore-rs.md §5.2](feature-cbscore-rs.md): `anyhow::Result` internally, `CbsError` at module boundaries.
 
 ### Tests
 

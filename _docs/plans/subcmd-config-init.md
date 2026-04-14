@@ -437,21 +437,11 @@ fn write_config(config: &Config, path: &Path) -> anyhow::Result<()> {
 
 ### Dependencies
 
-- **Phase 3** (Configuration System) must be complete — `Config`, `PathsConfig`, `StorageConfig`, `SigningConfig`, `VaultConfig` structs with `store()` method
-- `dialoguer` crate for interactive prompts
-- `serde_yml` for YAML preview and serialization
-- `dirs` crate for `home_dir()` (systemd install path)
-- `resolve_path()` helper (located in `rust/cbsbuild/src/cmds/utils.rs`)
+Implemented in Phase 3. See [feature-cbscore-rs.md §7](feature-cbscore-rs.md).
 
 ### Error handling
 
-| Python exit code | Rust equivalent |
-|-----------------|-----------------|
-| `sys.exit(errno.EINVAL)` | `anyhow::bail!("must provide a vault token")` |
-| `sys.exit(errno.EIO)` | `anyhow::bail!("error writing vault config: {e}")` |
-| `sys.exit(errno.ENOTRECOVERABLE)` | `anyhow::bail!("error writing config file: {e}")` |
-
-All errors bubble up via `anyhow::Result` to the CLI main function which prints the error and exits with a non-zero code.
+Error handling follows [feature-cbscore-rs.md §5.2](feature-cbscore-rs.md): `anyhow::Result` internally, `CbsError` at module boundaries.
 
 ### Tests
 

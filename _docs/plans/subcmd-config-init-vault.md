@@ -310,16 +310,11 @@ In the Python code, `config_init()` (cmds/config.py:251-309) simply passes the v
 
 ### Dependencies
 
-- **Phase 3** (Configuration System) must be complete — `VaultConfig`, `VaultUserPassConfig`, `VaultAppRoleConfig` structs with `store()` method. These structs must use `#[serde(rename_all = "kebab-case")]` to match the hyphenated YAML keys from the Python implementation (`vault-addr`, `auth-user`, `auth-approle`, `auth-token`, `role-id`, `secret-id`).
-- `dialoguer` crate for interactive prompts
-- `resolve_path()` helper (located in `rust/cbsbuild/src/cmds/utils.rs`)
+Implemented in Phase 3. See [feature-cbscore-rs.md §7](feature-cbscore-rs.md).
 
 ### Error handling
 
-| Python exit code | Rust equivalent |
-|-----------------|-----------------|
-| `sys.exit(errno.EINVAL)` — empty token | `anyhow::bail!("must provide a vault token")` |
-| `sys.exit(errno.EIO)` — write failure | Propagated from `VaultConfig::store()` via `?` |
+Error handling follows [feature-cbscore-rs.md §5.2](feature-cbscore-rs.md): `anyhow::Result` internally, `CbsError` at module boundaries.
 
 ### Tests
 

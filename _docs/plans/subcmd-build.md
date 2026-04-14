@@ -465,25 +465,11 @@ This replaces the Python `try/finally` cleanup pattern with Rust's `Drop` guaran
 
 ### Dependencies
 
-- **Phase 3** (Config) — `Config` with `load()`, `store()`, `get_secrets()`, deep copy
-- **Phase 4** (Secrets) — `Secrets` with `store()`
-- **Phase 6** (Async cmd) — `CmdEventCallback` for log streaming
-- **Phase 7b** (Podman) — `podman_run()`, `podman_stop()`
-- **Phase 9** (Runner) — the `runner()` library function
-- `tempfile` crate for RAII temp file/dir management
-- `tokio::signal` for Ctrl+C handling
+Implemented in Phase 9. See [feature-cbscore-rs.md §7](feature-cbscore-rs.md).
 
 ### Error handling
 
-| Python exit code | Rust equivalent |
-|-----------------|-----------------|
-| `sys.exit(errno.ENOTRECOVERABLE)` — config load | Propagated from `Config::load()` |
-| `sys.exit(errno.EEXIST)` — log file exists | `anyhow::bail!("log file already exists")` |
-| `sys.exit(errno.ENOTRECOVERABLE)` — secrets error | Propagated from `export_secrets()` |
-| `sys.exit(1)` — runner error | Propagated from `runner()` |
-| `KeyboardInterrupt` | `tokio::signal::ctrl_c()` → graceful podman stop |
-
-Temp files are cleaned up automatically by `Drop`, even on error paths.
+Error handling follows [feature-cbscore-rs.md §5.2](feature-cbscore-rs.md): `anyhow::Result` internally, `CbsError` at module boundaries.
 
 ### Tests
 

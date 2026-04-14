@@ -408,21 +408,11 @@ Internally splits into:
 
 ### Dependencies
 
-- **Phase 2** (Version Management + Core Components) must be complete — `VersionDescriptor`, `VersionType`, `parse_component_refs()`, `parse_version()`, `load_components()`, `version_create_helper()`
-- **Phase 7a** (Git wrappers) — `get_git_user()`, `get_git_repo_root()` (async)
-- **Phase 7d** (Images) — `get_image_desc()` for the non-fatal warning check
-- `resolve_path()` helper (located in `rust/cbsbuild/src/cmds/utils.rs`)
-- Config model gains `versions_dir: Option<PathBuf>` field
+Implemented in Phase 2. See [feature-cbscore-rs.md §7](feature-cbscore-rs.md).
 
 ### Error handling
 
-| Python exit code | Rust equivalent |
-|-----------------|-----------------|
-| `sys.exit(1)` — git user error | `anyhow::bail!("error obtaining git user info: {e}")` |
-| `sys.exit(errno.EINVAL)` — parse error | Propagated from `parse_component_refs()` |
-| `sys.exit(errno.ENOTRECOVERABLE)` — create error | Propagated from `version_create_helper()` |
-| `sys.exit(errno.EEXIST)` — file exists | `anyhow::bail!("version for {version} already exists")` |
-| Image descriptor missing | Non-fatal `eprintln!` warning (no exit) |
+Error handling follows [feature-cbscore-rs.md §5.2](feature-cbscore-rs.md): `anyhow::Result` internally, `CbsError` at module boundaries.
 
 ### Tests
 

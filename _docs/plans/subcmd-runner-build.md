@@ -376,27 +376,11 @@ As specified in the main plan (Phase 8), the builder checks for existing artifac
 
 ### Dependencies
 
-- **Phase 2** (Versions) — `VersionDescriptor` for reading the descriptor
-- **Phase 3** (Config) — `Config` with all sub-configs
-- **Phase 4** (Secrets) — Secret models for Vault/S3/registry/GPG credentials
-- **Phase 5** (Vault) — Vault authentication
-- **Phase 6** (Async cmd + SecretsMgr) — `SecretsMgr`, `async_run_cmd`
-- **Phase 7** (All tool wrappers) — Git, Buildah, Podman, S3, Skopeo
-- **Phase 8** (Releases + Builder) — `Builder`, release S3 operations
-- **Phase 9** (Containers) — `ContainerBuilder`
-
-This is the **last command to be implementable** — it depends on nearly every other phase.
+Implemented in Phase 9. See [feature-cbscore-rs.md §7](feature-cbscore-rs.md).
 
 ### Error handling
 
-| Python exit code | Rust equivalent |
-|-----------------|-----------------|
-| `sys.exit(errno.ENOENT)` — descriptor missing | `anyhow::bail!("build descriptor does not exist")` |
-| `sys.exit(errno.ENOTRECOVERABLE)` — read error | Propagated from `VersionDescriptor::read()` |
-| `sys.exit(errno.ENOTRECOVERABLE)` — builder init error | Propagated from `Builder::new()` |
-| `sys.exit(errno.ENOTRECOVERABLE)` — build error | Propagated from `builder.run()` |
-
-All errors propagate via `anyhow::Result` to the CLI main function.
+Error handling follows [feature-cbscore-rs.md §5.2](feature-cbscore-rs.md): `anyhow::Result` internally, `CbsError` at module boundaries.
 
 ### Tests
 
