@@ -781,10 +781,10 @@ Complete the async command executor with streaming, timeout, and cancellation; i
 | `async_run_cmd` | `args: &[CmdArg]`, `opts: &CmdOpts` | `CmdResult` | `anyhow::Error` | `async_run_cmd(&[Plain("echo"), Plain("hi")], &default_opts)` -> `CmdResult { exit_code: 0, .. }` |
 | `SecretsMgr::new` | `secrets: Secrets`, `vault_config: Option<&VaultConfig>` | `SecretsMgr` | `anyhow::Error` | constructs vault client + verifies connection |
 | `SecretsMgr::git_url_for` | `&self`, `url: &str` | `GitUrlGuard` | `anyhow::Error` | `git_url_for("https://github.com/ceph/ceph")` -> guard with SSH or HTTPS URL |
-| `SecretsMgr::s3_creds` | `&self`, `url: &str` | `(String, String, String)` | `anyhow::Error` | `s3_creds("s3.example.com")` -> `("s3.example.com", "AKID...", "secret...")` |
-| `SecretsMgr::gpg_signing_key` | `&self`, `id: &str` | `GpgKeyringGuard` | `anyhow::Error` | guard yields `(keyring_path, passphrase, email)` |
+| `SecretsMgr::s3_creds` (async) | `&self`, `url: &str` | `(String, String, String)` | `anyhow::Error` | `s3_creds("s3.example.com")` -> `("s3.example.com", "AKID...", "secret...")` |
+| `SecretsMgr::gpg_signing_key` (async) | `&self`, `id: &str` | `GpgKeyringGuard` | `anyhow::Error` | guard yields `(keyring_path, passphrase, email)` |
 | `SecretsMgr::transit` | `&self`, `id: &str` | `(String, String)` | `anyhow::Error` | `transit("cosign")` -> `("transit-mount", "cosign-key")` |
-| `SecretsMgr::registry_creds` | `&self`, `uri: &str` | `(String, String, String)` | `anyhow::Error` | `registry_creds("harbor.example.com/proj")` -> `("harbor.example.com", "user", "pass")` |
+| `SecretsMgr::registry_creds` (async) | `&self`, `uri: &str` | `(String, String, String)` | `anyhow::Error` | `registry_creds("harbor.example.com/proj")` -> `("harbor.example.com", "user", "pass")` |
 | `SecretsMgr::has_vault` | `&self` | `bool` | -- | `true` if vault client is configured |
 | `SecretsMgr::has_s3_creds` | `&self`, `url: &str` | `bool` | -- | checks storage map for url |
 | `SecretsMgr::has_gpg_signing_key` | `&self`, `id: &str` | `bool` | -- | `true` for GPGPlain/VaultSingle/VaultPrivateKey variants |
@@ -830,11 +830,13 @@ impl SecretsMgr {
 
     /// Obtain S3 credentials for the given URL.
     /// Returns (host, access_id, secret_id).
-    pub fn s3_creds(&self, url: &str) -> anyhow::Result<(String, String, String)>;
+    /// Vault-backed secret variants require async resolution via VaultClient::read_secret.
+    pub async fn s3_creds(&self, url: &str) -> anyhow::Result<(String, String, String)>;
 
     /// Obtain a GPG signing keyring for the given signing key ID.
     /// Returns a RAII guard that erases the temp keyring on drop.
-    pub fn gpg_signing_key(&self, id: &str) -> anyhow::Result<GpgKeyringGuard>;
+    /// Vault-backed secret variants require async resolution via VaultClient::read_secret.
+    pub async fn gpg_signing_key(&self, id: &str) -> anyhow::Result<GpgKeyringGuard>;
 
     /// Obtain Vault Transit key info for the given ID.
     /// Returns (transit_mount, transit_key).
@@ -842,7 +844,8 @@ impl SecretsMgr {
 
     /// Obtain registry credentials for the given URI.
     /// Returns (address, username, password).
-    pub fn registry_creds(&self, uri: &str) -> anyhow::Result<(String, String, String)>;
+    /// Vault-backed secret variants require async resolution via VaultClient::read_secret.
+    pub async fn registry_creds(&self, uri: &str) -> anyhow::Result<(String, String, String)>;
 
     pub fn has_vault(&self) -> bool;
     pub fn has_s3_creds(&self, url: &str) -> bool;
@@ -872,6 +875,13 @@ impl Drop for GitUrlGuard {
 }
 
 // cbscore-lib/src/secrets/signing.rs
+
+// **Drop limitation**: The `Drop` impl uses sync `std::fs` operations (not `tokio::fs`)
+// since `Drop` cannot be async. This means `Drop` may briefly block the tokio runtime
+// during file cleanup. The explicit `async fn cleanup(self)` method is preferred --
+// `Drop` is a safety net only. For `GpgKeyringGuard`, the `Drop` impl performs
+// `std::fs::remove_dir_all` (no shredding); full secure cleanup requires calling
+// `cleanup()` explicitly.
 
 /// RAII guard for a temporary GPG keyring directory.
 /// Imports the private key into a temp GNUPGHOME on creation,
@@ -1030,7 +1040,7 @@ pub async fn git_get_current_branch(repo_path: &Path) -> anyhow::Result<String>;
 | `BuildahContainer::set_config` | `&self`, author, annotations, labels, env | `()` | `anyhow::Error` | `buildah config --author ... --label ...` |
 | `BuildahContainer::copy` | `&self`, `source: &Path`, `dest: &str` | `()` | `anyhow::Error` | `buildah copy <cid> <src> <dest>` |
 | `BuildahContainer::run` | `&self`, `args: &[String]` | `()` | `anyhow::Error` | `buildah run --isolation chroot <cid> -- <args>` |
-| `BuildahContainer::finish` | `&self`, `secrets: &SecretsMgr`, `sign_with_transit: Option<&str>` | `()` | `anyhow::Error` | commit, push to registry, optionally cosign sign |
+| `BuildahContainer::finish` | `&mut self`, `secrets: &SecretsMgr`, `sign_with_transit: Option<&str>` | `()` | `anyhow::Error` | commit, push to registry, optionally cosign sign |
 | `buildah_new_container` | `desc: &VersionDescriptor` | `BuildahContainer` | `anyhow::Error` | creates container from distro base image |
 
 ```rust
@@ -1078,7 +1088,7 @@ impl BuildahContainer {
 
     /// Commit container as image, push to registry, optionally sign with cosign Transit.
     pub async fn finish(
-        &self, secrets: &SecretsMgr, sign_with_transit: Option<&str>,
+        &mut self, secrets: &SecretsMgr, sign_with_transit: Option<&str>,
     ) -> anyhow::Result<()>;
 }
 
@@ -1167,14 +1177,13 @@ pub async fn s3_list(
 
 | Function | Input | Output | Error | Example |
 |----------|-------|--------|-------|---------|
-| `skopeo_get_tags` | `img: &str` | `SkopeoTagListResult` | `anyhow::Error` | `skopeo_get_tags("harbor.example.com/proj/ceph")` -> tags list |
-| `skopeo_copy` | `src: &str`, `dst: &str`, `dst_registry: &str`, `secrets: &SecretsMgr`, `transit: &str` | `()` | `anyhow::Error` | copies image + optionally signs |
-| `skopeo_inspect` | `img: &str`, `secrets: &SecretsMgr`, `tls_verify: bool` | `String` (JSON) | `anyhow::Error` | returns raw JSON inspect output |
-| `skopeo_image_exists` | `img: &str`, `secrets: &SecretsMgr`, `tls_verify: bool` | `bool` | `anyhow::Error` | `true` if image exists in registry |
-| `sign` | `registry: &str`, `img: &str`, `secrets: &SecretsMgr`, `transit: &str` | `CmdResult` | `anyhow::Error` | sync cosign sign via Vault Transit |
-| `async_sign` | `img: &str`, `secrets: &SecretsMgr`, `transit: &str` | `()` | `anyhow::Error` | async cosign sign |
-| `can_sign` | `registry: &str`, `secrets: &SecretsMgr`, `transit: &str` | `bool` | -- | checks vault + transit key + registry creds are available |
-| `sync_image` | `src`, `dst`, `dst_registry`, `secrets`, `transit`, `force: bool`, `dry_run: bool` | `()` | `anyhow::Error` | syncs image between registries |
+| `skopeo_get_tags` (async) | `img: &str` | `SkopeoTagListResult` | `anyhow::Error` | `skopeo_get_tags("harbor.example.com/proj/ceph")` -> tags list |
+| `skopeo_copy` (async) | `src: &str`, `dst: &str`, `dst_registry: &str`, `secrets: &SecretsMgr`, `transit: &str` | `()` | `anyhow::Error` | copies image + optionally signs |
+| `skopeo_inspect` (async) | `img: &str`, `secrets: &SecretsMgr`, `tls_verify: bool` | `String` (JSON) | `anyhow::Error` | returns raw JSON inspect output |
+| `skopeo_image_exists` (async) | `img: &str`, `secrets: &SecretsMgr`, `tls_verify: bool` | `bool` | `anyhow::Error` | `true` if image exists in registry |
+| `sign` (async) | `img: &str`, `secrets: &SecretsMgr`, `transit: &str` | `()` | `anyhow::Error` | async cosign sign via Vault Transit |
+| `can_sign` | `registry: &str`, `secrets: &SecretsMgr`, `transit: &str` | `bool` | -- | checks vault + transit key + registry creds are available (pure check, no I/O) |
+| `sync_image` (async) | `src`, `dst`, `dst_registry`, `secrets`, `transit`, `force: bool`, `dry_run: bool` | `()` | `anyhow::Error` | syncs image between registries |
 | `get_image_desc` | `version: &str` | `ImageDescriptor` | `anyhow::Error` | loads image descriptor JSON matching version |
 | `get_image_name` | `img: &str` | `String` | -- | `"harbor.example.com/proj:v1"` -> `"harbor.example.com/proj"` |
 | `get_image_tag` | `img: &str` | `Option<String>` | -- | `"harbor.example.com/proj:v1"` -> `Some("v1")` |
@@ -1190,32 +1199,29 @@ pub struct SkopeoTagListResult {
     pub tags: Vec<String>,
 }
 
-pub fn skopeo_get_tags(img: &str) -> anyhow::Result<SkopeoTagListResult>;
-pub fn skopeo_copy(
+pub async fn skopeo_get_tags(img: &str) -> anyhow::Result<SkopeoTagListResult>;
+pub async fn skopeo_copy(
     src: &str, dst: &str, dst_registry: &str,
     secrets: &SecretsMgr, transit: &str,
 ) -> anyhow::Result<()>;
-pub fn skopeo_inspect(
+pub async fn skopeo_inspect(
     img: &str, secrets: &SecretsMgr, tls_verify: bool,
 ) -> anyhow::Result<String>;
-pub fn skopeo_image_exists(
+pub async fn skopeo_image_exists(
     img: &str, secrets: &SecretsMgr, tls_verify: bool,
 ) -> anyhow::Result<bool>;
 
 // cbscore-lib/src/images/signing.rs
 
 pub fn can_sign(registry: &str, secrets: &SecretsMgr, transit: &str) -> bool;
-pub fn sign(
-    registry: &str, img: &str, secrets: &SecretsMgr, transit: &str,
-) -> anyhow::Result<CmdResult>;
-pub async fn async_sign(
+pub async fn sign(
     img: &str, secrets: &SecretsMgr, transit: &str,
 ) -> anyhow::Result<()>;
 
 // cbscore-lib/src/images/sync.rs
 
 #[allow(dead_code)] // TODO: evaluate if this function is still needed
-pub fn sync_image(
+pub async fn sync_image(
     src: &str, dst: &str, dst_registry: &str, secrets: &SecretsMgr,
     transit: &str, force: bool, dry_run: bool,
 ) -> anyhow::Result<()>;
@@ -1278,7 +1284,7 @@ Implement release S3 operations (check, upload, list) and the full `Builder` pip
 | `list_releases` | `&SecretsMgr`, `url`, `bucket`, `bucket_loc` | `HashMap<String, ReleaseDesc>` | `anyhow::Error` | lists all `*.json` under `{bucket_loc}/` |
 | `get_component_release_rpm` | `&CoreComponentLoc`, `el_version: i32` | `Option<String>` | `anyhow::Error` | runs release RPM script, returns RPM name |
 | `Builder::new` | `desc: VersionDescriptor`, `config: &Config`, `flags: BuildFlags` | `Builder` | `CbsError` | constructs builder, loads components, initializes `SecretsMgr` |
-| `Builder::run` | `&self` | `()` | `CbsError` | full pipeline: prepare -> check existing -> build RPMs -> sign -> upload -> container |
+| `Builder::run` | `&mut self` | `()` | `CbsError` | full pipeline: prepare -> check existing -> build RPMs -> sign -> upload -> container |
 | `build_rpms` | `rpms_path`, `el_version`, `components_locs`, `components`, opts | `HashMap<String, ComponentBuild>` | `anyhow::Error` | parallel RPM build via `JoinSet` |
 | `sign_rpms` | `&SecretsMgr`, `gpg_key_id: &str`, `&HashMap<String, ComponentBuild>` | `()` | `anyhow::Error` | parallel GPG signing of all RPMs per component |
 | `s3_upload_rpms` | `&SecretsMgr`, `url`, `bucket`, `bucket_loc`, `&HashMap<String, ComponentBuild>`, `el_version` | `HashMap<String, S3ComponentLocation>` | `anyhow::Error` | parallel upload of RPMs + repodata to S3 |
@@ -1350,7 +1356,9 @@ impl Builder {
         flags: BuildFlags,
     ) -> Result<Self, CbsError>;
 
-    pub async fn run(&self) -> Result<(), CbsError>;
+    /// The builder pipeline mutates internal state (tracking built components,
+    /// scratch directories). Using `&mut self` makes mutation explicit.
+    pub async fn run(&mut self) -> Result<(), CbsError>;
 }
 
 // builder/rpmbuild.rs
@@ -1522,7 +1530,8 @@ pub struct RunnerOpts {
     pub run_name: Option<String>,
     pub replace_run: bool,
     pub entrypoint_path: Option<PathBuf>,
-    pub timeout: f64,
+    /// CLI parses `--timeout 14400` as seconds and converts to `Duration::from_secs(14400)`.
+    pub timeout: Duration,
     pub log_file_path: Option<PathBuf>,
     pub log_out_cb: Option<CmdEventCallback>,
     pub skip_build: bool,
