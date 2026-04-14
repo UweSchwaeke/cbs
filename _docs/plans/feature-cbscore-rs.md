@@ -211,17 +211,15 @@ graph TB
     end
 
     subgraph cbscore_types["cbscore-types (pure types, no I/O)"]
-        errors["errors.rs<br/><i>CbsError hierarchy (thiserror)</i>"]
+        errors["errors.rs<br/><i>CbsError enum (~8 variants, thiserror)</i>"]
         config_types["config.rs<br/><i>Config, PathsConfig, StorageConfig, etc.</i>"]
         ver_desc["versions/desc.rs<br/><i>VersionDescriptor, VersionComponent</i>"]
         ver_utils["versions/utils.rs<br/><i>VersionType, parse_version</i>"]
-        ver_errors["versions/errors.rs<br/><i>VersionError variants</i>"]
         core_comp["core/component.rs<br/><i>CoreComponent, CoreComponentLoc</i>"]
         secrets_models["secrets/models.rs<br/><i>16 secret types + 4 unions</i>"]
         rel_desc["releases/desc.rs<br/><i>ReleaseDesc, ReleaseComponent,<br/>ReleaseComponentVersion, ArchType, BuildType</i>"]
         ctr_desc["containers/desc.rs<br/><i>ContainerDescriptor + template vars</i>"]
         img_desc["images/desc.rs<br/><i>ImageDescriptor</i>"]
-        img_errors["images/errors.rs<br/><i>SkopeoError, ImageNotFoundError</i>"]
     end
 
     subgraph external["External Systems"]
@@ -284,7 +282,7 @@ graph TB
 | Crate | Role | Dependencies | Consumers |
 |-------|------|-------------|-----------|
 | **cbscore-types** | Pure domain types, errors, serde models. No async, no I/O. | serde, thiserror, regex, strum | cbscore-lib, cbsbuild, cbscore-python |
-| **cbscore-lib** | Async library: subprocess execution, S3, Vault, builder pipeline, runner. | cbscore-types, tokio, aws-sdk-s3, vaultrs, tracing | cbsbuild, cbscore-python |
+| **cbscore-lib** | Async library: subprocess execution, S3, Vault, builder pipeline, runner. | cbscore-types, anyhow, tokio, aws-sdk-s3, vaultrs, tracing | cbsbuild, cbscore-python |
 | **cbsbuild** | CLI binary: Clap command tree, interactive prompts, tokio runtime owner. | cbscore-lib, cbscore-types, clap, dialoguer, anyhow | End users, entrypoint script |
 | **cbscore-python** | PyO3 bindings: thin wrappers exposing Rust types and async functions to Python. | cbscore-lib, cbscore-types, pyo3, pyo3-async-runtimes | cbsd, cbsdcore, cbc |
 
@@ -301,12 +299,11 @@ cbscore/
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │       ├── lib.rs
-│   │       ├── errors.rs            # CbsError enum hierarchy (thiserror)
+│   │       ├── errors.rs            # CbsError enum (~8 variants, thiserror)
 │   │       ├── config.rs            # Config, PathsConfig, StorageConfig, etc. (serde)
 │   │       ├── versions.rs          # mod declarations for versions submodules
 │   │       ├── versions/
 │   │       │   ├── desc.rs          # VersionDescriptor, VersionImage, etc.
-│   │       │   ├── errors.rs        # VersionError variants
 │   │       │   └── utils.rs         # VersionType, parse_version, parse_component_refs
 │   │       ├── core.rs              # mod declarations for core submodules
 │   │       ├── core/
@@ -322,8 +319,7 @@ cbscore/
 │   │       │   └── desc.rs          # ContainerDescriptor (with template variable substitution), repos, scripts
 │   │       ├── images.rs            # mod declarations for images submodules
 │   │       └── images/
-│   │           ├── desc.rs          # ImageDescriptor
-│   │           └── errors.rs        # SkopeoError, ImageNotFoundError, etc.
+│   │           └── desc.rs          # ImageDescriptor
 │   │
 │   ├── cbscore-lib/                 # Async library — subprocess, S3, Vault, builder, runner
 │   │   ├── Cargo.toml
@@ -421,7 +417,7 @@ cbscore/
 ```
 cbscore-types  (serde, thiserror, regex, strum — zero async)
     ↑
-cbscore-lib    (cbscore-types, tokio, tokio-util, aws-sdk-s3, vaultrs, tracing)
+cbscore-lib    (cbscore-types, anyhow, tokio, tokio-util, aws-sdk-s3, vaultrs, tracing)
     ↑
     ├── cbsbuild        (cbscore-lib, cbscore-types, clap, dialoguer, anyhow)
     └── cbscore-python  (cbscore-lib, cbscore-types, pyo3, pyo3-async-runtimes, pyo3-log)
@@ -1094,7 +1090,7 @@ Each module should use `tracing` spans or the module path target to maintain the
 // In cbscore-lib/src/builder/build.rs
 use tracing::{info, debug, error};
 
-pub async fn run(&self) -> Result<(), BuilderError> {
+pub async fn run(&self) -> Result<(), CbsError> {
     info!("preparing builder");
     // tracing automatically includes the module path as the target:
     // cbscore_lib::builder::build
@@ -1121,7 +1117,7 @@ pub async fn runner(
     config: &Config,
     secrets: &SecretsMgr,
     opts: RunnerOpts,
-) -> Result<(), RunnerError> {
+) -> Result<(), CbsError> {
     // Entry logged automatically at TRACE:
     //   TRACE runner{desc_file_path="/runner/desc.json" cbscore_path="/runner/cbscore"}
     
@@ -1149,7 +1145,7 @@ pub async fn check_release_exists(
     bucket: &str,
     bucket_loc: &str,
     version: &str,
-) -> Result<Option<ReleaseDesc>, ReleaseError> { ... }
+) -> anyhow::Result<Option<ReleaseDesc>> { ... }
 ```
 
 **Log level guidelines:**
@@ -1232,29 +1228,47 @@ tempfile = "3"
 
 ### 5.2 Error Hierarchy
 
-Single top-level `CbsError` enum with `#[from]` conversions for each domain error. Maps to Python exception hierarchy via `_exceptions.py` (pure Python) + Rust `From<CbsError> for PyErr` using `GILOnceCell`-cached exception classes.
+**Design principle**: use `thiserror` at the public API boundary (the `CbsError` enum), and `anyhow::Result` with `.context()` inside library modules. This matches how the Python codebase works — Python has only ~8 error classes (`CESError` base + 7 domain errors), and internal exceptions (subprocess failures, S3 errors, git errors, image errors) are always wrapped by the module that catches them rather than surfaced as distinct types. Callers (cbsd, cbc, cbsbuild) only pattern-match on the domain error kind, never on the underlying cause.
+
+The top-level `CbsError` enum has ~8 variants matching the Python exception hierarchy. Internal modules (`cmd.rs`, `s3.rs`, `vault.rs`, `utils/git.rs`, `utils/podman.rs`, `utils/buildah.rs`, `images/skopeo.rs`, `releases/s3.rs`) return `anyhow::Result` and attach context with `.context()` / `.with_context()`. At module boundaries (e.g., in `builder/build.rs`, `runner.rs`, `containers/build.rs`), `anyhow::Error` is converted to the appropriate `CbsError` variant.
+
+Maps to Python exception hierarchy via `_exceptions.py` (pure Python) + Rust `From<CbsError> for PyErr` using `GILOnceCell`-cached exception classes.
 
 ```rust
 // cbscore-types/src/errors.rs
 #[derive(Debug, Error)]
 pub enum CbsError {
-    #[error(transparent)] Config(#[from] ConfigError),
-    #[error(transparent)] Version(#[from] VersionError),
-    #[error(transparent)] Builder(#[from] BuilderError),
-    #[error(transparent)] Runner(#[from] RunnerError),
-    #[error(transparent)] Container(#[from] ContainerError),
-    #[error(transparent)] Release(#[from] ReleaseError),
-    #[error(transparent)] Secrets(#[from] SecretsError),
-    #[error(transparent)] Command(#[from] CommandError),
-    #[error(transparent)] S3(#[from] S3Error),
-    #[error(transparent)] Vault(#[from] VaultError),
-    #[error(transparent)] Image(#[from] ImageError),
-    #[error(transparent)] Git(#[from] GitError),
-    #[error("malformed version: {0}")] MalformedVersion(String),
-    #[error("no such version: {0}")] NoSuchVersion(String),
-    #[error("unknown repository: {0}")] UnknownRepository(String),
+    #[error("config error: {0}")]          Config(String),
+    #[error("version error: {0}")]         Version(String),
+    #[error("malformed version: {0}")]     MalformedVersion(String),
+    #[error("no such version: {0}")]       NoSuchVersion(String),
+    #[error("builder error: {0}")]         Builder(String),
+    #[error("runner error: {0}")]          Runner(String),
+    #[error("vault error: {0}")]           Vault(String),
+    #[error("secrets error: {0}")]         Secrets(String),
+    #[error(transparent)]                  Other(#[from] anyhow::Error),
 }
 ```
+
+**Internal error handling**: modules that wrap external tools or perform I/O return `anyhow::Result` and use `.context()` to build an error chain. At the boundary where results flow into public API functions, convert to `CbsError`:
+
+```rust
+// Example: cbscore-lib/src/utils/git.rs (internal — uses anyhow)
+pub(crate) async fn clone_repo(url: &str, dest: &Path) -> anyhow::Result<()> {
+    async_run_cmd(&["git", "clone", url, dest.to_str().unwrap()], opts)
+        .await
+        .context("git clone failed")?;
+    Ok(())
+}
+
+// Example: cbscore-lib/src/builder/build.rs (boundary — converts to CbsError)
+pub async fn run(&self) -> Result<(), CbsError> {
+    self.prepare().await.map_err(|e| CbsError::Builder(format!("{e:#}")))?;
+    // ...
+}
+```
+
+Types that were previously standalone error enums (`S3Error`, `CommandError`, `ImageError`, `GitError`, `PodmanError`, `BuildahError`, `ContainerError`, `ReleaseError`) are removed. Their error conditions are represented as `anyhow::Error` with `.context()` chains internally, and converted to the appropriate `CbsError` domain variant at module boundaries.
 
 ### 5.3 Config Models (serde)
 
@@ -1298,8 +1312,8 @@ pub struct CmdOpts<'a> {
     pub reset_python_env: bool,
 }
 
-pub async fn async_run_cmd(args: &[CmdArg], opts: CmdOpts<'_>) -> Result<CmdResult, CommandError>;
-pub fn run_cmd(args: &[CmdArg], env: Option<&HashMap<String, String>>) -> Result<CmdResult, CommandError>;
+pub async fn async_run_cmd(args: &[CmdArg], opts: CmdOpts<'_>) -> anyhow::Result<CmdResult>;
+pub fn run_cmd(args: &[CmdArg], env: Option<&HashMap<String, String>>) -> anyhow::Result<CmdResult>;
 ```
 
 Uses `tokio::process::Command` with `BufReader` on stdout/stderr for streaming. Timeout via `tokio::time::timeout` with `child.kill()` on expiry.
@@ -1425,17 +1439,21 @@ The native extension is `cbscore._cbscore` (flat module). Python shim files in `
 
 ### Exception hierarchy
 
-Defined in pure Python (`_exceptions.py`) with real inheritance. Rust errors map to these via cached `GILOnceCell<Py<PyAny>>` references:
+Defined in pure Python (`_exceptions.py`) with real inheritance. Rust errors map to these via cached `GILOnceCell<Py<PyAny>>` references. Only ~6 error types need distinct Python exceptions — the ones that `cbsd`, `cbc`, and `cbsdcore` actually catch. Everything else (including `CbsError::Other`) maps to the base `CESError`:
 
 ```rust
 fn map_error_to_pyerr(err: CbsError) -> PyErr {
     Python::with_gil(|py| {
         let (cls_name, msg) = match &err {
+            CbsError::Config(m)           => ("ConfigError", m.clone()),
+            CbsError::Version(m)          => ("VersionError", m.clone()),
             CbsError::MalformedVersion(m) => ("MalformedVersionError", m.clone()),
-            CbsError::Config(e) => ("ConfigError", e.to_string()),
-            CbsError::Version(e) => ("VersionError", e.to_string()),
-            CbsError::Runner(e) => ("RunnerError", e.to_string()),
-            _ => ("CESError", err.to_string()),
+            CbsError::NoSuchVersion(m)    => ("NoSuchVersionError", m.clone()),
+            CbsError::Builder(m)          => ("CESError", m.clone()),
+            CbsError::Runner(m)           => ("RunnerError", m.clone()),
+            CbsError::Vault(m)            => ("CESError", m.clone()),
+            CbsError::Secrets(m)          => ("CESError", m.clone()),
+            CbsError::Other(e)            => ("CESError", format!("{e:#}")),
         };
         let cls = py.import("cbscore._exceptions").unwrap().getattr(cls_name).unwrap();
         PyErr::from_value(cls.call1((msg,)).unwrap())
@@ -1592,7 +1610,7 @@ bindings = "pyo3"
 
 ### Phase 1: Errors + Logging (S)
 
-- `cbscore-types/src/errors.rs`: Full `thiserror` hierarchy (~22 error types)
+- `cbscore-types/src/errors.rs`: `CbsError` enum (~8 variants, `thiserror`) — public API boundary errors only; internal modules use `anyhow::Result`
 - `cbscore-lib/src/logging.rs`: `tracing` setup
 - `src/cbscore/_exceptions.py`: Pure Python exception hierarchy
 - PyO3 error mapping in `cbscore-python/src/errors.rs`
@@ -1695,10 +1713,10 @@ Also: `utils/containers.rs`, `utils/paths.rs`
 - `containers/desc.rs`: `ContainerDescriptor::load()` performs **template variable substitution** before YAML parsing
   - The raw YAML file content may contain `{key}` placeholders (Python `str.format()` syntax)
   - Before deserializing, all `{key}` patterns are replaced with values from an optional `HashMap<String, String>`
-  - Implementation: single-pass parser (~20 lines, no external deps) — iterate through the template, match `{key}` patterns, replace with values from the map, error on unresolved placeholders (matches Python's `KeyError` behavior, caught as `ContainerError`)
+  - Implementation: single-pass parser (~20 lines, no external deps) — iterate through the template, match `{key}` patterns, replace with values from the map, error on unresolved placeholders (matches Python's `KeyError` behavior, returned as `anyhow::Error` with context)
   - **Do not** use a multi-pass `str::replace` loop (re-substitution bug if a value contains `{another_key}`)
   - **Do not** use an external templating crate (no conditionals, loops, or format specs are used — KISS)
-  - Signature: `fn substitute_vars(template: &str, vars: &HashMap<String, String>) -> Result<String, ContainerError>`
+  - Signature: `fn substitute_vars(template: &str, vars: &HashMap<String, String>) -> anyhow::Result<String>`
   - 7 known template variables (constructed in `ContainerBuilder::get_components()`):
     | Variable | Source | Type |
     |----------|--------|------|
@@ -1795,8 +1813,8 @@ All external crates used across the workspace, their purpose, which Rust crate(s
 
 | Crate | Version | Purpose | Used by | Referenced in |
 |-------|---------|---------|---------|---------------|
-| `thiserror` | 2 | Derive macro for error types | cbscore-types | feature-cbscore-rs |
-| `anyhow` | 1 | Ergonomic error handling for CLI | cbsbuild | all subcmd-*.md |
+| `thiserror` | 2 | Derive macro for `CbsError` enum (public API boundary) | cbscore-types | feature-cbscore-rs |
+| `anyhow` | 1 | Ergonomic internal error handling with `.context()` | cbscore-lib, cbsbuild | all subcmd-*.md, feature-cbscore-rs |
 | `serde` | 1 (derive) | Serialization/deserialization framework | cbscore-types, cbscore-lib | all subcmd-*.md |
 | `serde_json` | 1 | JSON serialization | cbscore-types, cbscore-lib, cbsbuild | subcmd-versions-create, subcmd-config-init |
 | `serde_yml` | 0.0.12 | YAML serialization (replaces deprecated serde_yaml) | cbscore-types, cbsbuild | subcmd-config-init |

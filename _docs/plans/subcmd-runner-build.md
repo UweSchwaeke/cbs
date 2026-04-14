@@ -99,7 +99,7 @@ sequenceDiagram
     Builder->>Secrets: secrets_mgr.check_connection().await (vault verification)
     Builder->>Builder: load_components(config.paths.components)
     alt No components found
-        Builder->>CLI: BuilderError
+        Builder->>CLI: CbsError::Builder
     end
 
     CLI->>Builder: builder.run()
@@ -321,10 +321,10 @@ impl Builder {
         desc: VersionDescriptor,
         config: &Config,
         flags: BuildFlags,
-    ) -> Result<Self, BuilderError> { ... }
+    ) -> Result<Self, CbsError> { ... }
 
     /// Run the full build pipeline.
-    pub async fn run(&self) -> Result<(), BuilderError> {
+    pub async fn run(&self) -> Result<(), CbsError> {
         self.prepare().await?;
 
         if self.image_already_exists().await? {
@@ -340,39 +340,42 @@ impl Builder {
         Ok(())
     }
 
+    // Internal helpers use anyhow::Result; errors are converted to
+    // CbsError::Builder at the boundary (new/run methods above).
+
     /// Install build dependencies (dnf update/install).
     ///
     /// This includes installing `cosign` from a GitHub release RPM,
     /// as it is not available in standard Rocky Linux repositories.
-    async fn prepare(&self) -> Result<(), BuilderError> { ... }
+    async fn prepare(&self) -> anyhow::Result<()> { ... }
 
     /// Check if the target image already exists in the registry.
-    async fn image_already_exists(&self) -> Result<bool, BuilderError> { ... }
+    async fn image_already_exists(&self) -> anyhow::Result<bool> { ... }
 
     /// Check S3 for an existing release, or build a new one.
-    async fn resolve_or_build_release(&self) -> Result<Option<ReleaseDesc>, BuilderError> { ... }
+    async fn resolve_or_build_release(&self) -> anyhow::Result<Option<ReleaseDesc>> { ... }
 
     /// Build all components, sign, upload, create release descriptor.
-    async fn build_release(&self) -> Result<Option<ReleaseDesc>, BuilderError> { ... }
+    async fn build_release(&self) -> anyhow::Result<Option<ReleaseDesc>> { ... }
 
     /// Build RPMs for components that aren't already in S3.
     async fn build_rpms(
         &self,
         components: &HashMap<String, BuildComponentInfo>,
-    ) -> Result<HashMap<String, ComponentBuild>, BuilderError> { ... }
+    ) -> anyhow::Result<HashMap<String, ComponentBuild>> { ... }
 
     /// Upload built RPMs and create release component descriptors.
     async fn upload(
         &self,
         infos: &HashMap<String, BuildComponentInfo>,
         builds: &HashMap<String, ComponentBuild>,
-    ) -> Result<HashMap<String, ReleaseComponentVersion>, BuilderError> { ... }
+    ) -> anyhow::Result<HashMap<String, ReleaseComponentVersion>> { ... }
 
     /// Build the container image and push to registry.
     async fn build_container(
         &self,
         release: &ReleaseDesc,
-    ) -> Result<(), BuilderError> { ... }
+    ) -> anyhow::Result<()> { ... }
 }
 ```
 

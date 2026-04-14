@@ -150,7 +150,7 @@ sequenceDiagram
     Podman-->>Runner: (exit_code, stdout, stderr)
 
     alt exit_code != 0
-        Runner->>CLI: RunnerError
+        Runner->>CLI: CbsError::Runner
         CLI->>User: "error building '<descriptor>'" (error)
     end
 
@@ -377,24 +377,24 @@ pub async fn runner(
     cbscore_path: &Path,
     config: &Config,
     opts: RunnerOpts,
-) -> Result<(), RunnerError> { ... }
+) -> Result<(), CbsError> { ... }
 ```
 
-Internally decomposed into focused helpers:
+Internally decomposed into focused helpers (internal functions use `anyhow::Result`; the public `runner()` converts to `CbsError::Runner` at the boundary):
 
 ```rust
 /// Resolve and validate the entrypoint script path.
 fn resolve_entrypoint(
     custom: Option<&Path>,
-) -> Result<PathBuf, RunnerError> { ... }
+) -> anyhow::Result<PathBuf> { ... }
 
 /// Validate entrypoint: exists, is a file, not a symlink, executable.
-fn validate_entrypoint(path: &Path) -> Result<(), RunnerError> { ... }
+fn validate_entrypoint(path: &Path) -> anyhow::Result<()> { ... }
 
 /// Aggregate component directories into a single temp directory.
 fn setup_components_dir(
     components_paths: &[PathBuf],
-) -> Result<TempDir, RunnerError> { ... }
+) -> anyhow::Result<TempDir> { ... }
 
 /// Create a container-local config with rewritten paths.
 fn create_container_config(
@@ -446,7 +446,7 @@ tokio::select! {
         tracing::info!("build cancelled, stopping container...");
         podman_stop(Some(&container_name), 1).await?;
         tracing::info!("container stopped");
-        return Err(RunnerError::Cancelled);
+        return Err(CbsError::Runner("build cancelled".into()));
     }
 }
 ```

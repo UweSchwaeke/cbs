@@ -276,7 +276,7 @@ pub async fn list_releases(
     url: &str,
     bucket: &str,
     bucket_loc: &str,
-) -> Result<HashMap<String, ReleaseDesc>, ReleaseError> { ... }
+) -> anyhow::Result<HashMap<String, ReleaseDesc>> { ... }
 ```
 
 Note: The Python implementation has a FIXME about inefficient credential fetching (re-fetches S3 creds from Vault for each download). The Rust implementation should create the S3 client once and reuse it across all downloads.
