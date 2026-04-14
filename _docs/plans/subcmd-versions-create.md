@@ -315,8 +315,7 @@ async fn check_image_descriptor(version: &str) {
 async fn create_descriptor(
     args: &VersionsCreateArgs,
 ) -> anyhow::Result<VersionDescriptor> {
-    let sign_off = get_sign_off().await?;
-    let params = VersionCreateParams {
+    let req = VersionCreateRequest {
         version: args.version.clone(),
         version_type_name: args.version_type.clone(),
         component_refs: parse_component_refs(&args.components)?,
@@ -324,13 +323,12 @@ async fn create_descriptor(
         component_uri_overrides: parse_uri_overrides(&args.component_uri_overrides)?,
         distro: args.distro.clone(),
         el_version: args.el_version,
-    };
-    let image = ImageTarget {
         registry: args.registry.clone(),
-        name: args.image_name.clone(),
-        tag: args.image_tag.clone(),
+        image_name: args.image_name.clone(),
+        image_tag: args.image_tag.clone(),
+        sign_off: get_sign_off().await?,
     };
-    version_create_helper(&params, &image, &sign_off)
+    version_create_helper(&req)
         .map_err(Into::into)
 }
 
@@ -373,12 +371,12 @@ Located in `cbscore-lib/src/versions/create.rs`. This is the **shared** function
 /// It validates inputs, loads components, applies overrides, and
 /// assembles the descriptor.
 ///
-/// Note: `component_refs` and `component_uri_overrides` are pre-parsed
-/// maps (name → ref/uri). The CLI handler parses raw "NAME@VERSION" and
-/// "COMPONENT=URI" strings before calling this function. This matches
-/// the Python signature where cbsd passes dicts directly.
-/// Parameters describing what to build.
-pub struct VersionCreateParams {
+/// All inputs needed to create a version descriptor.
+/// Used by both the CLI handler and the cbsd daemon.
+/// `component_refs` and `component_uri_overrides` are pre-parsed maps
+/// (name → ref/uri). The CLI parses raw "NAME@VERSION" / "COMPONENT=URI"
+/// strings before constructing this.
+pub struct VersionCreateRequest {
     pub version: String,
     pub version_type_name: String,
     pub component_refs: HashMap<String, String>,
@@ -386,20 +384,13 @@ pub struct VersionCreateParams {
     pub component_uri_overrides: HashMap<String, String>,
     pub distro: String,
     pub el_version: i32,
-}
-
-/// Target container image coordinates.
-pub struct ImageTarget {
     pub registry: String,
-    pub name: String,
-    pub tag: Option<String>,
+    pub image_name: String,
+    pub image_tag: Option<String>,
+    pub sign_off: VersionSignedOffBy,
 }
 
-pub fn version_create_helper(
-    params: &VersionCreateParams,
-    image: &ImageTarget,
-    sign_off: &VersionSignedOffBy,
-) -> Result<VersionDescriptor, CbsError> { ... }
+pub fn version_create_helper(req: &VersionCreateRequest) -> Result<VersionDescriptor, CbsError> { ... }
 ```
 
 Internally splits into:

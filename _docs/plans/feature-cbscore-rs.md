@@ -682,7 +682,7 @@ classDiagram
         +Option~PathBuf~ vault
     }
 
-    class VersionCreateParams {
+    class VersionCreateRequest {
         +String version
         +String version_type_name
         +HashMap~String, String~ component_refs
@@ -690,12 +690,10 @@ classDiagram
         +HashMap~String, String~ component_uri_overrides
         +String distro
         +i32 el_version
-    }
-
-    class ImageTarget {
         +String registry
-        +String name
-        +Option~String~ tag
+        +String image_name
+        +Option~String~ image_tag
+        +VersionSignedOffBy sign_off
     }
 
     RunnerOpts --> MountSources : builds
