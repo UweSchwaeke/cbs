@@ -44,8 +44,7 @@
   - [Phase 7: External Tool Wrappers](#phase-7-external-tool-wrappers-xl--parallelizable)
   - [Phase 8: Releases + Builder Pipeline](#phase-8-releases--builder-pipeline-xl)
   - [Phase 9: Container Building + Runner](#phase-9-container-building--runner-l)
-  - [Phase 10: CLI with Clap](#phase-10-cli-with-clap-m)
-  - [Phase 11: Python Shim Cleanup](#phase-11-python-shim-cleanup-m)
+  - [Phase 10: Python Shim Cleanup](#phase-10-python-shim-cleanup-m)
 - [8. Critical Path & Parallelization](#8-critical-path--parallelization)
 - [9. Risks and Mitigations](#9-risks-and-mitigations)
 - [10. Verification Plan](#10-verification-plan)
@@ -384,7 +383,7 @@ cbscore/
 │               ├── config.rs        # config init, config init-vault (dialoguer)
 │               └── advanced.rs      # Placeholder
 │
-└── src/cbscore/                     # Python package (transitional shims → removed in Phase 11)
+└── src/cbscore/                     # Python package (transitional shims → removed in Phase 10)
     ├── __init__.py                  # Re-exports from _cbscore
     ├── _exceptions.py               # Python exception hierarchy (used by PyO3 error mapping)
     ├── errors.py                    # Re-exports from _exceptions
@@ -1581,6 +1580,7 @@ bindings = "pyo3"
 - Create Cargo workspace, all 3 crate skeletons
 - Configure Maturin in `pyproject.toml`
 - Expose a trivial `cbscore._cbscore.version()` via PyO3
+- `cbsbuild/src/main.rs`: Clap command tree scaffold with `#[tokio::main]` — all subcommand stubs (`build`, `runner build`, `versions create`, `versions list`, `config init`, `config init-vault`, `advanced`) defined with their arg structs but returning `todo!()` or a "not yet implemented" error
 - Verify `maturin develop` + `uv sync --all-packages` work together
 - Verify existing Python code still works unchanged
 
@@ -1615,6 +1615,8 @@ bindings = "pyo3"
 - `cbscore-lib/src/versions/create.rs`: `version_create_helper()`
 - PyO3 bindings for all above — pure `#[pyclass]` types, `VersionType` as PyO3 enum with string conversion, `VersionDescriptor` with `__get_pydantic_core_schema__` for cbsd compatibility
 
+- CLI handler: `cmds/versions.rs` — `handle_versions_create()` wiring the `versions create` subcommand to `version_create_helper()` (see [subcmd-versions-create.md](subcmd-versions-create.md))
+
 **Test**:
 - Port ~30 inline tests from Python `versions/utils.py` to Rust `#[test]`
 - JSON round-trip for VersionDescriptor
@@ -1622,14 +1624,16 @@ bindings = "pyo3"
 - PyO3: `from cbscore._cbscore import VersionType, parse_component_refs, VersionDescriptor`
 - Verify `cbsdcore`, `cbc`, `cbsd` imports still work
 - Re-run baseline subcommand help tests from Phase 0
+- `cbsbuild versions create` with fixtures; snapshot `cbsbuild versions create --help`
 
 ### Phase 3: Configuration System (M)
 
 - `cbscore-lib/src/types/config.rs`: All config models with serde aliases, `Config::load()`, `Config::store()`
 - PyO3 `PyConfig` wrapper with getters and `model_dump_json()`
 - Python shim `config.py`
+- CLI handlers: `cmds/config.rs` — `handle_config_init()` and `handle_config_init_vault()` wiring the `config init` and `config init-vault` subcommands (see [subcmd-config-init.md](subcmd-config-init.md) and [subcmd-config-init-vault.md](subcmd-config-init-vault.md))
 
-**Test**: YAML round-trip; field alias tests; `Config.load(path)` from Python matches original.
+**Test**: YAML round-trip; field alias tests; `Config.load(path)` from Python matches original; `cbsbuild config init --for-containerized-run` generates valid YAML; snapshot `cbsbuild config init --help` and `cbsbuild config init-vault --help`.
 
 ### Phase 4: Secret Models (L)
 
@@ -1692,8 +1696,9 @@ Also: `utils/containers.rs`, `utils/paths.rs`
   - S3 upload (artifacts already in S3 bucket?)
   - Container image (already in registry? — this already exists in the Python code via `skopeo_image_exists`)
 - Parallel RPM builds via `tokio::task::JoinSet`
+- CLI handler: `cmds/versions.rs` — `handle_versions_list()` wiring the `versions list` subcommand to `list_releases()` (see [subcmd-versions-list.md](subcmd-versions-list.md))
 
-**Test**: Release descriptor JSON round-trip; builder integration tests.
+**Test**: Release descriptor JSON round-trip; builder integration tests; snapshot `cbsbuild versions list --help`.
 
 ### Phase 9: Container Building + Runner (L)
 
@@ -1721,22 +1726,11 @@ Also: `utils/containers.rs`, `utils/paths.rs`
 - `runner.rs`: `runner()`, `gen_run_name()`, `stop()`
 - **Entrypoint verification**: Verify that `cbscore-entrypoint.sh` correctly installs the Rust-backed wheel inside the Podman container and that the `cbsbuild` binary is available on `PATH` for the recursive `cbsbuild runner build` call. This may require updating the entrypoint script to use `maturin` or `pip install` for the wheel instead of `uv tool install .`.
 - **Critical**: PyO3 async binding for `runner()` using `pyo3-async-runtimes`
+- CLI handlers: `cmds/builds.rs` — `handle_build()` and `handle_runner_build()` wiring the `build` and `runner build` subcommands (see [subcmd-build.md](subcmd-build.md) and [subcmd-runner-build.md](subcmd-runner-build.md))
 
-**Test**: Container descriptor YAML loading with template variable substitution (known vars, unknown var error, no vars pass-through); runner integration test with Podman.
+**Test**: Container descriptor YAML loading with template variable substitution (known vars, unknown var error, no vars pass-through); runner integration test with Podman; snapshot `cbsbuild build --help` and `cbsbuild runner build --help`.
 
-### Phase 10: CLI with Clap (M)
-
-- `cbsbuild/src/main.rs`: Clap command tree with `#[tokio::main]`
-- `cmds/builds.rs`: `build`, `runner build`
-- `cmds/versions.rs`: `versions create`, `versions list`
-- `cmds/config.rs`: `config init`, `config init-vault`
-- `cmds/advanced.rs`: empty placeholder
-
-Each subcommand has a detailed plan with description, sequence diagram, class diagram, and implementation specifics. See [Subcommand Detail Plans](#12-subcommand-detail-plans) below.
-
-**Test**: CLI help output snapshots; `cbsbuild versions create` with fixtures; re-run all baseline tests.
-
-### Phase 11: Python Shim Cleanup (M)
+### Phase 10: Python Shim Cleanup (M)
 
 - Replace all Python implementation files with thin re-export shims delegating to `_cbscore`
 - `_exceptions.py` remains as the exception hierarchy definition (used by PyO3 error mapping)
@@ -1751,14 +1745,13 @@ Note: Full elimination of Python code (including `_exceptions.py` and shims) is 
 ## 8. Critical Path & Parallelization
 
 ```
-Phase 0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 (parallel tracks) → 8 → 9 → 10 → 11
-                                                                  ↗
-                                    Phase 10 (versions+config cmds can start after Phase 3)
+Phase 0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 (parallel tracks) → 8 → 9 → 10
 ```
+
+Each CLI handler is now implemented in the phase where its library dependencies are satisfied, rather than deferred to a separate CLI phase. This means `versions create` lands in Phase 2, `config init`/`config init-vault` land in Phase 3, `versions list` lands in Phase 8, and `build`/`runner build` land in Phase 9.
 
 ### Parallelization opportunities
 - Phase 7 splits into 4 independent tracks (git, podman/buildah, S3, skopeo/images)
-- Phase 10 (CLI) can partially start after Phase 3 (for versions + config commands)
 
 ---
 
