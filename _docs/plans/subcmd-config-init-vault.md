@@ -115,7 +115,7 @@ sequenceDiagram
             User-->>Vault: username
             Vault->>User: Password? (hidden)
             User-->>Vault: ********
-            Vault->>Vault: Create VaultUserPassConfig
+            Vault->>Vault: VaultAuth::UserPass
         else User declines UserPass
             Vault->>User: Specify AppRole auth for vault?
             alt User chooses AppRole
@@ -123,7 +123,7 @@ sequenceDiagram
                 User-->>Vault: role_id
                 Vault->>User: Secret ID?
                 User-->>Vault: secret_id
-                Vault->>Vault: Create VaultAppRoleConfig
+                Vault->>Vault: VaultAuth::AppRole
             else User declines AppRole (token fallback)
                 Vault->>User: Vault token?
                 User-->>Vault: token
@@ -195,26 +195,26 @@ fn confirm_overwrite(path: &Path) -> anyhow::Result<bool> {
 }
 
 /// Prompt for UserPass credentials.
-fn prompt_userpass() -> anyhow::Result<VaultUserPassConfig> {
+fn prompt_userpass() -> anyhow::Result<VaultAuth> {
     let username: String = Input::new().with_prompt("Username").interact_text()?;
     let password = Password::new().with_prompt("Password").interact()?;
-    Ok(VaultUserPassConfig { username, password })
+    Ok(VaultAuth::UserPass { username, password })
 }
 
 /// Prompt for AppRole credentials.
-fn prompt_approle() -> anyhow::Result<VaultAppRoleConfig> {
+fn prompt_approle() -> anyhow::Result<VaultAuth> {
     let role_id: String = Input::new().with_prompt("Role ID").interact_text()?;
     let secret_id: String = Input::new().with_prompt("Secret ID").interact_text()?;
-    Ok(VaultAppRoleConfig { role_id, secret_id })
+    Ok(VaultAuth::AppRole { role_id, secret_id })
 }
 
 /// Prompt for a Vault token (required, non-empty).
-fn prompt_token() -> anyhow::Result<String> {
+fn prompt_token() -> anyhow::Result<VaultAuth> {
     let token: String = Input::new().with_prompt("Vault token").interact_text()?;
     if token.is_empty() {
         anyhow::bail!("must provide a vault token");
     }
-    Ok(token)
+    Ok(VaultAuth::Token(token))
 }
 
 /// Validate that a string is a valid URL with scheme and host.
@@ -235,16 +235,16 @@ fn prompt_vault_auth() -> anyhow::Result<VaultConfig> {
     let vault_addr: String = Input::new().with_prompt("Vault address").interact_text()?;
     validate_vault_addr(&vault_addr)?;
 
-    let (auth_user, auth_approle, auth_token) =
+    let auth =
         if Confirm::new().with_prompt("Specify user/pass auth for vault?").interact()? {
-            (Some(prompt_userpass()?), None, None)
+            prompt_userpass()?
         } else if Confirm::new().with_prompt("Specify AppRole auth for vault?").interact()? {
-            (None, Some(prompt_approle()?), None)
+            prompt_approle()?
         } else {
-            (None, None, Some(prompt_token()?))
+            prompt_token()?
         };
 
-    Ok(VaultConfig { vault_addr, auth_user, auth_approle, auth_token })
+    Ok(VaultConfig { vault_addr, auth })
 }
 
 /// Initialize vault configuration interactively.

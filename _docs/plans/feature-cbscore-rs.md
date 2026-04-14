@@ -472,21 +472,16 @@ classDiagram
 
     class VaultConfig {
         +String vault_addr
-        +Option~VaultUserPassConfig~ auth_user
-        +Option~VaultAppRoleConfig~ auth_approle
-        +Option~String~ auth_token
+        +VaultAuth auth
         +load(path: &Path) Result~VaultConfig~
         +store(&self, path: &Path) Result~()~
     }
 
-    class VaultUserPassConfig {
-        +String username
-        +String password
-    }
-
-    class VaultAppRoleConfig {
-        +String role_id
-        +String secret_id
+    class VaultAuth {
+        <<enumeration>>
+        UserPass(username, password)
+        AppRole(role_id, secret_id)
+        Token(String)
     }
 
     Config *-- PathsConfig
@@ -497,8 +492,7 @@ classDiagram
     StorageConfig *-- RegistryStorageConfig : optional
     S3StorageConfig *-- S3LocationConfig : artifacts
     S3StorageConfig *-- S3LocationConfig : releases
-    VaultConfig *-- VaultUserPassConfig : optional
-    VaultConfig *-- VaultAppRoleConfig : optional
+    VaultConfig *-- VaultAuth
 
     %% ── Version Domain ────────────────────────────────────
 
