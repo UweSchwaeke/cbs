@@ -3,6 +3,22 @@
 > Extracted from [feature-cbscore-rs.md](feature-cbscore-rs.md) sections 7 and 8.
 > For architecture, design principles, and technical design, see the parent document.
 
+## Table of Contents
+
+- [Implementation Phases](#implementation-phases)
+  - [Phase 0: Scaffolding (S)](#phase-0-scaffolding-s)
+  - [Phase 1: Errors + Logging (S)](#phase-1-errors--logging-s)
+  - [Phase 2: Version Management + Core Components (M)](#phase-2-version-management--core-components-m)
+  - [Phase 3: Configuration System (M)](#phase-3-configuration-system-m)
+  - [Phase 4: Secret Models (L)](#phase-4-secret-models-l)
+  - [Phase 5: Vault + Secure Args (M)](#phase-5-vault--secure-args-m)
+  - [Phase 6: Async Command Executor + Secrets Manager (L)](#phase-6-async-command-executor--secrets-manager-l)
+  - [Phase 7: External Tool Wrappers (XL)](#phase-7-external-tool-wrappers-xl--parallelizable)
+  - [Phase 8: Releases + Builder Pipeline (XL)](#phase-8-releases--builder-pipeline-xl)
+  - [Phase 9: Container Building + Runner (L)](#phase-9-container-building--runner-l)
+  - [Phase 10: Python Shim Cleanup (M)](#phase-10-python-shim-cleanup-m)
+- [Critical Path & Parallelization](#critical-path--parallelization)
+
 ---
 
 ## Implementation Phases
