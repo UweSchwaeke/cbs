@@ -143,32 +143,9 @@ sequenceDiagram
 
 ---
 
-## Class Diagram
+## Rust Implementation Plan
 
 > For domain types, see the Unified Class Diagram in [feature-cbscore-rs.md §3.4](feature-cbscore-rs.md).
-
-Clap args struct introduced by this command:
-
-```rust
-/// CLI arguments for `cbsbuild versions create`
-struct VersionsCreateArgs {
-    version: String,
-    version_type: String,
-    components: Vec<String>,
-    components_paths: Vec<PathBuf>,
-    component_uri_overrides: Vec<String>,
-    distro: String,
-    el_version: i32,
-    registry: String,
-    image_name: String,
-    image_tag: Option<String>,
-    output_dir: Option<PathBuf>,
-}
-```
-
----
-
-## Rust Implementation Plan
 
 ### Crate: `cbsbuild` (CLI binary)
 

@@ -151,25 +151,9 @@ sequenceDiagram
 
 ---
 
-## Class Diagram
+## Rust Implementation Plan
 
 > For domain types, see the Unified Class Diagram in [feature-cbscore-rs.md §3.4](feature-cbscore-rs.md).
-
-Clap args struct introduced by this command:
-
-```rust
-/// CLI arguments for `cbsbuild runner build` (hidden, internal use)
-struct RunnerBuildArgs {
-    desc: PathBuf,
-    skip_build: bool,
-    force: bool,
-    tls_verify: bool,
-}
-```
-
----
-
-## Rust Implementation Plan
 
 ### Crate: `cbsbuild` (CLI binary)
 

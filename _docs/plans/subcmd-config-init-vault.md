@@ -148,22 +148,9 @@ sequenceDiagram
 
 ---
 
-## Class Diagram
+## Rust Implementation Plan
 
 > For domain types, see the Unified Class Diagram in [feature-cbscore-rs.md §3.4](feature-cbscore-rs.md).
-
-Clap args struct introduced by this command:
-
-```rust
-/// CLI arguments for `cbsbuild config init-vault`
-struct ConfigInitVaultArgs {
-    vault: Option<PathBuf>,
-}
-```
-
----
-
-## Rust Implementation Plan
 
 ### Crate: `cbsbuild` (CLI binary)
 
@@ -180,17 +167,7 @@ pub struct ConfigInitVaultArgs {
 }
 ```
 
-This is added to the existing `ConfigCmd` enum alongside `ConfigInitArgs`:
-
-```rust
-#[derive(Subcommand)]
-pub enum ConfigCmd {
-    /// Initialize the configuration file.
-    Init(ConfigInitArgs),
-    /// Initialize the vault configuration file.
-    InitVault(ConfigInitVaultArgs),
-}
-```
+This is added to the existing `ConfigCmd` enum defined in [subcmd-config-init.md](subcmd-config-init.md).
 
 ### Implementation function
 

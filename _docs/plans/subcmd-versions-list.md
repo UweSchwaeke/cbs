@@ -121,23 +121,9 @@ sequenceDiagram
 
 ---
 
-## Class Diagram
+## Rust Implementation Plan
 
 > For domain types, see the Unified Class Diagram in [feature-cbscore-rs.md §3.4](feature-cbscore-rs.md).
-
-Clap args struct introduced by this command:
-
-```rust
-/// CLI arguments for `cbsbuild versions list`
-struct VersionsListArgs {
-    verbose: bool,
-    from_address: Option<String>,
-}
-```
-
----
-
-## Rust Implementation Plan
 
 ### Crate: `cbsbuild` (CLI binary)
 
@@ -158,17 +144,7 @@ pub struct VersionsListArgs {
 }
 ```
 
-Added to the existing `VersionsCmd` enum:
-
-```rust
-#[derive(Subcommand)]
-pub enum VersionsCmd {
-    /// Create a new version descriptor file.
-    Create(VersionsCreateArgs),
-    /// List known release versions from S3.
-    List(VersionsListArgs),
-}
-```
+Added to the existing `VersionsCmd` enum defined in [subcmd-versions-create.md](subcmd-versions-create.md).
 
 ### Implementation functions
 

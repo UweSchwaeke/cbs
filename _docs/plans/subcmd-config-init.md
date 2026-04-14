@@ -187,30 +187,9 @@ sequenceDiagram
 
 ---
 
-## Class Diagram
+## Rust Implementation Plan
 
 > For domain types, see the Unified Class Diagram in [feature-cbscore-rs.md §3.4](feature-cbscore-rs.md).
-
-Clap args struct introduced by this command:
-
-```rust
-/// CLI arguments for `cbsbuild config init`
-struct ConfigInitArgs {
-    components_paths: Vec<PathBuf>,
-    scratch: Option<PathBuf>,
-    containers_scratch: Option<PathBuf>,
-    ccache: Option<PathBuf>,
-    vault: Option<PathBuf>,
-    secrets: Vec<PathBuf>,
-    for_systemd_install: bool,
-    systemd_deployment: String,
-    for_containerized_run: bool,
-}
-```
-
----
-
-## Rust Implementation Plan
 
 ### Crate: `cbsbuild` (CLI binary)
 
