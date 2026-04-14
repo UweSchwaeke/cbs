@@ -237,7 +237,7 @@ async fn resolve_output_dir(
 }
 ```
 
-The config model (`Config` in `cbscore-types`) gains an optional field (resolves the Python FIXME at `cmds/versions.py:88` — "make this configurable". This enables deployments where the git repo root is not available, e.g., cbsd workers):
+The config model (`Config` in `cbscore-lib::types::config`) gains an optional field (resolves the Python FIXME at `cmds/versions.py:88` — "make this configurable". This enables deployments where the git repo root is not available, e.g., cbsd workers):
 
 ```rust
 pub struct Config {

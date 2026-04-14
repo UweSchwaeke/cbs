@@ -95,7 +95,7 @@ sequenceDiagram
     end
 
     CLI->>Builder: Builder::new(desc, config, flags)
-    Builder->>Secrets: SecretsMgr::new(secrets, vault_config).await
+    Builder->>Secrets: SecretsMgr::new(secrets, vault_config.as_ref()).await
     Builder->>Builder: load_components(config.paths.components)
     alt No components found
         Builder->>CLI: CbsError::Builder

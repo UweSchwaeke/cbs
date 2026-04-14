@@ -324,4 +324,3 @@ Error handling follows [feature-cbscore-rs.md §5.2](feature-cbscore-rs.md): `an
 - **Unit**: Exactly one auth field is set per config
 - **Integration**: Run `cbsbuild config init-vault --vault /tmp/test-vault.yaml` in a temp dir, verify output file parses correctly
 - **Snapshot**: `cbsbuild config init-vault --help` output matches baseline
-eline

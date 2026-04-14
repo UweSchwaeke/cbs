@@ -267,7 +267,7 @@ Each Python helper function maps to a Rust function:
 ```rust
 // rust/cbsbuild/src/cmds/config.rs
 
-use cbscore_types::config::*;
+use cbscore_lib::types::config::*;
 use dialoguer::{Confirm, Input, Password};
 use std::path::{Path, PathBuf};
 
