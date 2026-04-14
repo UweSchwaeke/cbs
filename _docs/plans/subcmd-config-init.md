@@ -189,110 +189,23 @@ sequenceDiagram
 
 ## Class Diagram
 
-```mermaid
-classDiagram
-    direction TB
+> For domain types, see the Unified Class Diagram in [feature-cbscore-rs.md §3.4](feature-cbscore-rs.md).
 
-    class Config {
-        +PathsConfig paths
-        +Option~StorageConfig~ storage
-        +Option~SigningConfig~ signing
-        +Option~LoggingConfig~ logging
-        +Vec~PathBuf~ secrets
-        +Option~PathBuf~ vault
-        +load(path: &Path) Result~Config~
-        +store(&self, path: &Path) Result~()~
-    }
+Clap args struct introduced by this command:
 
-    class PathsConfig {
-        +Vec~PathBuf~ components
-        +PathBuf scratch
-        +PathBuf scratch_containers
-        +Option~PathBuf~ ccache
-    }
-
-    class StorageConfig {
-        +Option~S3StorageConfig~ s3
-        +Option~RegistryStorageConfig~ registry
-    }
-
-    class S3StorageConfig {
-        +String url
-        +S3LocationConfig artifacts
-        +S3LocationConfig releases
-    }
-
-    class S3LocationConfig {
-        +String bucket
-        +String loc
-    }
-
-    class RegistryStorageConfig {
-        +String url
-    }
-
-    class SigningConfig {
-        +Option~String~ gpg
-        +Option~String~ transit
-    }
-
-    class LoggingConfig {
-        +PathBuf log_file
-    }
-
-    class VaultConfig {
-        +String vault_addr
-        +Option~VaultUserPassConfig~ auth_user
-        +Option~VaultAppRoleConfig~ auth_approle
-        +Option~String~ auth_token
-        +load(path: &Path) Result~VaultConfig~
-        +store(&self, path: &Path) Result~()~
-    }
-
-    class VaultUserPassConfig {
-        +String username
-        +String password
-    }
-
-    class VaultAppRoleConfig {
-        +String role_id
-        +String secret_id
-    }
-
-    Config *-- PathsConfig
-    Config *-- StorageConfig : optional
-    Config *-- SigningConfig : optional
-    Config *-- LoggingConfig : optional
-    StorageConfig *-- S3StorageConfig : optional
-    StorageConfig *-- RegistryStorageConfig : optional
-    S3StorageConfig *-- S3LocationConfig : artifacts
-    S3StorageConfig *-- S3LocationConfig : releases
-    VaultConfig *-- VaultUserPassConfig : optional
-    VaultConfig *-- VaultAppRoleConfig : optional
-
-    class ConfigInitArgs {
-        +Vec~PathBuf~ components_paths
-        +Option~PathBuf~ scratch
-        +Option~PathBuf~ containers_scratch
-        +Option~PathBuf~ ccache
-        +Option~PathBuf~ vault
-        +Vec~PathBuf~ secrets
-        +bool for_systemd_install
-        +String systemd_deployment
-        +bool for_containerized_run
-    }
-
-    class ConfigCmd {
-        <<enumeration>>
-        Init(ConfigInitArgs)
-        InitVault(ConfigInitVaultArgs)
-    }
-
-    ConfigCmd --> ConfigInitArgs : Init variant
-
-    note for Config "Serialized to/from YAML via serde\nField aliases: scratch-containers, vault-addr, etc."
-    note for VaultConfig "Written to a separate YAML file\nReferenced by Config.vault path"
-    note for ConfigInitArgs "Clap derive struct\nMaps CLI options to fields"
+```rust
+/// CLI arguments for `cbsbuild config init`
+struct ConfigInitArgs {
+    components_paths: Vec<PathBuf>,
+    scratch: Option<PathBuf>,
+    containers_scratch: Option<PathBuf>,
+    ccache: Option<PathBuf>,
+    vault: Option<PathBuf>,
+    secrets: Vec<PathBuf>,
+    for_systemd_install: bool,
+    systemd_deployment: String,
+    for_containerized_run: bool,
+}
 ```
 
 ---

@@ -150,46 +150,15 @@ sequenceDiagram
 
 ## Class Diagram
 
-```mermaid
-classDiagram
-    direction TB
+> For domain types, see the Unified Class Diagram in [feature-cbscore-rs.md §3.4](feature-cbscore-rs.md).
 
-    class VaultConfig {
-        +String vault_addr
-        +Option~VaultUserPassConfig~ auth_user
-        +Option~VaultAppRoleConfig~ auth_approle
-        +Option~String~ auth_token
-        +load(path: &Path) Result~VaultConfig~
-        +store(&self, path: &Path) Result~()~
-    }
+Clap args struct introduced by this command:
 
-    class VaultUserPassConfig {
-        +String username
-        +String password
-    }
-
-    class VaultAppRoleConfig {
-        +String role_id
-        +String secret_id
-    }
-
-    VaultConfig *-- VaultUserPassConfig : auth_user (optional, exactly one auth method set)
-    VaultConfig *-- VaultAppRoleConfig : auth_approle (optional)
-
-    class ConfigInitVaultArgs {
-        +Option~PathBuf~ vault
-    }
-
-    class ConfigCmd {
-        <<enumeration>>
-        Init(ConfigInitArgs)
-        InitVault(ConfigInitVaultArgs)
-    }
-
-    ConfigCmd --> ConfigInitVaultArgs : InitVault variant
-
-    note for VaultConfig "Serialized to YAML via serde\nField aliases: vault-addr, auth-user, auth-approle, auth-token\nExactly one of auth_user, auth_approle, or auth_token is set"
-    note for ConfigInitVaultArgs "Clap derive struct\nOptional --vault path flag"
+```rust
+/// CLI arguments for `cbsbuild config init-vault`
+struct ConfigInitVaultArgs {
+    vault: Option<PathBuf>,
+}
 ```
 
 ---

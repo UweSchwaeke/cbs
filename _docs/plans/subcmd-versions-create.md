@@ -145,92 +145,25 @@ sequenceDiagram
 
 ## Class Diagram
 
-```mermaid
-classDiagram
-    direction TB
+> For domain types, see the Unified Class Diagram in [feature-cbscore-rs.md §3.4](feature-cbscore-rs.md).
 
-    class VersionDescriptor {
-        +String version
-        +String title
-        +VersionSignedOffBy signed_off_by
-        +VersionImage image
-        +Vec~VersionComponent~ components
-        +String distro
-        +i32 el_version
-        +read(path: &Path) Result~VersionDescriptor~
-        +write(&self, path: &Path) Result~()~
-        +model_dump_json(&self, indent: usize) String
-    }
+Clap args struct introduced by this command:
 
-    class VersionSignedOffBy {
-        +String user
-        +String email
-    }
-
-    class VersionImage {
-        +String registry
-        +String name
-        +String tag
-    }
-
-    class VersionComponent {
-        +String name
-        +String repo
-        +String ref  (Rust field: r#ref or ref_ with serde rename)
-    }
-
-    VersionDescriptor *-- VersionSignedOffBy
-    VersionDescriptor *-- VersionImage
-    VersionDescriptor *-- VersionComponent : 1..*
-
-    class VersionType {
-        <<enumeration>>
-        Release
-        Dev
-        Test
-        Ci
-    }
-
-    class CoreComponent {
-        +String name
-        +String repo
-        +CoreComponentBuildSection build
-        +CoreComponentContainersSection containers
-    }
-
-    class CoreComponentLoc {
-        +PathBuf path
-        +CoreComponent comp
-    }
-
-    CoreComponentLoc *-- CoreComponent
-
-    class VersionsCreateArgs {
-        +String version
-        +String version_type
-        +Vec~String~ components
-        +Vec~PathBuf~ components_paths
-        +Vec~String~ component_uri_overrides
-        +String distro
-        +i32 el_version
-        +String registry
-        +String image_name
-        +Option~String~ image_tag
-        +Option~PathBuf~ output_dir
-    }
-
-    class VersionsCmd {
-        <<enumeration>>
-        Create(VersionsCreateArgs)
-        List(VersionsListArgs)
-    }
-
-    VersionsCmd --> VersionsCreateArgs : Create variant
-
-    note for VersionDescriptor "Serialized to JSON via serde\nField names match Python (snake_case)\nField order in struct declaration must match Python output\nfor consistent, human-reviewable JSON\nUsed as Pydantic field in cbsd's WorkerBuildEntry\nVersionComponent.ref must use #[serde(rename = 'ref')]\nbecause 'ref' is a Rust keyword (use r#ref or ref_ as field name)"
-    note for VersionType "Maps to Python StrEnum\nMust serialize to lowercase via #[serde(rename_all = lowercase)]\nUsed directly for output directory naming and title generation"
-    note for CoreComponentLoc "Loaded from cbs.component.yaml\nValidates that requested components exist"
-    note for VersionsCreateArgs "Clap derive struct\nMaps CLI options to fields"
+```rust
+/// CLI arguments for `cbsbuild versions create`
+struct VersionsCreateArgs {
+    version: String,
+    version_type: String,
+    components: Vec<String>,
+    components_paths: Vec<PathBuf>,
+    component_uri_overrides: Vec<String>,
+    distro: String,
+    el_version: i32,
+    registry: String,
+    image_name: String,
+    image_tag: Option<String>,
+    output_dir: Option<PathBuf>,
+}
 ```
 
 ---

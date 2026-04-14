@@ -164,56 +164,24 @@ sequenceDiagram
 
 ## Class Diagram
 
-```mermaid
-classDiagram
-    direction TB
+> For domain types, see the Unified Class Diagram in [feature-cbscore-rs.md §3.4](feature-cbscore-rs.md).
 
-    class BuildArgs {
-        +PathBuf descriptor
-        +PathBuf cbscore_path
-        +Option~PathBuf~ cbs_entrypoint
-        +f64 timeout
-        +Option~String~ sign_with_gpg_id
-        +Option~String~ sign_with_transit
-        +Option~PathBuf~ log_file
-        +bool skip_build
-        +bool force
-        +bool tls_verify
-    }
+Clap args struct introduced by this command:
 
-    class RunnerOpts {
-        +Option~String~ run_name
-        +bool replace_run
-        +Option~PathBuf~ entrypoint_path
-        +f64 timeout
-        +Option~PathBuf~ log_file_path
-        +Option~CmdEventCallback~ log_out_cb
-        +bool skip_build
-        +bool force
-        +bool tls_verify
-        +CancellationToken cancel_token
-    }
-
-    class ContainerConfig {
-        <<created at runtime>>
-        +PathsConfig paths (container-local)
-        +Vec~PathBuf~ secrets (/runner/...)
-        +Option~PathBuf~ vault (/runner/...)
-        +Option~LoggingConfig~ logging
-    }
-
-    class VolumeMount {
-        +String host_path
-        +String container_path
-    }
-
-    BuildArgs --> RunnerOpts : converted to
-    RunnerOpts --> ContainerConfig : creates modified config
-    RunnerOpts --> VolumeMount : builds mount map
-
-    note for BuildArgs "Clap derive struct\nUser-facing command arguments\nMaps to runner() library function"
-    note for RunnerOpts "Internal options struct passed to runner()\nAlso used by cbsd's WorkerBuilder\nSupports both log file and async callback"
-    note for ContainerConfig "Deep copy of host Config\nAll paths rewritten to /runner/...\nWritten to temp file and mounted into container"
+```rust
+/// CLI arguments for `cbsbuild build`
+struct BuildArgs {
+    descriptor: PathBuf,
+    cbscore_path: PathBuf,
+    cbs_entrypoint: Option<PathBuf>,
+    timeout: f64,
+    sign_with_gpg_id: Option<String>,
+    sign_with_transit: Option<String>,
+    log_file: Option<PathBuf>,
+    skip_build: bool,
+    force: bool,
+    tls_verify: bool,
+}
 ```
 
 ---

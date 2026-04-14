@@ -123,71 +123,16 @@ sequenceDiagram
 
 ## Class Diagram
 
-```mermaid
-classDiagram
-    direction TB
+> For domain types, see the Unified Class Diagram in [feature-cbscore-rs.md §3.4](feature-cbscore-rs.md).
 
-    class ReleaseDesc {
-        +String version
-        +HashMap~ArchType, ReleaseBuildEntry~ builds
-        +load(path: &Path) Result~ReleaseDesc~
-    }
+Clap args struct introduced by this command:
 
-    class ReleaseBuildEntry {
-        +ArchType arch
-        +BuildType build_type
-        +String os_version
-        +HashMap~String, ReleaseComponentVersion~ components
-    }
-
-    class ReleaseComponentVersion {
-        +String name
-        +String version
-        +String sha1
-        +ArchType arch
-        +BuildType build_type
-        +String os_version
-        +String repo_url
-        +ReleaseRPMArtifacts artifacts
-    }
-
-    class ReleaseRPMArtifacts {
-        +String loc
-        +String release_rpm_loc
-    }
-
-    class ArchType {
-        <<enumeration>>
-        x86_64
-    }
-
-    class BuildType {
-        <<enumeration>>
-        rpm
-    }
-
-    ReleaseDesc *-- ReleaseBuildEntry : per architecture
-    ReleaseBuildEntry *-- ReleaseComponentVersion : per component
-    ReleaseComponentVersion *-- ReleaseRPMArtifacts
-    ReleaseBuildEntry --> ArchType
-    ReleaseBuildEntry --> BuildType
-
-    class VersionsListArgs {
-        +bool verbose
-        +Option~String~ from_address
-    }
-
-    class VersionsCmd {
-        <<enumeration>>
-        Create(VersionsCreateArgs)
-        List(VersionsListArgs)
-    }
-
-    VersionsCmd --> VersionsListArgs : List variant
-
-    note for ReleaseDesc "Fetched from S3 as JSON\nOne per published release version"
-    note for ReleaseBuildEntry "Currently only x86_64 + rpm\nExtensible to other archs/types"
-    note for VersionsListArgs "Clap derive struct\n--from is required, -v is optional"
+```rust
+/// CLI arguments for `cbsbuild versions list`
+struct VersionsListArgs {
+    verbose: bool,
+    from_address: Option<String>,
+}
 ```
 
 ---

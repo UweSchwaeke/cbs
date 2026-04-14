@@ -154,69 +154,18 @@ sequenceDiagram
 
 ## Class Diagram
 
-```mermaid
-classDiagram
-    direction TB
+> For domain types, see the Unified Class Diagram in [feature-cbscore-rs.md §3.4](feature-cbscore-rs.md).
 
-    class Builder {
-        -VersionDescriptor desc
-        -Config config
-        -PathBuf scratch_path
-        -HashMap~String, CoreComponentLoc~ components
-        -Option~StorageConfig~ storage_config
-        -Option~SigningConfig~ signing_config
-        -SecretsMgr secrets
-        -Option~PathBuf~ ccache_path
-        -BuildFlags flags
-        +new(desc, config, flags) Result~Builder~
-        +run(&self) Result~()~
-        -build_release(&self) Result~Option~ReleaseDesc~~
-        -do_build_release(&self, components) Result~Option~ReleaseDesc~~
-        -build(&self, components) Result~HashMap~
-        -build_rpms(&self, components) Result~HashMap~
-        -upload(&self, infos, builds) Result~HashMap~
-    }
+Clap args struct introduced by this command:
 
-    class ContainerBuilder {
-        -VersionDescriptor desc
-        -ReleaseDesc release_desc
-        -HashMap~String, CoreComponentLoc~ components
-        +new(desc, release_desc, components) ContainerBuilder
-        +build(&self) Result~()~
-        +finish(&self, secrets, sign_with_transit) Result~()~
-    }
-
-    class RunnerBuildArgs {
-        +PathBuf desc
-        +bool skip_build
-        +bool force
-        +bool tls_verify
-    }
-
-    class RunnerCmd {
-        <<enumeration>>
-        Build(RunnerBuildArgs)
-    }
-
-    Builder --> ContainerBuilder : creates after release build
-    Builder --> SecretsMgr : uses for S3, Vault, registry, signing
-    Builder --> VersionDescriptor : reads
-    Builder --> Config : reads
-    ContainerBuilder --> BuildahContainer : uses
-
-    RunnerCmd --> RunnerBuildArgs : Build variant
-
-    class BuildFlags {
-        +bool skip_build
-        +bool force
-        +bool tls_verify
-    }
-
-    Builder --> BuildFlags : constructor param
-
-    note for Builder "Core build orchestrator\nRuns inside the Podman container\nThree-level caching: image → release → component\nS3/registry/signing deps injected via traits at impl time\n(simplified to concrete types in this plan)"
-    note for RunnerBuildArgs "Clap derive struct\nHidden command (not shown in --help)\nAll paths are container-local (/runner/...)"
-    note for ContainerBuilder "Creates container image via Buildah\nApplies component PRE/POST/CONFIG scripts\nPushes to registry and optionally signs"
+```rust
+/// CLI arguments for `cbsbuild runner build` (hidden, internal use)
+struct RunnerBuildArgs {
+    desc: PathBuf,
+    skip_build: bool,
+    force: bool,
+    tls_verify: bool,
+}
 ```
 
 ---
