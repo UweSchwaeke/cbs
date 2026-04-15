@@ -1005,7 +1005,7 @@ All git async operations (clone, checkout, worktree, fetch, etc.)
 | Function | Input | Output | Error | Example |
 |----------|-------|--------|-------|---------|
 | `run_git` | `args: &[CmdArg]`, `path: Option<&Path>` | `String` (stdout) | `anyhow::Error` | `run_git(&[Plain("status")], Some(repo_path))` |
-| `get_git_user` | -- | `(String, String)` | `anyhow::Error` | `()` -> `("John Doe", "john@example.com")` |
+| `get_git_user` | -- | `GitUser` | `anyhow::Error` | `()` -> `GitUser { name: "John Doe", email: "john@example.com" }` |
 | `get_git_repo_root` | -- | `PathBuf` | `anyhow::Error` | `()` -> `/home/user/repo` |
 | `get_git_modified_paths` | `base_sha: &str`, `r#ref: &str`, `in_repo_path: Option<&str>`, `repo_path: Option<&Path>` | `GitModifiedPaths` | `anyhow::Error` | returns modified and deleted paths |
 | `git_clone` | `repo: CmdArg`, `base_path: &Path`, `repo_name: &str` | `PathBuf` | `anyhow::Error` | clones mirror or updates existing; returns repo path |
@@ -1022,7 +1022,13 @@ All git async operations (clone, checkout, worktree, fetch, etc.)
 // cbscore-lib/src/utils/git.rs
 
 pub async fn run_git(args: &[CmdArg], path: Option<&Path>) -> anyhow::Result<String>;
-pub async fn get_git_user() -> anyhow::Result<(String, String)>;
+
+pub struct GitUser {
+    pub name: String,
+    pub email: String,
+}
+
+pub async fn get_git_user() -> anyhow::Result<GitUser>;
 pub async fn get_git_repo_root() -> anyhow::Result<PathBuf>;
 pub struct GitModifiedPaths {
     pub modified: Vec<PathBuf>,
@@ -1090,7 +1096,7 @@ pub async fn git_get_current_branch(repo_path: &Path) -> anyhow::Result<String>;
 ```rust
 // cbscore-lib/src/utils/podman.rs
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct PodmanRunOpts {
     pub image: String,              // required; empty default must be overridden
     pub args: Option<Vec<String>>,
@@ -1107,6 +1113,11 @@ pub struct PodmanRunOpts {
     pub persist_on_failure: bool,   // default: false
     pub event_cb: Option<CmdEventCallback>,
 }
+
+// Note: `PodmanRunOpts` does not derive `Debug` because `event_cb` contains
+// `Box<dyn Fn(&CmdEvent) + Send + Sync>` which does not implement `Debug`.
+// If logging `PodmanRunOpts` is needed, add a manual `Debug` impl that skips
+// the `event_cb` field (or prints `Some(<callback>)` as a placeholder).
 
 // Use struct update syntax with `..Default::default()` for concise construction.
 
@@ -1234,7 +1245,7 @@ pub async fn s3_list(
 | `skopeo_image_exists` (async) | `img: &str`, `secrets: &SecretsMgr`, `tls_verify: bool` | `bool` | `anyhow::Error` | `true` if image exists in registry |
 | `sign` (async) | `img: &str`, `secrets: &SecretsMgr`, `transit: &str` | `()` | `anyhow::Error` | async cosign sign via Vault Transit |
 | `can_sign` | `registry: &str`, `secrets: &SecretsMgr`, `transit: &str` | `bool` | -- | checks vault + transit key + registry creds are available (pure check, no I/O) |
-| `sync_image` (async) | `src`, `dst`, `dst_registry`, `secrets`, `transit`, `force: bool`, `dry_run: bool` | `()` | `anyhow::Error` | syncs image between registries |
+| `sync_image` (async) | `opts: &SyncImageOpts` | `()` | `anyhow::Error` | syncs image between registries |
 | `get_image_desc` | `version: &str` | `ImageDescriptor` | `anyhow::Error` | loads image descriptor JSON matching version |
 | `get_image_name` | `img: &str` | `String` | -- | `"harbor.example.com/proj:v1"` -> `"harbor.example.com/proj"` |
 | `get_image_tag` | `img: &str` | `Option<String>` | -- | `"harbor.example.com/proj:v1"` -> `Some("v1")` |
@@ -1271,11 +1282,18 @@ pub async fn sign(
 
 // cbscore-lib/src/images/sync.rs
 
+pub struct SyncImageOpts<'a> {
+    pub src: &'a str,
+    pub dst: &'a str,
+    pub dst_registry: &'a str,
+    pub secrets: &'a SecretsMgr,
+    pub transit: Option<&'a str>,
+    pub force: bool,
+    pub dry_run: bool,
+}
+
 #[allow(dead_code)] // TODO: evaluate if this function is still needed
-pub async fn sync_image(
-    src: &str, dst: &str, dst_registry: &str, secrets: &SecretsMgr,
-    transit: &str, force: bool, dry_run: bool,
-) -> anyhow::Result<()>;
+pub async fn sync_image(opts: &SyncImageOpts<'_>) -> anyhow::Result<()>;
 
 // cbscore-lib/src/images/desc.rs
 
@@ -1308,7 +1326,18 @@ pub fn get_image_tag(img: &str) -> Option<String>;
 ##### Internal Functions (7d)
 
 - `skopeo(args: &[CmdArg]) -> Result<CmdResult>` -- low-level skopeo command runner
-- `_get_signing_params(registry, secrets, transit) -> Result<(String, String, String, String)>` -- extracts (username, password, transit_mount, transit_key) or errors
+- `_get_signing_params(registry, secrets, transit) -> Result<SigningParams>` -- extracts signing parameters or errors
+
+```rust
+// cbscore-lib/src/images/signing.rs (crate-private)
+
+pub(crate) struct SigningParams {
+    pub username: String,
+    pub password: String,
+    pub transit_mount: String,
+    pub transit_key: String,
+}
+```
 
 Also: `utils/containers.rs` (container URI helpers), `utils/paths.rs` (script path resolution)
 
@@ -1336,7 +1365,7 @@ Implement release S3 operations (check, upload, list) and the full `Builder` pip
 | `get_component_release_rpm` | `&CoreComponentLoc`, `el_version: i32` | `Option<String>` | `anyhow::Error` | runs release RPM script, returns RPM name |
 | `Builder::new` | `desc: VersionDescriptor`, `config: &Config`, `flags: BuildFlags` | `Builder` | `CbsError` | constructs builder, loads components, initializes `SecretsMgr` |
 | `Builder::run` | `&mut self` | `()` | `CbsError` | full pipeline: prepare -> check existing -> build RPMs -> sign -> upload -> container |
-| `build_rpms` | `rpms_path`, `el_version`, `components_locs`, `components`, opts | `HashMap<String, ComponentBuild>` | `anyhow::Error` | parallel RPM build via `JoinSet` |
+| `build_rpms` | `opts: &BuildRpmsOpts` | `HashMap<String, ComponentBuild>` | `anyhow::Error` | parallel RPM build via `JoinSet` |
 | `sign_rpms` | `&SecretsMgr`, `gpg_key_id: &str`, `&HashMap<String, ComponentBuild>` | `()` | `anyhow::Error` | parallel GPG signing of all RPMs per component |
 | `s3_upload_rpms` | `ctx: &S3Context`, `bucket_loc`, `&HashMap<String, ComponentBuild>`, `el_version` | `HashMap<String, S3ComponentLocation>` | `anyhow::Error` | parallel upload of RPMs + repodata to S3 |
 
@@ -1408,14 +1437,16 @@ pub struct ComponentBuild {
     pub rpms_path: PathBuf,
 }
 
-pub async fn build_rpms(
-    rpms_path: &Path,
-    el_version: i32,
-    components_locs: &HashMap<String, CoreComponentLoc>,
-    components: &HashMap<String, BuildComponentInfo>,
-    ccache_path: Option<&Path>,
-    skip_build: bool,
-) -> anyhow::Result<HashMap<String, ComponentBuild>>;
+pub struct BuildRpmsOpts<'a> {
+    pub rpms_path: &'a Path,
+    pub el_version: i32,
+    pub components_locs: &'a HashMap<String, CoreComponentLoc>,
+    pub components: &'a HashMap<String, BuildComponentInfo>,
+    pub ccache_path: Option<&'a Path>,
+    pub skip_build: bool,
+}
+
+pub async fn build_rpms(opts: &BuildRpmsOpts<'_>) -> anyhow::Result<HashMap<String, ComponentBuild>>;
 
 // builder/signing.rs
 pub async fn sign_rpms(
@@ -1480,7 +1511,7 @@ Implement container image construction (PRE/PACKAGES/POST/CONFIG stages via Buil
 |----------|-------|--------|-------|---------|
 | `ContainerBuilder::new` | `desc: VersionDescriptor`, `release_desc: ReleaseDesc`, `components: HashMap<String, CoreComponentLoc>` | `ContainerBuilder` | -- | constructs builder with no container yet |
 | `ContainerBuilder::build` | `&mut self` | `()` | `anyhow::Error` | resolves components, creates buildah container, applies PRE/PACKAGES/POST/CONFIG |
-| `ContainerBuilder::finish` | `&self`, `&SecretsMgr`, `sign_with_transit: Option<&str>` | `()` | `anyhow::Error` | commits, pushes, and optionally signs the image |
+| `ContainerBuilder::finish` | `&mut self`, `&SecretsMgr`, `sign_with_transit: Option<&str>` | `()` | `anyhow::Error` | commits, pushes, and optionally signs the image |
 | `ComponentContainer::new` | `component_loc: &CoreComponentLoc`, `version: &str`, `vars: Option<&HashMap<String, String>>` | `ComponentContainer` | `anyhow::Error` | loads best-match `container.yaml` with variable substitution |
 | `ContainerDescriptor::load` | `path: &Path`, `vars: Option<&HashMap<String, String>>` | `ContainerDescriptor` | `anyhow::Error` | `"container.yaml"` with `{version}` -> substituted + parsed YAML |
 | `substitute_vars` | `template: &str`, `vars: &HashMap<String, String>` | `String` | `anyhow::Error` | `"v{version}-el{el}"` with `{"version":"18.2.4","el":"9"}` -> `"v18.2.4-el9"` |
@@ -1504,7 +1535,7 @@ impl ContainerBuilder {
     pub async fn build(&mut self) -> anyhow::Result<()>;
 
     pub async fn finish(
-        &self,
+        &mut self,
         secrets: &SecretsMgr,
         sign_with_transit: Option<&str>,
     ) -> anyhow::Result<()>;
