@@ -192,6 +192,8 @@ pub fn get_minor_version(version: &str) -> anyhow::Result<Option<String>>;
 
 Version utility functions return `anyhow::Result` (internal). The CLI handler and `version_create_helper` (the boundary) map to `CbsError::MalformedVersion` / `CbsError::Version`.
 
+> **Derive conventions for key types**: `ParsedVersion` uses `#[derive(Debug, Clone, PartialEq, Eq)]` for test assertions and value semantics. `VersionDescriptor`, `VersionImage`, `VersionComponent`, and other serialized types use `#[derive(Debug, Clone, Serialize, Deserialize)]`. Maintain these derive sets consistently when adding new types.
+
 Test vectors from Python inline tests (33 cases for `parse_version`, 19 for `normalize_version`):
 
 ```text
@@ -552,7 +554,7 @@ Implement all 16 secret model structs, 4 discriminated union enums with custom d
 | `Secrets::load` | `path: &Path` (YAML or JSON) | `Secrets` | `anyhow::Error` | `Secrets::load("secrets.yaml")` loads 4 secret maps |
 | `Secrets::store` | `&self`, `path: &Path` | `()` | `anyhow::Error` | `secrets.store("out.yaml")` writes YAML |
 | `Secrets::merge` | `&mut self`, `other: Secrets` | `()` | -- | second secrets' entries override first's |
-| `find_best_secret_candidate` | `secrets: &[&str]`, `uri: &str` | `Option<String>` | -- | `(["github.com", "github.com/ceph"], "github.com/ceph/ceph")` -> `Some("github.com/ceph")` |
+| `find_best_secret_candidate` | `secrets: &[&'a str]`, `uri: &str` | `Option<&'a str>` | -- | `(["github.com", "github.com/ceph"], "github.com/ceph/ceph")` -> `Some("github.com/ceph")` |
 | `matches_uri` | `pattern: &str`, `uri: &str` | `UriMatch` | `anyhow::Error` | `("github.com", "https://github.com/ceph")` -> `Partial { remainder: "ceph" }` |
 
 ```rust
@@ -650,7 +652,9 @@ pub fn matches_uri(pattern: &str, uri: &str) -> anyhow::Result<UriMatch>;
 
 // cbscore-lib/src/secrets/utils.rs
 
-pub fn find_best_secret_candidate(secrets: &[&str], uri: &str) -> Option<String>;
+/// Returns a borrow into the input slice — avoids allocation since the result
+/// is always one of the input strings.
+pub fn find_best_secret_candidate<'a>(secrets: &[&'a str], uri: &str) -> Option<&'a str>;
 ```
 
 Discriminator logic (custom `Deserialize` for each union enum):
@@ -940,6 +944,8 @@ impl Drop for GpgKeyringGuard {
 }
 ```
 
+**Annotations**: All fallible functions (`Result`/`Option` returns) and non-trivial value producers should be marked `#[must_use]` to catch accidental discards. This applies across all phases.
+
 **SecretsMgr construction**: `async fn SecretsMgr::new(secrets, vault_config) -> Result<SecretsMgr>` loads secrets from files, constructs the VaultClient, and verifies the vault connection in a single call. This matches the Python `__init__` behavior -- no caller ever wants a half-initialized SecretsMgr.
 
 **Secret resolution logic** (maps from Python implementations):
@@ -1001,7 +1007,7 @@ All git async operations (clone, checkout, worktree, fetch, etc.)
 | `run_git` | `args: &[CmdArg]`, `path: Option<&Path>` | `String` (stdout) | `anyhow::Error` | `run_git(&[Plain("status")], Some(repo_path))` |
 | `get_git_user` | -- | `(String, String)` | `anyhow::Error` | `()` -> `("John Doe", "john@example.com")` |
 | `get_git_repo_root` | -- | `PathBuf` | `anyhow::Error` | `()` -> `/home/user/repo` |
-| `get_git_modified_paths` | `base_sha: &str`, `r#ref: &str`, `in_repo_path: Option<&str>`, `repo_path: Option<&Path>` | `(Vec<PathBuf>, Vec<PathBuf>)` | `anyhow::Error` | returns (modified, deleted) paths |
+| `get_git_modified_paths` | `base_sha: &str`, `r#ref: &str`, `in_repo_path: Option<&str>`, `repo_path: Option<&Path>` | `GitModifiedPaths` | `anyhow::Error` | returns modified and deleted paths |
 | `git_clone` | `repo: CmdArg`, `base_path: &Path`, `repo_name: &str` | `PathBuf` | `anyhow::Error` | clones mirror or updates existing; returns repo path |
 | `git_checkout` | `repo_path: &Path`, `r#ref: &str`, `worktrees_base: &Path` | `PathBuf` | `anyhow::Error` | creates worktree; returns worktree path |
 | `git_remove_worktree` | `repo_path: &Path`, `worktree_path: &Path` | `()` | `anyhow::Error` | force-removes a worktree |
@@ -1018,12 +1024,17 @@ All git async operations (clone, checkout, worktree, fetch, etc.)
 pub async fn run_git(args: &[CmdArg], path: Option<&Path>) -> anyhow::Result<String>;
 pub async fn get_git_user() -> anyhow::Result<(String, String)>;
 pub async fn get_git_repo_root() -> anyhow::Result<PathBuf>;
+pub struct GitModifiedPaths {
+    pub modified: Vec<PathBuf>,
+    pub deleted: Vec<PathBuf>,
+}
+
 pub async fn get_git_modified_paths(
     base_sha: &str,
     r#ref: &str,
     in_repo_path: Option<&str>,
     repo_path: Option<&Path>,
-) -> anyhow::Result<(Vec<PathBuf>, Vec<PathBuf>)>;
+) -> anyhow::Result<GitModifiedPaths>;
 pub async fn git_clone(
     repo: CmdArg, base_path: &Path, repo_name: &str,
 ) -> anyhow::Result<PathBuf>;
@@ -1079,22 +1090,25 @@ pub async fn git_get_current_branch(repo_path: &Path) -> anyhow::Result<String>;
 ```rust
 // cbscore-lib/src/utils/podman.rs
 
+#[derive(Debug, Default)]
 pub struct PodmanRunOpts {
-    pub image: String,
+    pub image: String,              // required; empty default must be overridden
     pub args: Option<Vec<String>>,
     pub env: Option<HashMap<String, String>>,
     pub volumes: Option<HashMap<String, String>>,
     pub devices: Option<HashMap<String, String>>,
     pub entrypoint: Option<String>,
     pub name: Option<String>,
-    pub use_user_ns: bool,
+    pub use_user_ns: bool,          // default: false
     pub timeout: Option<Duration>,
-    pub use_host_network: bool,
-    pub unconfined: bool,
-    pub replace_if_exists: bool,
-    pub persist_on_failure: bool,
+    pub use_host_network: bool,     // default: false
+    pub unconfined: bool,           // default: false
+    pub replace_if_exists: bool,    // default: false
+    pub persist_on_failure: bool,   // default: false
     pub event_cb: Option<CmdEventCallback>,
 }
+
+// Use struct update syntax with `..Default::default()` for concise construction.
 
 pub async fn podman_run(opts: &PodmanRunOpts) -> anyhow::Result<CmdResult>;
 pub async fn podman_stop(name: Option<&str>, timeout: u32) -> anyhow::Result<()>;
@@ -1495,6 +1509,11 @@ impl ContainerBuilder {
         sign_with_transit: Option<&str>,
     ) -> anyhow::Result<()>;
 }
+
+// **Shared ownership**: `VersionDescriptor` is used by `Builder`, `ContainerBuilder`,
+// and `BuildahContainer`. To avoid repeated clones across the pipeline, wrap in
+// `Arc<VersionDescriptor>` when passing between these layers. The top-level CLI
+// handler creates the `Arc` once.
 
 // containers/component.rs
 pub struct ComponentContainer {
