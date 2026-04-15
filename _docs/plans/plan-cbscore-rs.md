@@ -388,19 +388,40 @@ Implement the full configuration model hierarchy with YAML serialization, `load`
 // cbscore-lib/src/types/config.rs
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
 pub enum VaultAuth {
-    UserPass { username: String, password: String },
-    AppRole { role_id: String, secret_id: String },
+    #[serde(rename = "auth-user")]
+    UserPass(VaultUserPassConfig),
+    #[serde(rename = "auth-approle")]
+    AppRole(VaultAppRoleConfig),
+    #[serde(rename = "auth-token")]
     Token(String),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct VaultUserPassConfig {
+    pub username: String,
+    pub password: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct VaultAppRoleConfig {
+    pub role_id: String,
+    pub secret_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct VaultConfig {
     pub vault_addr: String,
+    #[serde(flatten)]
     pub auth: VaultAuth,
 }
+
+// The `#[serde(flatten)]` + externally-tagged enum with renamed variants
+// produces Python-compatible flat YAML: `vault-addr` + exactly one of
+// `auth-user`, `auth-approle`, `auth-token` at the top level.
 
 impl VaultConfig {
     pub fn load(path: &Path) -> Result<Self, CbsError>;
@@ -506,8 +527,8 @@ pub(crate) struct ConfigInitOptions {
     pub vault: Option<PathBuf>,
 }
 
-pub(crate) async fn handle_config_init(config_path: &Path, args: ConfigInitArgs) -> anyhow::Result<()>;
-pub(crate) async fn handle_config_init_vault(args: ConfigInitVaultArgs) -> anyhow::Result<()>;
+pub(crate) fn handle_config_init(config_path: &Path, args: ConfigInitArgs) -> anyhow::Result<()>;
+pub(crate) fn handle_config_init_vault(args: ConfigInitVaultArgs) -> anyhow::Result<()>;
 ```
 
 When `--for-containerized-run` or `--for-systemd-install` is passed, all paths are preset to fixed values (e.g., `/cbs/components`, `/cbs/scratch`, `/var/lib/containers`, `/cbs/ccache`, `/cbs/config/secrets.yaml`, `/cbs/config/vault.yaml`) and no interactive prompts are issued. Without these flags, the CLI uses `dialoguer` for interactive prompts (replacing Python's `click.confirm`/`click.prompt`).
@@ -1681,6 +1702,8 @@ No new public Rust interface in this phase. The work is removing Python code and
 - Remove now-unused Python dependencies (`aioboto3`, `aiofiles`, `hvac`, `click`)
 - Verify all `cbsd`/`cbsdcore`/`cbc` tests pass
 - Re-run all baseline subcommand help tests
+
+Note: The `config.py` shim re-exports both config types from `_cbscore` AND `ConfigError` from `_exceptions.py` (since cbsd imports `from cbscore.config import ConfigError`). Similar re-export handling applies to any module where cbsd/cbc currently import an exception type from the module's namespace.
 
 Note: Full elimination of Python code (including `_exceptions.py` and shims) is out of scope for this plan.
 

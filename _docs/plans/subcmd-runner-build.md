@@ -300,7 +300,7 @@ Key methods (each focused and short):
 ```rust
 impl Builder {
     /// Initialize the builder: set up secrets, load components.
-    pub fn new(
+    pub async fn new(
         desc: VersionDescriptor,
         config: &Config,
         flags: BuildFlags,
