@@ -1255,7 +1255,7 @@ Custom `Deserialize` implementations. Deserialize to `serde_yml::Value` first, i
 
 ```rust
 // cbscore-lib/src/cmd.rs
-pub enum CmdArg {
+pub(crate) enum CmdArg {
     Plain(String),
     Secure { display: String, value: String },
 }
@@ -1275,7 +1275,7 @@ pub enum CmdEvent {
 /// Callback receiving structured command events (borrows for read, callers clone if needed).
 pub type CmdEventCallback = Box<dyn Fn(&CmdEvent) + Send + Sync>;
 
-pub struct CmdOpts {
+pub(crate) struct CmdOpts {
     pub cwd: Option<PathBuf>,
     pub timeout: Option<Duration>,
     pub event_cb: Option<CmdEventCallback>,
@@ -1283,8 +1283,8 @@ pub struct CmdOpts {
     pub reset_python_env: bool,
 }
 
-pub async fn async_run_cmd(args: &[CmdArg], opts: &CmdOpts) -> anyhow::Result<CmdResult>;
-pub fn run_cmd(args: &[CmdArg], env: Option<&HashMap<String, String>>) -> anyhow::Result<CmdResult>;
+pub(crate) async fn async_run_cmd(args: &[CmdArg], opts: &CmdOpts) -> anyhow::Result<CmdResult>;
+pub(crate) fn run_cmd(args: &[CmdArg], env: Option<&HashMap<String, String>>) -> anyhow::Result<CmdResult>;
 ```
 
 Uses `tokio::process::Command` with `BufReader` on stdout/stderr for streaming. Timeout via `tokio::time::timeout` with `child.kill()` on expiry. `CmdEvent` uses owned `String` fields — the source data (`BufReader::read_line`) already produces owned strings, and the events carry single log lines where allocation cost is negligible vs subprocess I/O latency.
@@ -1297,27 +1297,27 @@ A single concrete `VaultClient` struct replaces the trait hierarchy originally c
 
 ```rust
 /// Authentication method for Vault.
-pub enum VaultAuth {
+pub(crate) enum VaultAuth {
     AppRole { role_id: String, secret_id: String },
     UserPass { username: String, password: String },
     Token(String),
 }
 
 /// Concrete Vault client. Authenticates and reads secrets via `vaultrs`.
-pub struct VaultClient {
+pub(crate) struct VaultClient {
     addr: String,
     auth: VaultAuth,
 }
 
 impl VaultClient {
     /// Build a `VaultClient` from the deserialized `VaultConfig`.
-    pub fn new(config: &VaultConfig) -> Result<Self> { /* match config auth type */ }
+    pub(crate) fn new(config: &VaultConfig) -> Result<Self> { /* match config auth type */ }
 
     /// Read a KVv2 secret at the given path.
-    pub async fn read_secret(&self, path: &str) -> Result<HashMap<String, String>> { /* vaultrs */ }
+    pub(crate) async fn read_secret(&self, path: &str) -> Result<HashMap<String, String>> { /* vaultrs */ }
 
     /// Verify that the Vault server is reachable and the credentials are valid.
-    pub async fn check_connection(&self) -> Result<()> { /* vaultrs */ }
+    pub(crate) async fn check_connection(&self) -> Result<()> { /* vaultrs */ }
 }
 ```
 

@@ -506,7 +506,7 @@ impl Config {
 // cbsbuild/src/cmds/config.rs
 
 /// Options for non-interactive config init (from CLI flags).
-pub struct ConfigInitOptions {
+pub(crate) struct ConfigInitOptions {
     pub components: Option<Vec<PathBuf>>,
     pub scratch: Option<PathBuf>,
     pub containers_scratch: Option<PathBuf>,
@@ -763,7 +763,7 @@ pub(crate) struct CmdResult {
 }
 
 /// Structured log events for step-level transparency.
-pub(crate) enum CmdEvent {
+pub enum CmdEvent {
     Started { cmd: Vec<String> },
     Stdout(String),
     Stderr(String),
@@ -820,7 +820,7 @@ Complete the async command executor with streaming, timeout, and cancellation; i
 ```rust
 // cbscore-lib/src/cmd.rs (complete -- async added)
 
-pub(crate) type CmdEventCallback = Box<dyn Fn(&CmdEvent) + Send + Sync>;
+pub type CmdEventCallback = Box<dyn Fn(&CmdEvent) + Send + Sync>;
 
 pub(crate) struct CmdOpts {
     pub cwd: Option<PathBuf>,
@@ -994,7 +994,7 @@ impl Drop for GpgKeyringGuard {
 
 Implement async wrappers for all external tools (git, podman, buildah, S3, skopeo) and the container/image utility functions, organized as 4 independent parallel tracks.
 
-> **Visibility note:** All items in this phase are `pub(crate)` -- they are used only by internal builder/runner code within cbscore-lib, not across crate boundaries.
+> **Visibility note:** Most items in this phase are `pub(crate)` -- they are used only by internal builder/runner code within cbscore-lib. Exceptions called from `cbsbuild` handlers: `get_git_user`, `GitUser`, `get_git_repo_root` (Phase 7a) and `get_image_desc`, `ImageDescriptor`, `ImageLocations` (Phase 7d).
 
 Can split into 4 independent tracks:
 
@@ -1025,13 +1025,13 @@ All git async operations (clone, checkout, worktree, fetch, etc.)
 
 pub(crate) async fn run_git(args: &[CmdArg], path: Option<&Path>) -> anyhow::Result<String>;
 
-pub(crate) struct GitUser {
+pub struct GitUser {
     pub name: String,
     pub email: String,
 }
 
-pub(crate) async fn get_git_user() -> anyhow::Result<GitUser>;
-pub(crate) async fn get_git_repo_root() -> anyhow::Result<PathBuf>;
+pub async fn get_git_user() -> anyhow::Result<GitUser>;
+pub async fn get_git_repo_root() -> anyhow::Result<PathBuf>;
 pub(crate) struct GitModifiedPaths {
     pub modified: Vec<PathBuf>,
     pub deleted: Vec<PathBuf>,
@@ -1299,17 +1299,17 @@ pub(crate) async fn sync_image(opts: &SyncImageOpts<'_>) -> anyhow::Result<()>;
 
 // cbscore-lib/src/images/desc.rs
 
-pub(crate) struct ImageLocations {
+pub struct ImageLocations {
     pub src: String,
     pub dst: String,
 }
 
-pub(crate) struct ImageDescriptor {
+pub struct ImageDescriptor {
     pub releases: Vec<String>,
     pub images: Vec<ImageLocations>,
 }
 
-pub(crate) async fn get_image_desc(version: &str) -> anyhow::Result<ImageDescriptor>;
+pub async fn get_image_desc(version: &str) -> anyhow::Result<ImageDescriptor>;
 
 // cbscore-lib/src/utils/containers.rs
 
@@ -1363,7 +1363,7 @@ Implement release S3 operations (check, upload, list) and the full `Builder` pip
 | REQ-0860 | `release_desc_upload` | `ctx: &S3Context`, `bucket_loc`, `version`, `&ReleaseBuildEntry` | `ReleaseDesc` | `anyhow::Error` | uploads `{bucket_loc}/18.2.4.json` to S3 |
 | REQ-0870 | `release_upload_components` | `ctx: &S3Context`, `bucket_loc`, `&HashMap<String, ReleaseComponent>` | `()` | `anyhow::Error` | parallel upload of per-component JSON descriptors |
 | REQ-0880 | `check_released_components` | `ctx: &S3Context`, `bucket_loc`, `&HashMap<String, String>` | `HashMap<String, ReleaseComponent>` | `anyhow::Error` | `{"ceph": "18.2.4-1.clyso"}` -> existing components in S3 |
-| REQ-0890 | `list_releases` | `ctx: &S3Context`, `bucket_loc` | `HashMap<String, ReleaseDesc>` | `anyhow::Error` | lists all `*.json` under `{bucket_loc}/` |
+| REQ-0890 | `list_releases` | `secrets: &SecretsMgr`, `url: &str`, `bucket: &str`, `bucket_loc: &str` | `HashMap<String, ReleaseDesc>` | `anyhow::Error` | lists all `*.json` under `{bucket_loc}/` |
 | REQ-0900 | `get_component_release_rpm` | `&CoreComponentLoc`, `el_version: i32` | `Option<String>` | `anyhow::Error` | runs release RPM script, returns RPM name |
 | REQ-0910 | `Builder::new` | `desc: VersionDescriptor`, `config: &Config`, `flags: BuildFlags` | `Builder` | `CbsError` | constructs builder, loads components, initializes `SecretsMgr` |
 | REQ-0920 | `Builder::run` | `&mut self` | `()` | `CbsError` | full pipeline: prepare -> check existing -> build RPMs -> sign -> upload -> container |
@@ -1398,8 +1398,11 @@ pub(crate) async fn check_released_components(
     components: &HashMap<String, String>,
 ) -> anyhow::Result<HashMap<String, ReleaseComponent>>;
 
+/// list_releases constructs an S3Context internally -- the pub(crate) S3Context type does not cross the crate boundary.
 pub async fn list_releases(
-    ctx: &S3Context<'_>,
+    secrets: &SecretsMgr,
+    url: &str,
+    bucket: &str,
     bucket_loc: &str,
 ) -> anyhow::Result<HashMap<String, ReleaseDesc>>;
 
