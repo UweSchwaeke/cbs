@@ -1079,12 +1079,11 @@ How it works:
 ```rust
 use tracing::instrument;
 
-#[instrument(skip(secrets, config), level = "trace")]
+#[instrument(skip(config), level = "trace")]
 pub async fn runner(
     desc_file_path: &Path,
     cbscore_path: &Path,
     config: &Config,
-    secrets: &SecretsMgr,
     opts: RunnerOpts,
 ) -> Result<(), CbsError> {
     // Entry logged automatically at TRACE:

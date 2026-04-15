@@ -356,7 +356,7 @@ fn systemd_config_path(deployment: &str) -> PathBuf {
 }
 
 /// Handle the `cbsbuild config init` command.
-pub fn handle_config_init(
+pub(crate) fn handle_config_init(
     config_path: &Path,
     args: ConfigInitArgs,
 ) -> anyhow::Result<()> {

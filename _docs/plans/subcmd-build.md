@@ -277,7 +277,7 @@ fn validate_secrets(config: &Config) -> anyhow::Result<()> {
 ///
 /// Prepares the environment and launches a Podman container
 /// that runs `cbsbuild runner build` inside.
-pub async fn handle_build(
+pub(crate) async fn handle_build(
     config_path: &Path,
     args: BuildArgs,
 ) -> anyhow::Result<()> {

@@ -218,7 +218,7 @@ fn display_releases(
 
 ```rust
 /// Handle the `cbsbuild versions list` command.
-pub async fn handle_versions_list(
+pub(crate) async fn handle_versions_list(
     config: &Config,
     args: VersionsListArgs,
 ) -> anyhow::Result<()> {

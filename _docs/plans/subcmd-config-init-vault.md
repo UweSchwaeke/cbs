@@ -198,14 +198,14 @@ fn confirm_overwrite(path: &Path) -> anyhow::Result<bool> {
 fn prompt_userpass() -> anyhow::Result<VaultAuth> {
     let username: String = Input::new().with_prompt("Username").interact_text()?;
     let password = Password::new().with_prompt("Password").interact()?;
-    Ok(VaultAuth::UserPass { username, password })
+    Ok(VaultAuth::UserPass(VaultUserPassConfig { username, password }))
 }
 
 /// Prompt for AppRole credentials.
 fn prompt_approle() -> anyhow::Result<VaultAuth> {
     let role_id: String = Input::new().with_prompt("Role ID").interact_text()?;
     let secret_id: String = Input::new().with_prompt("Secret ID").interact_text()?;
-    Ok(VaultAuth::AppRole { role_id, secret_id })
+    Ok(VaultAuth::AppRole(VaultAppRoleConfig { role_id, secret_id }))
 }
 
 /// Prompt for a Vault token (required, non-empty).
@@ -287,7 +287,7 @@ pub fn config_init_vault(
 
 ```rust
 /// Handle the `cbsbuild config init-vault` command.
-pub fn handle_config_init_vault(args: ConfigInitVaultArgs) -> anyhow::Result<()> {
+pub(crate) fn handle_config_init_vault(args: ConfigInitVaultArgs) -> anyhow::Result<()> {
     let cwd = std::env::current_dir()?;
     let path = config_init_vault(&cwd, args.vault)?;
     match path {

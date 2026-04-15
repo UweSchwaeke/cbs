@@ -345,7 +345,7 @@ async fn write_and_verify(
 }
 
 /// Handle the `cbsbuild versions create` command.
-pub async fn handle_versions_create(
+pub(crate) async fn handle_versions_create(
     config: Option<&Config>,
     args: VersionsCreateArgs,
 ) -> anyhow::Result<()> {

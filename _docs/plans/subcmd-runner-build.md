@@ -253,7 +253,7 @@ async fn create_builder(
 ///
 /// This runs inside the Podman build container. All paths in config
 /// are container-local (e.g., /runner/scratch, /runner/components).
-pub async fn handle_runner_build(
+pub(crate) async fn handle_runner_build(
     config: &Config,
     args: RunnerBuildArgs,
 ) -> anyhow::Result<()> {
