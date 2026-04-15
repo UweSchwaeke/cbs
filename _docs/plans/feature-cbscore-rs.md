@@ -610,7 +610,7 @@ classDiagram
         -Option~PathBuf~ ccache_path
         -BuildFlags flags
         +new(desc, config, flags) Result~Builder~
-        +run(&self) Result~()~
+        +run(&mut self) Result~()~
     }
 
     class BuildFlags {
@@ -642,7 +642,7 @@ classDiagram
         +Option~String~ run_name
         +bool replace_run
         +Option~PathBuf~ entrypoint_path
-        +f64 timeout
+        +Duration timeout
         +Option~PathBuf~ log_file_path
         +Option~CmdEventCallback~ log_out_cb
         +bool skip_build
@@ -1059,7 +1059,7 @@ Each module should use `tracing` spans or the module path target to maintain the
 // In cbscore-lib/src/builder/build.rs
 use tracing::{info, debug, error};
 
-pub async fn run(&self) -> Result<(), CbsError> {
+pub async fn run(&mut self) -> Result<(), CbsError> {
     info!("preparing builder");
     // tracing automatically includes the module path as the target:
     // cbscore_lib::builder::build
@@ -1238,7 +1238,7 @@ pub(crate) async fn clone_repo(url: &str, dest: &Path) -> anyhow::Result<()> {
 }
 
 // Example: cbscore-lib/src/builder/build.rs (boundary — converts to CbsError)
-pub async fn run(&self) -> Result<(), CbsError> {
+pub async fn run(&mut self) -> Result<(), CbsError> {
     self.prepare().await.map_err(|e| CbsError::Builder(format!("{e:#}")))?;
     // ...
 }
@@ -1301,12 +1301,7 @@ Use the `vaultrs` crate for full Vault client support. Although only 3 endpoints
 A single concrete `VaultClient` struct replaces the trait hierarchy originally considered. The Python code only varies by which `hvac.Client` auth method it calls (3 lines across 3 backends), and `vaultrs` already handles all 3 auth methods internally. A `VaultAuth` enum with a `match` is simpler, more idiomatic Rust, and avoids `dyn` boxing or generics infection — consistent with the KISS principle ("if a `match` is clearer than a trait hierarchy, use the `match`").
 
 ```rust
-/// Authentication method for Vault.
-pub(crate) enum VaultAuth {
-    AppRole { role_id: String, secret_id: String },
-    UserPass { username: String, password: String },
-    Token(String),
-}
+// Uses VaultAuth from types/config.rs (pub enum, reused here).
 
 /// Concrete Vault client. Authenticates and reads secrets via `vaultrs`.
 pub(crate) struct VaultClient {
@@ -1316,7 +1311,7 @@ pub(crate) struct VaultClient {
 
 impl VaultClient {
     /// Build a `VaultClient` from the deserialized `VaultConfig`.
-    pub(crate) fn new(config: &VaultConfig) -> Result<Self> { /* match config auth type */ }
+    pub(crate) fn new(config: &VaultConfig) -> Result<Self> { /* match config.auth */ }
 
     /// Read a KVv2 secret at the given path.
     pub(crate) async fn read_secret(&self, path: &str) -> Result<HashMap<String, String>> { /* vaultrs */ }

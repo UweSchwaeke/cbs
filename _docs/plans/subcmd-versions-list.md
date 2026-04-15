@@ -222,7 +222,7 @@ pub async fn handle_versions_list(
     config: &Config,
     args: VersionsListArgs,
 ) -> anyhow::Result<()> {
-    let secrets = init_secrets(config)?;
+    let secrets = init_secrets(config).await?;
     let (url, bucket, bucket_loc) =
         resolve_s3_params(config, args.from_address.as_deref())?;
 

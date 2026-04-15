@@ -389,28 +389,17 @@ Implement the full configuration model hierarchy with YAML serialization, `load`
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub struct VaultUserPassConfig {
-    pub username: String,
-    pub password: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub struct VaultAppRoleConfig {
-    pub role_id: String,
-    pub secret_id: String,
+pub enum VaultAuth {
+    UserPass { username: String, password: String },
+    AppRole { role_id: String, secret_id: String },
+    Token(String),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct VaultConfig {
     pub vault_addr: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub auth_user: Option<VaultUserPassConfig>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub auth_approle: Option<VaultAppRoleConfig>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub auth_token: Option<String>,
+    pub auth: VaultAuth,
 }
 
 impl VaultConfig {
@@ -501,8 +490,8 @@ impl Config {
 
 | req-id | Function | Input | Output | Error | Example |
 |--------|----------|-------|--------|-------|---------|
-| REQ-0210 | `handle_config_init` | `ConfigInitArgs` (Clap) | `()` (writes YAML to disk) | `CbsError::Config` | `cbsbuild config init --for-containerized-run` |
-| REQ-0220 | `handle_config_init_vault` | `ConfigInitVaultArgs` (Clap) | `()` (writes YAML to disk) | `CbsError::Config` | `cbsbuild config init-vault --vault vault.yaml` |
+| REQ-0210 | `handle_config_init` | `config_path: &Path`, `args: ConfigInitArgs` | `()` (writes YAML to disk) | `anyhow::Error` | `cbsbuild config init --for-containerized-run` |
+| REQ-0220 | `handle_config_init_vault` | `args: ConfigInitVaultArgs` | `()` (prints result) | `anyhow::Error` | `cbsbuild config init-vault --vault vault.yaml` |
 
 ```rust
 // cbsbuild/src/cmds/config.rs
@@ -517,8 +506,8 @@ pub(crate) struct ConfigInitOptions {
     pub vault: Option<PathBuf>,
 }
 
-pub fn handle_config_init(config_path: &Path, opts: &ConfigInitOptions) -> Result<(), CbsError>;
-pub fn handle_config_init_vault(vault_config_path: Option<&Path>) -> Result<Option<PathBuf>, CbsError>;
+pub(crate) async fn handle_config_init(config_path: &Path, args: ConfigInitArgs) -> anyhow::Result<()>;
+pub(crate) async fn handle_config_init_vault(args: ConfigInitVaultArgs) -> anyhow::Result<()>;
 ```
 
 When `--for-containerized-run` or `--for-systemd-install` is passed, all paths are preset to fixed values (e.g., `/cbs/components`, `/cbs/scratch`, `/var/lib/containers`, `/cbs/ccache`, `/cbs/config/secrets.yaml`, `/cbs/config/vault.yaml`) and no interactive prompts are issued. Without these flags, the CLI uses `dialoguer` for interactive prompts (replacing Python's `click.confirm`/`click.prompt`).
@@ -728,12 +717,7 @@ Implement the Vault client (AppRole/UserPass/Token auth via `vaultrs`) and the s
 
 ```rust
 // cbscore-lib/src/vault.rs
-
-pub(crate) enum VaultAuth {
-    AppRole { role_id: String, secret_id: String },
-    UserPass { username: String, password: String },
-    Token(String),
-}
+// Uses VaultAuth from types/config.rs (pub enum, reused here).
 
 pub(crate) struct VaultClient {
     addr: String,
@@ -742,7 +726,6 @@ pub(crate) struct VaultClient {
 
 impl VaultClient {
     /// Build a VaultClient from deserialized VaultConfig.
-    /// Fails if no auth method is configured.
     pub(crate) fn new(config: &VaultConfig) -> anyhow::Result<Self>;
 
     /// Read a KVv2 secret at the given path (mount: "ces-kv").

@@ -236,12 +236,12 @@ fn load_descriptor(path: &Path) -> anyhow::Result<VersionDescriptor> {
 }
 
 /// Create and validate the Builder instance.
-fn create_builder(
+async fn create_builder(
     desc: VersionDescriptor,
     config: &Config,
     flags: BuildFlags,
 ) -> anyhow::Result<Builder> {
-    Builder::new(desc, config, flags)
+    Builder::new(desc, config, flags).await
         .map_err(|e| anyhow::anyhow!("unable to initialize builder: {e}"))
 }
 ```
@@ -265,7 +265,7 @@ pub async fn handle_runner_build(
     log_build_params(config, &args.desc, &flags);
 
     let desc = load_descriptor(&args.desc)?;
-    let mut builder = create_builder(desc, config, flags)?;
+    let mut builder = create_builder(desc, config, flags).await?;
 
     builder.run().await
         .map_err(|e| anyhow::anyhow!("unable to run build: {e}"))
