@@ -454,7 +454,7 @@ pub struct StorageConfig {
     pub registry: Option<RegistryStorageConfig>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SigningConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gpg: Option<String>,
@@ -481,6 +481,8 @@ pub struct Config {
     pub secrets: Vec<PathBuf>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vault: Option<PathBuf>,
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "versions-dir")]
+    pub versions_dir: Option<PathBuf>,
 }
 
 impl Config {
@@ -565,11 +567,11 @@ Implement all 16 secret model structs, 4 discriminated union enums with custom d
 /// via `serde_yml::Value` (preserves YAML line/column in errors).
 
 // --- Git secrets (5 variants) ---
-pub struct GitSSHSecret { pub ssh_key: String, pub username: String }
-pub struct GitTokenSecret { pub token: String, pub username: String }
-pub struct GitHTTPSSecret { pub username: String, pub password: String }
-pub struct GitVaultSSHSecret { pub key: String, pub ssh_key: String, pub username: String }
-pub struct GitVaultHTTPSSecret { pub key: String, pub username: String, pub password: String }
+pub(crate) struct GitSSHSecret { pub ssh_key: String, pub username: String }
+pub(crate) struct GitTokenSecret { pub token: String, pub username: String }
+pub(crate) struct GitHTTPSSecret { pub username: String, pub password: String }
+pub(crate) struct GitVaultSSHSecret { pub key: String, pub ssh_key: String, pub username: String }
+pub(crate) struct GitVaultHTTPSSecret { pub key: String, pub username: String, pub password: String }
 
 pub enum GitSecret {
     PlainSSH(GitSSHSecret),
@@ -580,8 +582,8 @@ pub enum GitSecret {
 }
 
 // --- Storage secrets (2 variants) ---
-pub struct StoragePlainS3Secret { pub access_id: String, pub secret_id: String }
-pub struct StorageVaultS3Secret { pub key: String, pub access_id: String, pub secret_id: String }
+pub(crate) struct StoragePlainS3Secret { pub access_id: String, pub secret_id: String }
+pub(crate) struct StorageVaultS3Secret { pub key: String, pub access_id: String, pub secret_id: String }
 
 pub enum StorageSecret {
     PlainS3(StoragePlainS3Secret),
@@ -589,22 +591,22 @@ pub enum StorageSecret {
 }
 
 // --- Signing secrets (5 variants) ---
-pub struct GPGPlainSecret {
+pub(crate) struct GPGPlainSecret {
     pub private_key: String, pub public_key: Option<String>,
     pub passphrase: Option<String>, pub email: String,
 }
-pub struct GPGVaultSingleSecret {
+pub(crate) struct GPGVaultSingleSecret {
     pub key: String, pub private_key: String, pub public_key: Option<String>,
     pub passphrase: Option<String>, pub email: String,
 }
-pub struct GPGVaultPrivateKeySecret {
+pub(crate) struct GPGVaultPrivateKeySecret {
     pub key: String, pub private_key: String,
     pub passphrase: Option<String>, pub email: String,
 }
-pub struct GPGVaultPublicKeySecret {
+pub(crate) struct GPGVaultPublicKeySecret {
     pub key: String, pub public_key: String, pub email: String,
 }
-pub struct VaultTransitSecret { pub key: String, pub mount: String }
+pub(crate) struct VaultTransitSecret { pub key: String, pub mount: String }
 
 pub enum SigningSecret {
     PlainGPG(GPGPlainSecret),
@@ -615,8 +617,8 @@ pub enum SigningSecret {
 }
 
 // --- Registry secrets (2 variants) ---
-pub struct RegistryPlainSecret { pub username: String, pub password: String, pub address: String }
-pub struct RegistryVaultSecret {
+pub(crate) struct RegistryPlainSecret { pub username: String, pub password: String, pub address: String }
+pub(crate) struct RegistryVaultSecret {
     pub key: String, pub username: String, pub password: String, pub address: String,
 }
 
@@ -638,6 +640,11 @@ impl Secrets {
     pub fn store(&self, path: &Path) -> anyhow::Result<()>;
     pub fn merge(&mut self, other: Secrets);
 }
+
+// The 16 inner secret structs are `pub(crate)` — they are only constructed
+// during deserialization and accessed by the 4 union enum variants. External
+// consumers interact with `Secrets` and the enums only, not with the inner
+// types directly.
 
 // cbscore-lib/src/utils/uris.rs
 
@@ -1248,7 +1255,7 @@ pub(crate) async fn s3_list(
 | REQ-0760 | `sign` (async) | `img: &str`, `secrets: &SecretsMgr`, `transit: &str` | `()` | `anyhow::Error` | async cosign sign via Vault Transit |
 | REQ-0770 | `can_sign` | `registry: &str`, `secrets: &SecretsMgr`, `transit: &str` | `bool` | -- | checks vault + transit key + registry creds are available (pure check, no I/O) |
 | REQ-0780 | `sync_image` (async) | `opts: &SyncImageOpts` | `()` | `anyhow::Error` | syncs image between registries |
-| REQ-0790 | `get_image_desc` | `version: &str` | `ImageDescriptor` | `anyhow::Error` | loads image descriptor JSON matching version |
+| REQ-0790 | `get_image_desc` | `version: &str` | `ImageDescriptor` | `CbsError` | loads image descriptor JSON matching version |
 | REQ-0800 | `get_image_name` | `img: &str` | `String` | -- | `"harbor.example.com/proj:v1"` -> `"harbor.example.com/proj"` |
 | REQ-0810 | `get_image_tag` | `img: &str` | `Option<String>` | -- | `"harbor.example.com/proj:v1"` -> `Some("v1")` |
 | REQ-0820 | `get_container_image_base_uri` | `desc: &VersionDescriptor` | `String` | -- | -> `"registry.example.com/image-name"` |
@@ -1309,7 +1316,7 @@ pub struct ImageDescriptor {
     pub images: Vec<ImageLocations>,
 }
 
-pub async fn get_image_desc(version: &str) -> anyhow::Result<ImageDescriptor>;
+pub async fn get_image_desc(version: &str) -> Result<ImageDescriptor, CbsError>;
 
 // cbscore-lib/src/utils/containers.rs
 

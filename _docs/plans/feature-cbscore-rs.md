@@ -1217,8 +1217,13 @@ pub enum CbsError {
     #[error("runner error: {0}")]          Runner(String),
     #[error("vault error: {0}")]           Vault(String),
     #[error("secrets error: {0}")]         Secrets(String),
-    #[error(transparent)]                  Other(#[from] anyhow::Error),
+    #[error(transparent)]                  Other(anyhow::Error),
 }
+
+// No `#[from] anyhow::Error` — boundary functions must explicitly map internal
+// errors to the correct `CbsError` variant using
+// `.map_err(|e| CbsError::Builder(format!("{e:#}")))` or similar.
+// This prevents accidental silent conversion.
 ```
 
 **Internal error handling**: modules that wrap external tools or perform I/O return `anyhow::Result` and use `.context()` to build an error chain. At the boundary where results flow into public API functions, convert to `CbsError`:

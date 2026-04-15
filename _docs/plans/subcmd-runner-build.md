@@ -265,7 +265,7 @@ pub async fn handle_runner_build(
     log_build_params(config, &args.desc, &flags);
 
     let desc = load_descriptor(&args.desc)?;
-    let builder = create_builder(desc, config, flags)?;
+    let mut builder = create_builder(desc, config, flags)?;
 
     builder.run().await
         .map_err(|e| anyhow::anyhow!("unable to run build: {e}"))
@@ -307,7 +307,7 @@ impl Builder {
     ) -> Result<Self, CbsError> { ... }
 
     /// Run the full build pipeline.
-    pub async fn run(&self) -> Result<(), CbsError> {
+    pub async fn run(&mut self) -> Result<(), CbsError> {
         self.prepare().await?;
 
         if self.image_already_exists().await? {

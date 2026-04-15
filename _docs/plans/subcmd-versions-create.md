@@ -255,9 +255,9 @@ Split into focused helpers following the orchestrator pattern:
 ```rust
 /// Fetch the git user (name, email) for sign-off.
 async fn get_sign_off() -> anyhow::Result<VersionSignedOffBy> {
-    let (user, email) = get_git_user().await
+    let git_user = get_git_user().await
         .map_err(|e| anyhow::anyhow!("error obtaining git user info: {e}"))?;
-    Ok(VersionSignedOffBy { user, email })
+    Ok(VersionSignedOffBy { user: git_user.name, email: git_user.email })
 }
 
 /// Determine the output file path and check it doesn't already exist.

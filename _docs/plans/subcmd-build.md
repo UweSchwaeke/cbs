@@ -192,6 +192,8 @@ pub struct BuildArgs {
     /// Max build duration in seconds
     #[arg(long, default_value_t = 14400.0)]
     timeout: f64,
+    // Note: CLI parses --timeout as f64 seconds, then converts to
+    // Duration::from_secs_f64() when constructing RunnerOpts.
 
     /// GPG secret ID for RPM signing
     #[arg(long = "sign-with-gpg-id")]
@@ -312,7 +314,7 @@ pub async fn handle_build(
             run_name: None,
             replace_run: false,
             entrypoint_path: args.cbs_entrypoint,
-            timeout: args.timeout,
+            timeout: Duration::from_secs_f64(args.timeout),
             log_file_path: args.log_file,
             log_out_cb: None,
             skip_build: args.skip_build,
@@ -336,7 +338,7 @@ pub struct RunnerOpts {
     pub run_name: Option<String>,
     pub replace_run: bool,
     pub entrypoint_path: Option<PathBuf>,
-    pub timeout: f64,
+    pub timeout: Duration,
     pub log_file_path: Option<PathBuf>,
     pub log_out_cb: Option<CmdEventCallback>,
     pub skip_build: bool,
