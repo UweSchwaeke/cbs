@@ -642,19 +642,19 @@ impl Secrets {
 // cbscore-lib/src/utils/uris.rs
 
 /// Result of matching a URI pattern against a target URI.
-pub enum UriMatch {
+pub(crate) enum UriMatch {
     NoMatch,
     Full,
     Partial { remainder: String },
 }
 
-pub fn matches_uri(pattern: &str, uri: &str) -> anyhow::Result<UriMatch>;
+pub(crate) fn matches_uri(pattern: &str, uri: &str) -> anyhow::Result<UriMatch>;
 
 // cbscore-lib/src/secrets/utils.rs
 
 /// Returns a borrow into the input slice — avoids allocation since the result
 /// is always one of the input strings.
-pub fn find_best_secret_candidate<'a>(secrets: &[&'a str], uri: &str) -> Option<&'a str>;
+pub(crate) fn find_best_secret_candidate<'a>(secrets: &[&'a str], uri: &str) -> Option<&'a str>;
 ```
 
 Discriminator logic (custom `Deserialize` for each union enum):
@@ -722,13 +722,13 @@ Implement the Vault client (AppRole/UserPass/Token auth via `vaultrs`) and the s
 ```rust
 // cbscore-lib/src/vault.rs
 
-pub enum VaultAuth {
+pub(crate) enum VaultAuth {
     AppRole { role_id: String, secret_id: String },
     UserPass { username: String, password: String },
     Token(String),
 }
 
-pub struct VaultClient {
+pub(crate) struct VaultClient {
     addr: String,
     auth: VaultAuth,
 }
@@ -736,19 +736,19 @@ pub struct VaultClient {
 impl VaultClient {
     /// Build a VaultClient from deserialized VaultConfig.
     /// Fails if no auth method is configured.
-    pub fn new(config: &VaultConfig) -> anyhow::Result<Self>;
+    pub(crate) fn new(config: &VaultConfig) -> anyhow::Result<Self>;
 
     /// Read a KVv2 secret at the given path (mount: "ces-kv").
-    pub async fn read_secret(&self, path: &str) -> anyhow::Result<HashMap<String, String>>;
+    pub(crate) async fn read_secret(&self, path: &str) -> anyhow::Result<HashMap<String, String>>;
 
     /// Verify that the Vault server is reachable and the credentials are valid.
-    pub async fn check_connection(&self) -> anyhow::Result<()>;
+    pub(crate) async fn check_connection(&self) -> anyhow::Result<()>;
 }
 
 // cbscore-lib/src/cmd.rs (partial -- sync only in this phase)
 
 /// A command argument that may carry a secret value.
-pub enum CmdArg {
+pub(crate) enum CmdArg {
     /// Non-sensitive argument.
     Plain(String),
     /// Sensitive argument: `display` shown in logs, `value` used at execution.
@@ -756,14 +756,14 @@ pub enum CmdArg {
 }
 
 /// Result of running a command.
-pub struct CmdResult {
+pub(crate) struct CmdResult {
     pub exit_code: i32,
     pub stdout: String,
     pub stderr: String,
 }
 
 /// Structured log events for step-level transparency.
-pub enum CmdEvent {
+pub(crate) enum CmdEvent {
     Started { cmd: Vec<String> },
     Stdout(String),
     Stderr(String),
@@ -772,10 +772,10 @@ pub enum CmdEvent {
 
 /// Sanitize a command argument list for logging.
 /// Replaces SecureArg values with their display form, masks --passphrase/--pass values.
-pub fn sanitize_cmd(args: &[CmdArg]) -> Vec<String>;
+pub(crate) fn sanitize_cmd(args: &[CmdArg]) -> Vec<String>;
 
 /// Execute a command synchronously. Returns CmdResult with exit code, stdout, stderr.
-pub fn run_cmd(args: &[CmdArg], env: Option<&HashMap<String, String>>) -> anyhow::Result<CmdResult>;
+pub(crate) fn run_cmd(args: &[CmdArg], env: Option<&HashMap<String, String>>) -> anyhow::Result<CmdResult>;
 ```
 
 #### Internal Functions
@@ -820,9 +820,9 @@ Complete the async command executor with streaming, timeout, and cancellation; i
 ```rust
 // cbscore-lib/src/cmd.rs (complete -- async added)
 
-pub type CmdEventCallback = Box<dyn Fn(&CmdEvent) + Send + Sync>;
+pub(crate) type CmdEventCallback = Box<dyn Fn(&CmdEvent) + Send + Sync>;
 
-pub struct CmdOpts {
+pub(crate) struct CmdOpts {
     pub cwd: Option<PathBuf>,
     pub timeout: Option<Duration>,
     pub event_cb: Option<CmdEventCallback>,
@@ -833,7 +833,7 @@ pub struct CmdOpts {
 /// Execute a command asynchronously with tokio::process.
 /// Streams stdout/stderr line-by-line through event_cb.
 /// On timeout, kills the child process and returns an error.
-pub async fn async_run_cmd(args: &[CmdArg], opts: &CmdOpts) -> anyhow::Result<CmdResult>;
+pub(crate) async fn async_run_cmd(args: &[CmdArg], opts: &CmdOpts) -> anyhow::Result<CmdResult>;
 
 // cbscore-lib/src/secrets/mgr.rs
 
@@ -994,6 +994,8 @@ impl Drop for GpgKeyringGuard {
 
 Implement async wrappers for all external tools (git, podman, buildah, S3, skopeo) and the container/image utility functions, organized as 4 independent parallel tracks.
 
+> **Visibility note:** All items in this phase are `pub(crate)` -- they are used only by internal builder/runner code within cbscore-lib, not across crate boundaries.
+
 Can split into 4 independent tracks:
 
 #### 7a. Git -- `utils/git.rs`
@@ -1021,48 +1023,48 @@ All git async operations (clone, checkout, worktree, fetch, etc.)
 ```rust
 // cbscore-lib/src/utils/git.rs
 
-pub async fn run_git(args: &[CmdArg], path: Option<&Path>) -> anyhow::Result<String>;
+pub(crate) async fn run_git(args: &[CmdArg], path: Option<&Path>) -> anyhow::Result<String>;
 
-pub struct GitUser {
+pub(crate) struct GitUser {
     pub name: String,
     pub email: String,
 }
 
-pub async fn get_git_user() -> anyhow::Result<GitUser>;
-pub async fn get_git_repo_root() -> anyhow::Result<PathBuf>;
-pub struct GitModifiedPaths {
+pub(crate) async fn get_git_user() -> anyhow::Result<GitUser>;
+pub(crate) async fn get_git_repo_root() -> anyhow::Result<PathBuf>;
+pub(crate) struct GitModifiedPaths {
     pub modified: Vec<PathBuf>,
     pub deleted: Vec<PathBuf>,
 }
 
-pub async fn get_git_modified_paths(
+pub(crate) async fn get_git_modified_paths(
     base_sha: &str,
     r#ref: &str,
     in_repo_path: Option<&str>,
     repo_path: Option<&Path>,
 ) -> anyhow::Result<GitModifiedPaths>;
-pub async fn git_clone(
+pub(crate) async fn git_clone(
     repo: CmdArg, base_path: &Path, repo_name: &str,
 ) -> anyhow::Result<PathBuf>;
-pub async fn git_checkout(
+pub(crate) async fn git_checkout(
     repo_path: &Path, r#ref: &str, worktrees_base: &Path,
 ) -> anyhow::Result<PathBuf>;
-pub async fn git_remove_worktree(
+pub(crate) async fn git_remove_worktree(
     repo_path: &Path, worktree_path: &Path,
 ) -> anyhow::Result<()>;
-pub async fn git_fetch(
+pub(crate) async fn git_fetch(
     remote: &str, from_ref: &str, to_branch: &str, repo_path: Option<&Path>,
 ) -> anyhow::Result<()>;
-pub async fn git_pull(
+pub(crate) async fn git_pull(
     remote: CmdArg, from_branch: Option<&str>,
     to_branch: Option<&str>, repo_path: Option<&Path>,
 ) -> anyhow::Result<()>;
-pub async fn git_cherry_pick(
+pub(crate) async fn git_cherry_pick(
     sha: &str, sha_end: Option<&str>, repo_path: Option<&Path>,
 ) -> anyhow::Result<()>;
-pub async fn git_apply(repo_path: &Path, patch_path: &Path) -> anyhow::Result<()>;
-pub async fn git_get_sha1(repo_path: &Path) -> anyhow::Result<String>;
-pub async fn git_get_current_branch(repo_path: &Path) -> anyhow::Result<String>;
+pub(crate) async fn git_apply(repo_path: &Path, patch_path: &Path) -> anyhow::Result<()>;
+pub(crate) async fn git_get_sha1(repo_path: &Path) -> anyhow::Result<String>;
+pub(crate) async fn git_get_current_branch(repo_path: &Path) -> anyhow::Result<String>;
 ```
 
 ##### Internal Functions (7a)
@@ -1097,7 +1099,7 @@ pub async fn git_get_current_branch(repo_path: &Path) -> anyhow::Result<String>;
 // cbscore-lib/src/utils/podman.rs
 
 #[derive(Default)]
-pub struct PodmanRunOpts {
+pub(crate) struct PodmanRunOpts {
     pub image: String,              // required; empty default must be overridden
     pub args: Option<Vec<String>>,
     pub env: Option<HashMap<String, String>>,
@@ -1121,19 +1123,19 @@ pub struct PodmanRunOpts {
 
 // Use struct update syntax with `..Default::default()` for concise construction.
 
-pub async fn podman_run(opts: &PodmanRunOpts) -> anyhow::Result<CmdResult>;
-pub async fn podman_stop(name: Option<&str>, timeout: u32) -> anyhow::Result<()>;
+pub(crate) async fn podman_run(opts: &PodmanRunOpts) -> anyhow::Result<CmdResult>;
+pub(crate) async fn podman_stop(name: Option<&str>, timeout: u32) -> anyhow::Result<()>;
 
 // cbscore-lib/src/utils/buildah.rs
 
-pub struct BuildahContainer {
+pub(crate) struct BuildahContainer {
     cid: String,
     version_desc: VersionDescriptor,
     is_committed: bool,
 }
 
 impl BuildahContainer {
-    pub async fn set_config(
+    pub(crate) async fn set_config(
         &self,
         author: Option<&str>,
         annotations: Option<&HashMap<String, String>>,
@@ -1141,16 +1143,16 @@ impl BuildahContainer {
         env: Option<&HashMap<String, String>>,
     ) -> anyhow::Result<()>;
 
-    pub async fn copy(&self, source: &Path, dest: &str) -> anyhow::Result<()>;
-    pub async fn run(&self, args: &[String]) -> anyhow::Result<()>;
+    pub(crate) async fn copy(&self, source: &Path, dest: &str) -> anyhow::Result<()>;
+    pub(crate) async fn run(&self, args: &[String]) -> anyhow::Result<()>;
 
     /// Commit container as image, push to registry, optionally sign with cosign Transit.
-    pub async fn finish(
+    pub(crate) async fn finish(
         &mut self, secrets: &SecretsMgr, sign_with_transit: Option<&str>,
     ) -> anyhow::Result<()>;
 }
 
-pub async fn buildah_new_container(
+pub(crate) async fn buildah_new_container(
     desc: &VersionDescriptor,
 ) -> anyhow::Result<BuildahContainer>;
 ```
@@ -1178,19 +1180,19 @@ pub async fn buildah_new_container(
 // cbscore-lib/src/s3.rs
 
 /// Reusable S3 connection context. Constructed once from Config + SecretsMgr.
-pub struct S3Context<'a> {
+pub(crate) struct S3Context<'a> {
     pub secrets: &'a SecretsMgr,
     pub url: &'a str,
     pub bucket: &'a str,
 }
 
-pub struct S3FileLocator {
+pub(crate) struct S3FileLocator {
     pub src: PathBuf,
     pub dst: String,
     pub name: String,
 }
 
-pub struct S3ObjectEntry {
+pub(crate) struct S3ObjectEntry {
     pub key: String,
     pub size: i64,
     pub last_modified: DateTime<Utc>,
@@ -1198,37 +1200,37 @@ pub struct S3ObjectEntry {
 
 impl S3ObjectEntry {
     /// Extract the filename from the key (everything after the last '/').
-    pub fn name(&self) -> &str;
+    pub(crate) fn name(&self) -> &str;
 }
 
-pub struct S3ListResult {
+pub(crate) struct S3ListResult {
     pub objects: Vec<S3ObjectEntry>,
     pub common_prefixes: Vec<String>,
 }
 
-pub async fn s3_upload_str_obj(
+pub(crate) async fn s3_upload_str_obj(
     ctx: &S3Context<'_>, location: &str,
     contents: &str, content_type: &str,
 ) -> anyhow::Result<()>;
 
-pub async fn s3_download_str_obj(
+pub(crate) async fn s3_download_str_obj(
     ctx: &S3Context<'_>, location: &str,
     content_type: Option<&str>,
 ) -> anyhow::Result<Option<String>>;
 
-pub async fn s3_upload_json<T: Serialize>(
+pub(crate) async fn s3_upload_json<T: Serialize>(
     ctx: &S3Context<'_>, key: &str, value: &T,
 ) -> anyhow::Result<()>;
 
-pub async fn s3_download_json<T: DeserializeOwned>(
+pub(crate) async fn s3_download_json<T: DeserializeOwned>(
     ctx: &S3Context<'_>, key: &str,
 ) -> anyhow::Result<Option<T>>;
 
-pub async fn s3_upload_files(
+pub(crate) async fn s3_upload_files(
     ctx: &S3Context<'_>, file_locs: &[S3FileLocator], public: bool,
 ) -> anyhow::Result<()>;
 
-pub async fn s3_list(
+pub(crate) async fn s3_list(
     ctx: &S3Context<'_>, prefix: Option<&str>, prefix_as_directory: bool,
 ) -> anyhow::Result<S3ListResult>;
 ```
@@ -1256,33 +1258,33 @@ pub async fn s3_list(
 ```rust
 // cbscore-lib/src/images/skopeo.rs
 
-pub struct SkopeoTagListResult {
+pub(crate) struct SkopeoTagListResult {
     pub repository: String,
     pub tags: Vec<String>,
 }
 
-pub async fn skopeo_get_tags(img: &str) -> anyhow::Result<SkopeoTagListResult>;
-pub async fn skopeo_copy(
+pub(crate) async fn skopeo_get_tags(img: &str) -> anyhow::Result<SkopeoTagListResult>;
+pub(crate) async fn skopeo_copy(
     src: &str, dst: &str, dst_registry: &str,
     secrets: &SecretsMgr, transit: &str,
 ) -> anyhow::Result<()>;
-pub async fn skopeo_inspect(
+pub(crate) async fn skopeo_inspect(
     img: &str, secrets: &SecretsMgr, tls_verify: bool,
 ) -> anyhow::Result<String>;
-pub async fn skopeo_image_exists(
+pub(crate) async fn skopeo_image_exists(
     img: &str, secrets: &SecretsMgr, tls_verify: bool,
 ) -> anyhow::Result<bool>;
 
 // cbscore-lib/src/images/signing.rs
 
-pub fn can_sign(registry: &str, secrets: &SecretsMgr, transit: &str) -> bool;
-pub async fn sign(
+pub(crate) fn can_sign(registry: &str, secrets: &SecretsMgr, transit: &str) -> bool;
+pub(crate) async fn sign(
     img: &str, secrets: &SecretsMgr, transit: &str,
 ) -> anyhow::Result<()>;
 
 // cbscore-lib/src/images/sync.rs
 
-pub struct SyncImageOpts<'a> {
+pub(crate) struct SyncImageOpts<'a> {
     pub src: &'a str,
     pub dst: &'a str,
     pub dst_registry: &'a str,
@@ -1293,34 +1295,34 @@ pub struct SyncImageOpts<'a> {
 }
 
 #[allow(dead_code)] // TODO: evaluate if this function is still needed
-pub async fn sync_image(opts: &SyncImageOpts<'_>) -> anyhow::Result<()>;
+pub(crate) async fn sync_image(opts: &SyncImageOpts<'_>) -> anyhow::Result<()>;
 
 // cbscore-lib/src/images/desc.rs
 
-pub struct ImageLocations {
+pub(crate) struct ImageLocations {
     pub src: String,
     pub dst: String,
 }
 
-pub struct ImageDescriptor {
+pub(crate) struct ImageDescriptor {
     pub releases: Vec<String>,
     pub images: Vec<ImageLocations>,
 }
 
-pub async fn get_image_desc(version: &str) -> anyhow::Result<ImageDescriptor>;
+pub(crate) async fn get_image_desc(version: &str) -> anyhow::Result<ImageDescriptor>;
 
 // cbscore-lib/src/utils/containers.rs
 
-pub fn get_container_image_base_uri(desc: &VersionDescriptor) -> String;
-pub fn get_container_image_base_uri_from_str(uri: &str) -> anyhow::Result<String>;
-pub fn get_container_canonical_uri(
+pub(crate) fn get_container_image_base_uri(desc: &VersionDescriptor) -> String;
+pub(crate) fn get_container_image_base_uri_from_str(uri: &str) -> anyhow::Result<String>;
+pub(crate) fn get_container_canonical_uri(
     desc: &VersionDescriptor, digest: Option<&str>,
 ) -> String;
 
 // cbscore-lib/src/images/mod.rs (or utils)
 
-pub fn get_image_name(img: &str) -> String;
-pub fn get_image_tag(img: &str) -> Option<String>;
+pub(crate) fn get_image_name(img: &str) -> String;
+pub(crate) fn get_image_tag(img: &str) -> Option<String>;
 ```
 
 ##### Internal Functions (7d)
@@ -1371,26 +1373,26 @@ Implement release S3 operations (check, upload, list) and the full `Builder` pip
 
 ```rust
 // releases/s3.rs
-pub async fn check_release_exists(
+pub(crate) async fn check_release_exists(
     ctx: &S3Context<'_>,
     bucket_loc: &str,
     version: &str,
 ) -> anyhow::Result<Option<ReleaseDesc>>;
 
-pub async fn release_desc_upload(
+pub(crate) async fn release_desc_upload(
     ctx: &S3Context<'_>,
     bucket_loc: &str,
     version: &str,
     release_build: &ReleaseBuildEntry,
 ) -> anyhow::Result<ReleaseDesc>;
 
-pub async fn release_upload_components(
+pub(crate) async fn release_upload_components(
     ctx: &S3Context<'_>,
     bucket_loc: &str,
     component_releases: &HashMap<String, ReleaseComponent>,
 ) -> anyhow::Result<()>;
 
-pub async fn check_released_components(
+pub(crate) async fn check_released_components(
     ctx: &S3Context<'_>,
     bucket_loc: &str,
     components: &HashMap<String, String>,
@@ -1402,7 +1404,7 @@ pub async fn list_releases(
 ) -> anyhow::Result<HashMap<String, ReleaseDesc>>;
 
 // releases/utils.rs
-pub async fn get_component_release_rpm(
+pub(crate) async fn get_component_release_rpm(
     component_loc: &CoreComponentLoc,
     el_version: i32,
 ) -> anyhow::Result<Option<String>>;
@@ -1432,12 +1434,12 @@ impl Builder {
 }
 
 // builder/rpmbuild.rs
-pub struct ComponentBuild {
+pub(crate) struct ComponentBuild {
     pub version: String,
     pub rpms_path: PathBuf,
 }
 
-pub struct BuildRpmsOpts<'a> {
+pub(crate) struct BuildRpmsOpts<'a> {
     pub rpms_path: &'a Path,
     pub el_version: i32,
     pub components_locs: &'a HashMap<String, CoreComponentLoc>,
@@ -1446,23 +1448,23 @@ pub struct BuildRpmsOpts<'a> {
     pub skip_build: bool,
 }
 
-pub async fn build_rpms(opts: &BuildRpmsOpts<'_>) -> anyhow::Result<HashMap<String, ComponentBuild>>;
+pub(crate) async fn build_rpms(opts: &BuildRpmsOpts<'_>) -> anyhow::Result<HashMap<String, ComponentBuild>>;
 
 // builder/signing.rs
-pub async fn sign_rpms(
+pub(crate) async fn sign_rpms(
     secrets: &SecretsMgr,
     sign_with_gpg: &str,
     components_rpms: &HashMap<String, ComponentBuild>,
 ) -> anyhow::Result<()>;
 
 // builder/upload.rs
-pub struct S3ComponentLocation {
+pub(crate) struct S3ComponentLocation {
     pub name: String,
     pub version: String,
     pub location: String,
 }
 
-pub async fn s3_upload_rpms(
+pub(crate) async fn s3_upload_rpms(
     ctx: &S3Context<'_>,
     bucket_loc: &str,
     components: &HashMap<String, ComponentBuild>,
@@ -1521,20 +1523,20 @@ Implement container image construction (PRE/PACKAGES/POST/CONFIG stages via Buil
 
 ```rust
 // containers/build.rs
-pub struct ContainerBuilder {
+pub(crate) struct ContainerBuilder {
     // private fields: version_desc, release_desc, components, container
 }
 
 impl ContainerBuilder {
-    pub fn new(
+    pub(crate) fn new(
         version_desc: VersionDescriptor,
         release_desc: ReleaseDesc,
         components: HashMap<String, CoreComponentLoc>,
     ) -> Self;
 
-    pub async fn build(&mut self) -> anyhow::Result<()>;
+    pub(crate) async fn build(&mut self) -> anyhow::Result<()>;
 
-    pub async fn finish(
+    pub(crate) async fn finish(
         &mut self,
         secrets: &SecretsMgr,
         sign_with_transit: Option<&str>,
@@ -1547,25 +1549,25 @@ impl ContainerBuilder {
 // handler creates the `Arc` once.
 
 // containers/component.rs
-pub struct ComponentContainer {
+pub(crate) struct ComponentContainer {
     // private fields: version, component_loc, container_file_path, desc
 }
 
 impl ComponentContainer {
-    pub fn new(
+    pub(crate) fn new(
         component_loc: &CoreComponentLoc,
         version: &str,
         vars: Option<&HashMap<String, String>>,
     ) -> anyhow::Result<Self>;
 
-    pub async fn apply_pre(&self, container: &BuildahContainer) -> anyhow::Result<()>;
-    pub fn get_packages(&self, optional: bool) -> Vec<String>;
-    pub async fn apply_post(&self, container: &BuildahContainer) -> anyhow::Result<()>;
-    pub async fn apply_config(&self, container: &BuildahContainer) -> anyhow::Result<()>;
+    pub(crate) async fn apply_pre(&self, container: &BuildahContainer) -> anyhow::Result<()>;
+    pub(crate) fn get_packages(&self, optional: bool) -> Vec<String>;
+    pub(crate) async fn apply_post(&self, container: &BuildahContainer) -> anyhow::Result<()>;
+    pub(crate) async fn apply_config(&self, container: &BuildahContainer) -> anyhow::Result<()>;
 }
 
 // containers/desc.rs
-pub struct ContainerDescriptor {
+pub(crate) struct ContainerDescriptor {
     pub config: Option<ContainerConfig>,
     pub pre: ContainerPre,
     pub packages: ContainerPackages,
@@ -1573,26 +1575,26 @@ pub struct ContainerDescriptor {
 }
 
 impl ContainerDescriptor {
-    pub fn load(
+    pub(crate) fn load(
         path: &Path,
         vars: Option<&HashMap<String, String>>,
     ) -> anyhow::Result<Self>;
 }
 
-pub fn substitute_vars(
+pub(crate) fn substitute_vars(
     template: &str,
     vars: &HashMap<String, String>,
 ) -> anyhow::Result<String>;
 
 // containers/repos.rs
-pub enum ContainerRepo {
+pub(crate) enum ContainerRepo {
     File { name: String, source: String, dest: String },
     Url { name: String, source: String, dest: String },
     Copr { name: String, source: String },
 }
 
 impl ContainerRepo {
-    pub async fn install(
+    pub(crate) async fn install(
         &self,
         container: &BuildahContainer,
         hint: &Path,
