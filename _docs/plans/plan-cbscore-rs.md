@@ -78,6 +78,7 @@ Define the public error hierarchy and logging setup so all subsequent phases hav
 |-----------------|-------|--------|-------|---------|
 | `CbsError` enum | N/A (type definition) | N/A | N/A | `CbsError::Config("file not found".into())` |
 | `init_logging` | `verbose: bool` | `()` | N/A | `init_logging(false)` sets INFO; `init_logging(true)` sets DEBUG |
+| `set_debug_logging` | `()` | `()` | N/A | `set_debug_logging()` switches tracing to DEBUG level at runtime |
 
 ```rust
 // cbscore-lib/src/types/errors.rs
@@ -102,7 +103,13 @@ pub enum CbsError {
 // cbscore-lib/src/logging.rs
 /// Initialize tracing subscriber. `verbose = true` sets DEBUG level.
 pub fn init_logging(verbose: bool);
+
+/// Switch the tracing subscriber to DEBUG level at runtime.
+/// Called by cbc when --debug flag is passed.
+pub fn set_debug_logging();
 ```
+
+> **Note:** `set_debug_logging` must be exposed via PyO3 (in the `cbscore._cbscore` module) for `cbc` compatibility, which imports it from `cbscore.logger`.
 
 Python exception hierarchy (in `src/cbscore/_exceptions.py`, pure Python):
 
@@ -146,7 +153,7 @@ Implement version parsing/normalization utilities, the version descriptor type, 
 
 | Function | Input | Output | Error | Example |
 |----------|-------|--------|-------|---------|
-| `parse_version` | `version: &str` | `ParsedVersion` | `anyhow::Error` | `"ces-v99.99.1-asd"` -> `ParsedVersion { prefix: Some("ces"), major: "99", minor: Some("99"), patch: Some("1"), suffix: Some("asd-qwe") }` |
+| `parse_version` | `version: &str` | `ParsedVersion` | `anyhow::Error` | `"ces-v99.99.1-asd"` -> `ParsedVersion { prefix: Some("ces"), major: "99", minor: Some("99"), patch: Some("1"), suffix: Some("asd") }` |
 | `normalize_version` | `version: &str` | `String` | `anyhow::Error` | `"ces-99.99.1-asd"` -> `"ces-v99.99.1-asd"` |
 | `get_version_type` | `type_name: &str` | `VersionType` | `anyhow::Error` | `"release"` -> `VersionType::Release` |
 | `parse_component_refs` | `components: &[String]` | `HashMap<String, String>` | `anyhow::Error` | `["ceph@v18.2.4"]` -> `{"ceph": "v18.2.4"}` |
@@ -372,6 +379,8 @@ Implement the full configuration model hierarchy with YAML serialization, `load`
 | `Config::store` | `&self, path: &Path` | `()` | `CbsError::Config` | writes YAML with kebab-case keys |
 | `VaultConfig::load` | `path: &Path` | `VaultConfig` | `CbsError::Config` | `VaultConfig::load(Path::new("vault.yaml"))` |
 | `VaultConfig::store` | `&self, path: &Path` | `()` | `CbsError::Config` | writes YAML vault config |
+| `Config::get_secrets` | `&self` | `Secrets` | `anyhow::Error` | loads + merges secrets from `config.secrets` paths |
+| `Config::get_vault_config` | `&self` | `Option<VaultConfig>` | `anyhow::Error` | loads from `config.vault` path, None if not set |
 
 ```rust
 // cbscore-lib/src/types/config.rs
@@ -475,6 +484,12 @@ pub struct Config {
 impl Config {
     pub fn load(path: &Path) -> Result<Self, CbsError>;
     pub fn store(&self, path: &Path) -> Result<(), CbsError>;
+
+    /// Load and merge all secrets files referenced by this config.
+    pub fn get_secrets(&self) -> anyhow::Result<Secrets>;
+
+    /// Load the vault configuration from the path in this config, if set.
+    pub fn get_vault_config(&self) -> anyhow::Result<Option<VaultConfig>>;
 }
 ```
 
