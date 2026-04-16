@@ -1740,48 +1740,48 @@ Each CLI handler is now implemented in the phase where its library dependencies 
 | [SRS-0010](requirements-cbscore-rs.md#srs-0010-interactive-configuration-wizard) | Interactive config wizard | REQ-0200, REQ-0210 |
 | [SRS-0020](requirements-cbscore-rs.md#srs-0020-batch-configuration-shortcuts) | Batch config shortcuts | REQ-0200, REQ-0210 |
 | [SRS-0030](requirements-cbscore-rs.md#srs-0030-vault-authentication-configuration) | Vault auth configuration | REQ-0220 |
-| [SRS-0040](requirements-cbscore-rs.md#srs-0040-configuration-loading-and-storage) | Config load/store | REQ-0150 – REQ-0240 |
+| [SRS-0040](requirements-cbscore-rs.md#srs-0040-configuration-loading-and-storage) | Config load/store | REQ-0150 – REQ-0200, REQ-0230, REQ-0240 |
 | [SRS-0050](requirements-cbscore-rs.md#srs-0050-version-string-parsing) | Version string parsing | REQ-0040, REQ-0050 |
 | [SRS-0060](requirements-cbscore-rs.md#srs-0060-version-normalization) | Version normalization | REQ-0050 |
-| [SRS-0070](requirements-cbscore-rs.md#srs-0070-version-descriptor-creation) | Version descriptor creation | REQ-0060 – REQ-0140 |
-| [SRS-0080](requirements-cbscore-rs.md#srs-0080-component-definition-loading) | Component definition loading | REQ-0100, REQ-0110 |
+| [SRS-0070](requirements-cbscore-rs.md#srs-0070-version-descriptor-creation) | Version descriptor creation | REQ-0060, REQ-0070, REQ-0120, REQ-0130, REQ-0140 |
+| [SRS-0080](requirements-cbscore-rs.md#srs-0080-component-definition-loading) | Component definition loading | REQ-0120, REQ-0130 |
 | [SRS-0090](requirements-cbscore-rs.md#srs-0090-version-type-classification) | Version type classification | REQ-0060 |
-| [SRS-0100](requirements-cbscore-rs.md#srs-0100-release-listing-from-s3) | Release listing from S3 | REQ-0880, REQ-0890 |
-| [SRS-0110](requirements-cbscore-rs.md#srs-0110-containerized-build-launch) | Containerized build launch | REQ-0900 – REQ-0960 |
-| [SRS-0120](requirements-cbscore-rs.md#srs-0120-graceful-cancellation) | Graceful cancellation | REQ-0960 |
-| [SRS-0130](requirements-cbscore-rs.md#srs-0130-build-timeout) | Build timeout | REQ-0960 |
-| [SRS-0140](requirements-cbscore-rs.md#srs-0140-three-level-artifact-caching) | Three-level artifact caching | REQ-0830 – REQ-0860 |
-| [SRS-0150](requirements-cbscore-rs.md#srs-0150-rpm-package-building) | RPM package building | REQ-0860, REQ-0870 |
-| [SRS-0160](requirements-cbscore-rs.md#srs-0160-rpm-signing) | RPM signing | REQ-0870 |
-| [SRS-0170](requirements-cbscore-rs.md#srs-0170-s3-artifact-upload) | S3 artifact upload | REQ-0830 – REQ-0880 |
-| [SRS-0180](requirements-cbscore-rs.md#srs-0180-container-image-building) | Container image building | REQ-0970 – REQ-1010 |
-| [SRS-0190](requirements-cbscore-rs.md#srs-0190-container-image-signing) | Container image signing | REQ-1000 |
-| [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) | Python FFI bindings | REQ-0010 – REQ-1040 |
+| [SRS-0100](requirements-cbscore-rs.md#srs-0100-release-listing-from-s3) | Release listing from S3 | REQ-0890, REQ-0900 |
+| [SRS-0110](requirements-cbscore-rs.md#srs-0110-containerized-build-launch) | Containerized build launch | REQ-1020, REQ-1030, REQ-1040 |
+| [SRS-0120](requirements-cbscore-rs.md#srs-0120-graceful-cancellation) | Graceful cancellation | REQ-1020 |
+| [SRS-0130](requirements-cbscore-rs.md#srs-0130-build-timeout) | Build timeout | REQ-1020 |
+| [SRS-0140](requirements-cbscore-rs.md#srs-0140-three-level-artifact-caching) | Three-level artifact caching | REQ-0750, REQ-0850, REQ-0880 |
+| [SRS-0150](requirements-cbscore-rs.md#srs-0150-rpm-package-building) | RPM package building | REQ-0930 |
+| [SRS-0160](requirements-cbscore-rs.md#srs-0160-rpm-signing) | RPM signing | REQ-0940 |
+| [SRS-0170](requirements-cbscore-rs.md#srs-0170-s3-artifact-upload) | S3 artifact upload | REQ-0850, REQ-0860, REQ-0870, REQ-0950 |
+| [SRS-0180](requirements-cbscore-rs.md#srs-0180-container-image-building) | Container image building | REQ-0970, REQ-0980, REQ-0990, REQ-1000, REQ-1010 |
+| [SRS-0190](requirements-cbscore-rs.md#srs-0190-container-image-signing) | Container image signing | REQ-0760 |
+| [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) | Python FFI bindings | REQ-0010, REQ-0020, REQ-0030, REQ-0040, REQ-0050, REQ-0060, REQ-0070, REQ-0120, REQ-0130, REQ-0140, REQ-0150, REQ-0160, REQ-1020, REQ-1030, REQ-1040 |
 | [SRS-0210](requirements-cbscore-rs.md#srs-0210-exception-hierarchy-preservation) | Exception hierarchy preservation | REQ-0010, REQ-0020 |
-| [SRS-0220](requirements-cbscore-rs.md#srs-0220-pydantic-model-compatibility) | Pydantic model compatibility | REQ-0080, REQ-0090 |
-| [SRS-0230](requirements-cbscore-rs.md#srs-0230-async-runner-bridge) | Async runner bridge | REQ-1020 – REQ-1040 |
+| [SRS-0220](requirements-cbscore-rs.md#srs-0220-pydantic-model-compatibility) | Pydantic model compatibility | REQ-0080, REQ-0090 (note: Pydantic integration has no dedicated REQ-ID) |
+| [SRS-0230](requirements-cbscore-rs.md#srs-0230-async-runner-bridge) | Async runner bridge | REQ-1020, REQ-1030, REQ-1040 |
 
-### Non-Functional Requirements → Capabilities
+### Non-Functional Requirements → Plan REQ-IDs
 
-| SRS ID | Requirement | Applies to |
-|--------|-------------|-----------|
+| SRS ID | Requirement | Plan REQ-IDs |
+|--------|-------------|-------------|
 | [SRS-0240](requirements-cbscore-rs.md#srs-0240-cli-compatibility) | CLI compatibility | All subcommands |
 | [SRS-0250](requirements-cbscore-rs.md#srs-0250-configuration-file-compatibility) | Config file compatibility | Configuration management |
 | [SRS-0260](requirements-cbscore-rs.md#srs-0260-json-format-compatibility) | JSON format compatibility | Version/release descriptors |
 | [SRS-0270](requirements-cbscore-rs.md#srs-0270-python-import-path-preservation) | Python import path preservation | Python interoperability |
-| [SRS-0280](requirements-cbscore-rs.md#srs-0280-secret-masking-in-logs) | Secret masking in logs | Security (all phases) |
-| [SRS-0290](requirements-cbscore-rs.md#srs-0290-temporary-credential-cleanup) | Temporary credential cleanup | Security (build, signing) |
-| [SRS-0300](requirements-cbscore-rs.md#srs-0300-vault-token-handling) | Vault token handling | Security (vault integration) |
-| [SRS-0310](requirements-cbscore-rs.md#srs-0310-container-security-options) | Container security options | Build execution |
-| [SRS-0320](requirements-cbscore-rs.md#srs-0320-parallel-component-builds) | Parallel component builds | Build orchestration |
-| [SRS-0330](requirements-cbscore-rs.md#srs-0330-parallel-s3-operations) | Parallel S3 operations | Release discovery |
-| [SRS-0340](requirements-cbscore-rs.md#srs-0340-build-timeout-compliance) | Build timeout compliance | Build execution |
-| [SRS-0350](requirements-cbscore-rs.md#srs-0350-structured-logging) | Structured logging | Observability (all phases) |
-| [SRS-0360](requirements-cbscore-rs.md#srs-0360-python-logging-integration) | Python logging integration | Python interoperability |
-| [SRS-0370](requirements-cbscore-rs.md#srs-0370-subprocess-output-streaming) | Subprocess output streaming | Observability (builds) |
-| [SRS-0380](requirements-cbscore-rs.md#srs-0380-build-parameter-logging) | Build parameter logging | Observability (builds) |
-| [SRS-0390](requirements-cbscore-rs.md#srs-0390-idempotent-build-operations) | Idempotent build operations | Reliability (builds) |
-| [SRS-0400](requirements-cbscore-rs.md#srs-0400-graceful-error-recovery) | Graceful error recovery | Reliability (all phases) |
-| [SRS-0410](requirements-cbscore-rs.md#srs-0410-resource-cleanup-on-failure) | Resource cleanup on failure | Reliability (all phases) |
-| [SRS-0420](requirements-cbscore-rs.md#srs-0420-dual-installation-methods) | Dual installation methods | Deployment |
-| [SRS-0430](requirements-cbscore-rs.md#srs-0430-container-deployability) | Container deployability | Deployment |
+| [SRS-0280](requirements-cbscore-rs.md#srs-0280-secret-masking-in-logs) | Secret masking in logs | REQ-0310, REQ-0320 |
+| [SRS-0290](requirements-cbscore-rs.md#srs-0290-temporary-credential-cleanup) | Temporary credential cleanup | REQ-0350, REQ-0370 |
+| [SRS-0300](requirements-cbscore-rs.md#srs-0300-vault-token-handling) | Vault token handling | REQ-0280, REQ-0300 |
+| [SRS-0310](requirements-cbscore-rs.md#srs-0310-container-security-options) | Container security options | REQ-0580 |
+| [SRS-0320](requirements-cbscore-rs.md#srs-0320-parallel-component-builds) | Parallel component builds | REQ-0930 |
+| [SRS-0330](requirements-cbscore-rs.md#srs-0330-parallel-s3-operations) | Parallel S3 operations | REQ-0890 |
+| [SRS-0340](requirements-cbscore-rs.md#srs-0340-build-timeout-compliance) | Build timeout compliance | REQ-1020 |
+| [SRS-0350](requirements-cbscore-rs.md#srs-0350-structured-logging) | Structured logging | REQ-0020, REQ-0030 |
+| [SRS-0360](requirements-cbscore-rs.md#srs-0360-python-logging-integration) | Python logging integration | REQ-0030 |
+| [SRS-0370](requirements-cbscore-rs.md#srs-0370-subprocess-output-streaming) | Subprocess output streaming | REQ-0330 |
+| [SRS-0380](requirements-cbscore-rs.md#srs-0380-build-parameter-logging) | Build parameter logging | REQ-0910 |
+| [SRS-0390](requirements-cbscore-rs.md#srs-0390-idempotent-build-operations) | Idempotent build operations | REQ-0750, REQ-0850, REQ-0880 |
+| [SRS-0400](requirements-cbscore-rs.md#srs-0400-graceful-error-recovery) | Graceful error recovery | Enforced by convention (cross-cutting) |
+| [SRS-0410](requirements-cbscore-rs.md#srs-0410-resource-cleanup-on-failure) | Resource cleanup on failure | REQ-0350, REQ-0370 |
+| [SRS-0420](requirements-cbscore-rs.md#srs-0420-dual-installation-methods) | Dual installation methods | Verified by Phase 0 tests |
+| [SRS-0430](requirements-cbscore-rs.md#srs-0430-container-deployability) | Container deployability | REQ-1020 |
