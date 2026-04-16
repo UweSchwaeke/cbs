@@ -565,9 +565,9 @@ Implement all 16 secret model structs, 4 discriminated union enums with custom d
 |--------|----------|-------|--------|-------|---------|--------|
 | REQ-0230 | `Secrets::load` | `path: &Path` (YAML or JSON) | `Secrets` | `anyhow::Error` | `Secrets::load("secrets.yaml")` loads 4 secret maps | [SRS-0040](requirements-cbscore-rs.md#srs-0040-configuration-loading-and-storage) |
 | REQ-0240 | `Secrets::store` | `&self`, `path: &Path` | `()` | `anyhow::Error` | `secrets.store("out.yaml")` writes YAML | [SRS-0040](requirements-cbscore-rs.md#srs-0040-configuration-loading-and-storage) |
-| REQ-0250 | `Secrets::merge` | `&mut self`, `other: Secrets` | `()` | -- | second secrets' entries override first's | [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) |
-| REQ-0260 | `find_best_secret_candidate` | `secrets: &[&'a str]`, `uri: &str` | `Option<&'a str>` | -- | `(["github.com", "github.com/ceph"], "github.com/ceph/ceph")` -> `Some("github.com/ceph")` | [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) |
-| REQ-0270 | `matches_uri` | `pattern: &str`, `uri: &str` | `UriMatch` | `anyhow::Error` | `("github.com", "https://github.com/ceph")` -> `Partial { remainder: "ceph" }` | [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) |
+| REQ-0250 | `Secrets::merge` | `&mut self`, `other: Secrets` | `()` | -- | second secrets' entries override first's | [SRS-0040](requirements-cbscore-rs.md#srs-0040-configuration-loading-and-storage) |
+| REQ-0260 | `find_best_secret_candidate` | `secrets: &[&'a str]`, `uri: &str` | `Option<&'a str>` | -- | `(["github.com", "github.com/ceph"], "github.com/ceph/ceph")` -> `Some("github.com/ceph")` | [SRS-0040](requirements-cbscore-rs.md#srs-0040-configuration-loading-and-storage) |
+| REQ-0270 | `matches_uri` | `pattern: &str`, `uri: &str` | `UriMatch` | `anyhow::Error` | `("github.com", "https://github.com/ceph")` -> `Partial { remainder: "ceph" }` | [SRS-0040](requirements-cbscore-rs.md#srs-0040-configuration-loading-and-storage) |
 
 ```rust
 // cbscore-lib/src/types/secrets/models.rs
@@ -730,11 +730,11 @@ Implement the Vault client (AppRole/UserPass/Token auth via `vaultrs`) and the s
 
 | req-id | Function | Input | Output | Error | Example | srs-id |
 |--------|----------|-------|--------|-------|---------|--------|
-| REQ-0280 | `VaultClient::new` | `config: &VaultConfig` | `VaultClient` | `anyhow::Error` | from config with AppRole auth | [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) |
-| REQ-0290 | `VaultClient::read_secret` | `&self`, `path: &str` | `HashMap<String, String>` | `anyhow::Error` | `read_secret("ces-kv/data/git")` -> `{"ssh-key": "...", "username": "..."}` | [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) |
-| REQ-0300 | `VaultClient::check_connection` | `&self` | `()` | `anyhow::Error` | verifies vault reachable + auth valid | [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) |
-| REQ-0310 | `run_cmd` | `args: &[CmdArg]`, `env: Option<&HashMap<String, String>>` | `CmdResult` | `anyhow::Error` | `run_cmd(&[Plain("git"), Plain("status")], None)` -> `CmdResult { exit_code: 0, .. }` | [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) |
-| REQ-0320 | `sanitize_cmd` | `args: &[CmdArg]` | `Vec<String>` | -- | `[Plain("gpg"), Plain("--passphrase"), Plain("s3cret")]` -> `["gpg", "--passphrase", "****"]` | [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) |
+| REQ-0280 | `VaultClient::new` | `config: &VaultConfig` | `VaultClient` | `anyhow::Error` | from config with AppRole auth | [SRS-0300](requirements-cbscore-rs.md#srs-0300-vault-token-handling) |
+| REQ-0290 | `VaultClient::read_secret` | `&self`, `path: &str` | `HashMap<String, String>` | `anyhow::Error` | `read_secret("ces-kv/data/git")` -> `{"ssh-key": "...", "username": "..."}` | [SRS-0300](requirements-cbscore-rs.md#srs-0300-vault-token-handling) |
+| REQ-0300 | `VaultClient::check_connection` | `&self` | `()` | `anyhow::Error` | verifies vault reachable + auth valid | [SRS-0300](requirements-cbscore-rs.md#srs-0300-vault-token-handling) |
+| REQ-0310 | `run_cmd` | `args: &[CmdArg]`, `env: Option<&HashMap<String, String>>` | `CmdResult` | `anyhow::Error` | `run_cmd(&[Plain("git"), Plain("status")], None)` -> `CmdResult { exit_code: 0, .. }` | [SRS-0280](requirements-cbscore-rs.md#srs-0280-secret-masking-in-logs) |
+| REQ-0320 | `sanitize_cmd` | `args: &[CmdArg]` | `Vec<String>` | -- | `[Plain("gpg"), Plain("--passphrase"), Plain("s3cret")]` -> `["gpg", "--passphrase", "****"]` | [SRS-0280](requirements-cbscore-rs.md#srs-0280-secret-masking-in-logs) |
 
 ```rust
 // cbscore-lib/src/vault.rs
@@ -815,18 +815,18 @@ Complete the async command executor with streaming, timeout, and cancellation; i
 
 | req-id | Function | Input | Output | Error | Example | srs-id |
 |--------|----------|-------|--------|-------|---------|--------|
-| REQ-0330 | `async_run_cmd` | `args: &[CmdArg]`, `opts: &CmdOpts` | `CmdResult` | `anyhow::Error` | `async_run_cmd(&[Plain("echo"), Plain("hi")], &default_opts)` -> `CmdResult { exit_code: 0, .. }` | [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) |
-| REQ-0340 | `SecretsMgr::new` | `secrets: Secrets`, `vault_config: Option<&VaultConfig>` | `SecretsMgr` | `anyhow::Error` | constructs vault client + verifies connection | [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) |
-| REQ-0350 | `SecretsMgr::git_url_for` | `&self`, `url: &str` | `GitUrlGuard` | `anyhow::Error` | `git_url_for("https://github.com/ceph/ceph")` -> guard with SSH or HTTPS URL | [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) |
-| REQ-0360 | `SecretsMgr::s3_creds` (async) | `&self`, `url: &str` | `S3Credentials` | `anyhow::Error` | `s3_creds("s3.example.com")` -> `S3Credentials { host, access_id, secret_id }` | [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) |
-| REQ-0370 | `SecretsMgr::gpg_signing_key` (async) | `&self`, `id: &str` | `GpgKeyringGuard` | `anyhow::Error` | guard yields `(keyring_path, passphrase, email)` | [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) |
-| REQ-0380 | `SecretsMgr::transit` | `&self`, `id: &str` | `TransitKeyInfo` | `anyhow::Error` | `transit("cosign")` -> `TransitKeyInfo { mount: "transit-mount", key: "cosign-key" }` | [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) |
-| REQ-0390 | `SecretsMgr::registry_creds` (async) | `&self`, `uri: &str` | `RegistryCredentials` | `anyhow::Error` | `registry_creds("harbor.example.com/proj")` -> `RegistryCredentials { address: "harbor.example.com", username: "user", password: "pass" }` | [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) |
-| REQ-0400 | `SecretsMgr::has_vault` | `&self` | `bool` | -- | `true` if vault client is configured | [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) |
-| REQ-0410 | `SecretsMgr::has_s3_creds` | `&self`, `url: &str` | `bool` | -- | checks storage map for url | [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) |
-| REQ-0420 | `SecretsMgr::has_gpg_signing_key` | `&self`, `id: &str` | `bool` | -- | `true` for GPGPlain/VaultSingle/VaultPrivateKey variants | [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) |
-| REQ-0430 | `SecretsMgr::has_transit_key` | `&self`, `id: &str` | `bool` | -- | `true` for VaultTransit variant | [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) |
-| REQ-0440 | `SecretsMgr::has_registry_creds` | `&self`, `id: &str` | `bool` | -- | checks registry map for id | [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) |
+| REQ-0330 | `async_run_cmd` | `args: &[CmdArg]`, `opts: &CmdOpts` | `CmdResult` | `anyhow::Error` | `async_run_cmd(&[Plain("echo"), Plain("hi")], &default_opts)` -> `CmdResult { exit_code: 0, .. }` | [SRS-0370](requirements-cbscore-rs.md#srs-0370-subprocess-output-streaming) |
+| REQ-0340 | `SecretsMgr::new` | `secrets: Secrets`, `vault_config: Option<&VaultConfig>` | `SecretsMgr` | `anyhow::Error` | constructs vault client + verifies connection | [SRS-0300](requirements-cbscore-rs.md#srs-0300-vault-token-handling), [SRS-0440](requirements-cbscore-rs.md#srs-0440-secrets-resolution-subsystem) |
+| REQ-0350 | `SecretsMgr::git_url_for` | `&self`, `url: &str` | `GitUrlGuard` | `anyhow::Error` | `git_url_for("https://github.com/ceph/ceph")` -> guard with SSH or HTTPS URL | [SRS-0290](requirements-cbscore-rs.md#srs-0290-temporary-credential-cleanup) |
+| REQ-0360 | `SecretsMgr::s3_creds` (async) | `&self`, `url: &str` | `S3Credentials` | `anyhow::Error` | `s3_creds("s3.example.com")` -> `S3Credentials { host, access_id, secret_id }` | [SRS-0300](requirements-cbscore-rs.md#srs-0300-vault-token-handling) |
+| REQ-0370 | `SecretsMgr::gpg_signing_key` (async) | `&self`, `id: &str` | `GpgKeyringGuard` | `anyhow::Error` | guard yields `(keyring_path, passphrase, email)` | [SRS-0290](requirements-cbscore-rs.md#srs-0290-temporary-credential-cleanup) |
+| REQ-0380 | `SecretsMgr::transit` | `&self`, `id: &str` | `TransitKeyInfo` | `anyhow::Error` | `transit("cosign")` -> `TransitKeyInfo { mount: "transit-mount", key: "cosign-key" }` | [SRS-0300](requirements-cbscore-rs.md#srs-0300-vault-token-handling) |
+| REQ-0390 | `SecretsMgr::registry_creds` (async) | `&self`, `uri: &str` | `RegistryCredentials` | `anyhow::Error` | `registry_creds("harbor.example.com/proj")` -> `RegistryCredentials { address: "harbor.example.com", username: "user", password: "pass" }` | [SRS-0300](requirements-cbscore-rs.md#srs-0300-vault-token-handling) |
+| REQ-0400 | `SecretsMgr::has_vault` | `&self` | `bool` | -- | `true` if vault client is configured | [SRS-0300](requirements-cbscore-rs.md#srs-0300-vault-token-handling) |
+| REQ-0410 | `SecretsMgr::has_s3_creds` | `&self`, `url: &str` | `bool` | -- | checks storage map for url | [SRS-0280](requirements-cbscore-rs.md#srs-0280-secret-masking-in-logs) |
+| REQ-0420 | `SecretsMgr::has_gpg_signing_key` | `&self`, `id: &str` | `bool` | -- | `true` for GPGPlain/VaultSingle/VaultPrivateKey variants | [SRS-0280](requirements-cbscore-rs.md#srs-0280-secret-masking-in-logs) |
+| REQ-0430 | `SecretsMgr::has_transit_key` | `&self`, `id: &str` | `bool` | -- | `true` for VaultTransit variant | [SRS-0280](requirements-cbscore-rs.md#srs-0280-secret-masking-in-logs) |
+| REQ-0440 | `SecretsMgr::has_registry_creds` | `&self`, `id: &str` | `bool` | -- | checks registry map for id | [SRS-0280](requirements-cbscore-rs.md#srs-0280-secret-masking-in-logs) |
 
 ```rust
 // cbscore-lib/src/cmd.rs (complete -- async added)
@@ -1017,19 +1017,19 @@ All git async operations (clone, checkout, worktree, fetch, etc.)
 
 | req-id | Function | Input | Output | Error | Example | srs-id |
 |--------|----------|-------|--------|-------|---------|--------|
-| REQ-0450 | `run_git` | `args: &[CmdArg]`, `path: Option<&Path>` | `String` (stdout) | `anyhow::Error` | `run_git(&[Plain("status")], Some(repo_path))` | [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) |
+| REQ-0450 | `run_git` | `args: &[CmdArg]`, `path: Option<&Path>` | `String` (stdout) | `anyhow::Error` | `run_git(&[Plain("status")], Some(repo_path))` | [SRS-0280](requirements-cbscore-rs.md#srs-0280-secret-masking-in-logs) |
 | REQ-0460 | `get_git_user` | -- | `GitUser` | `anyhow::Error` | `()` -> `GitUser { name: "John Doe", email: "john@example.com" }` | [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) |
 | REQ-0470 | `get_git_repo_root` | -- | `PathBuf` | `anyhow::Error` | `()` -> `/home/user/repo` | [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) |
-| REQ-0480 | `get_git_modified_paths` | `base_sha: &str`, `r#ref: &str`, `in_repo_path: Option<&str>`, `repo_path: Option<&Path>` | `GitModifiedPaths` | `anyhow::Error` | returns modified and deleted paths | [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) |
-| REQ-0490 | `git_clone` | `repo: CmdArg`, `base_path: &Path`, `repo_name: &str` | `PathBuf` | `anyhow::Error` | clones mirror or updates existing; returns repo path | [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) |
-| REQ-0500 | `git_checkout` | `repo_path: &Path`, `r#ref: &str`, `worktrees_base: &Path` | `PathBuf` | `anyhow::Error` | creates worktree; returns worktree path | [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) |
-| REQ-0510 | `git_remove_worktree` | `repo_path: &Path`, `worktree_path: &Path` | `()` | `anyhow::Error` | force-removes a worktree | [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) |
-| REQ-0520 | `git_fetch` | `remote: &str`, `from_ref: &str`, `to_branch: &str`, `repo_path: Option<&Path>` | `()` | `anyhow::Error` | fetches ref from remote to local branch | [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) |
-| REQ-0530 | `git_pull` | `remote: CmdArg`, `from_branch: Option<&str>`, `to_branch: Option<&str>`, `repo_path: Option<&Path>` | `()` | `anyhow::Error` | pulls from remote | [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) |
-| REQ-0540 | `git_cherry_pick` | `sha: &str`, `sha_end: Option<&str>`, `repo_path: Option<&Path>` | `()` | `anyhow::Error` | cherry-picks commit(s) | [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) |
-| REQ-0550 | `git_apply` | `repo_path: &Path`, `patch_path: &Path` | `()` | `anyhow::Error` | applies patch file | [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) |
-| REQ-0560 | `git_get_sha1` | `repo_path: &Path` | `String` | `anyhow::Error` | returns HEAD sha1 | [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) |
-| REQ-0570 | `git_get_current_branch` | `repo_path: &Path` | `String` | `anyhow::Error` | returns current branch name | [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) |
+| REQ-0480 | `get_git_modified_paths` | `base_sha: &str`, `r#ref: &str`, `in_repo_path: Option<&str>`, `repo_path: Option<&Path>` | `GitModifiedPaths` | `anyhow::Error` | returns modified and deleted paths | [SRS-0150](requirements-cbscore-rs.md#srs-0150-rpm-package-building) |
+| REQ-0490 | `git_clone` | `repo: CmdArg`, `base_path: &Path`, `repo_name: &str` | `PathBuf` | `anyhow::Error` | clones mirror or updates existing; returns repo path | [SRS-0150](requirements-cbscore-rs.md#srs-0150-rpm-package-building) |
+| REQ-0500 | `git_checkout` | `repo_path: &Path`, `r#ref: &str`, `worktrees_base: &Path` | `PathBuf` | `anyhow::Error` | creates worktree; returns worktree path | [SRS-0150](requirements-cbscore-rs.md#srs-0150-rpm-package-building) |
+| REQ-0510 | `git_remove_worktree` | `repo_path: &Path`, `worktree_path: &Path` | `()` | `anyhow::Error` | force-removes a worktree | [SRS-0150](requirements-cbscore-rs.md#srs-0150-rpm-package-building) |
+| REQ-0520 | `git_fetch` | `remote: &str`, `from_ref: &str`, `to_branch: &str`, `repo_path: Option<&Path>` | `()` | `anyhow::Error` | fetches ref from remote to local branch | [SRS-0150](requirements-cbscore-rs.md#srs-0150-rpm-package-building) |
+| REQ-0530 | `git_pull` | `remote: CmdArg`, `from_branch: Option<&str>`, `to_branch: Option<&str>`, `repo_path: Option<&Path>` | `()` | `anyhow::Error` | pulls from remote | [SRS-0150](requirements-cbscore-rs.md#srs-0150-rpm-package-building) |
+| REQ-0540 | `git_cherry_pick` | `sha: &str`, `sha_end: Option<&str>`, `repo_path: Option<&Path>` | `()` | `anyhow::Error` | cherry-picks commit(s) | [SRS-0150](requirements-cbscore-rs.md#srs-0150-rpm-package-building) |
+| REQ-0550 | `git_apply` | `repo_path: &Path`, `patch_path: &Path` | `()` | `anyhow::Error` | applies patch file | [SRS-0150](requirements-cbscore-rs.md#srs-0150-rpm-package-building) |
+| REQ-0560 | `git_get_sha1` | `repo_path: &Path` | `String` | `anyhow::Error` | returns HEAD sha1 | [SRS-0150](requirements-cbscore-rs.md#srs-0150-rpm-package-building) |
+| REQ-0570 | `git_get_current_branch` | `repo_path: &Path` | `String` | `anyhow::Error` | returns current branch name | [SRS-0150](requirements-cbscore-rs.md#srs-0150-rpm-package-building) |
 
 ```rust
 // cbscore-lib/src/utils/git.rs
@@ -1097,14 +1097,14 @@ pub(crate) async fn git_get_current_branch(repo_path: &Path) -> anyhow::Result<S
 
 | req-id | Function | Input | Output | Error | Example | srs-id |
 |--------|----------|-------|--------|-------|---------|--------|
-| REQ-0580 | `podman_run` | `opts: &PodmanRunOpts` | `CmdResult` | `anyhow::Error` | runs container with specified image, env, volumes | [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) |
-| REQ-0590 | `podman_stop` | `name: Option<&str>`, `timeout: u32` | `()` | `anyhow::Error` | stops container by name or all | [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) |
-| REQ-0600 | `BuildahContainer::new` | via `buildah_new_container` | `BuildahContainer` | `anyhow::Error` | `buildah from <distro>` + sets initial config | [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) |
-| REQ-0610 | `BuildahContainer::set_config` | `&self`, author, annotations, labels, env | `()` | `anyhow::Error` | `buildah config --author ... --label ...` | [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) |
-| REQ-0620 | `BuildahContainer::copy` | `&self`, `source: &Path`, `dest: &str` | `()` | `anyhow::Error` | `buildah copy <cid> <src> <dest>` | [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) |
-| REQ-0630 | `BuildahContainer::run` | `&self`, `args: &[String]` | `()` | `anyhow::Error` | `buildah run --isolation chroot <cid> -- <args>` | [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) |
-| REQ-0640 | `BuildahContainer::finish` | `&mut self`, `secrets: &SecretsMgr`, `sign_with_transit: Option<&str>` | `()` | `anyhow::Error` | commit, push to registry, optionally cosign sign | [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) |
-| REQ-0650 | `buildah_new_container` | `desc: &VersionDescriptor` | `BuildahContainer` | `anyhow::Error` | creates container from distro base image | [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) |
+| REQ-0580 | `podman_run` | `opts: &PodmanRunOpts` | `CmdResult` | `anyhow::Error` | runs container with specified image, env, volumes | [SRS-0310](requirements-cbscore-rs.md#srs-0310-container-security-options) |
+| REQ-0590 | `podman_stop` | `name: Option<&str>`, `timeout: u32` | `()` | `anyhow::Error` | stops container by name or all | [SRS-0310](requirements-cbscore-rs.md#srs-0310-container-security-options) |
+| REQ-0600 | `BuildahContainer::new` | via `buildah_new_container` | `BuildahContainer` | `anyhow::Error` | `buildah from <distro>` + sets initial config | [SRS-0180](requirements-cbscore-rs.md#srs-0180-container-image-building) |
+| REQ-0610 | `BuildahContainer::set_config` | `&self`, author, annotations, labels, env | `()` | `anyhow::Error` | `buildah config --author ... --label ...` | [SRS-0180](requirements-cbscore-rs.md#srs-0180-container-image-building) |
+| REQ-0620 | `BuildahContainer::copy` | `&self`, `source: &Path`, `dest: &str` | `()` | `anyhow::Error` | `buildah copy <cid> <src> <dest>` | [SRS-0180](requirements-cbscore-rs.md#srs-0180-container-image-building) |
+| REQ-0630 | `BuildahContainer::run` | `&self`, `args: &[String]` | `()` | `anyhow::Error` | `buildah run --isolation chroot <cid> -- <args>` | [SRS-0180](requirements-cbscore-rs.md#srs-0180-container-image-building) |
+| REQ-0640 | `BuildahContainer::finish` | `&mut self`, `secrets: &SecretsMgr`, `sign_with_transit: Option<&str>` | `()` | `anyhow::Error` | commit, push to registry, optionally cosign sign | [SRS-0180](requirements-cbscore-rs.md#srs-0180-container-image-building), [SRS-0190](requirements-cbscore-rs.md#srs-0190-container-image-signing) |
+| REQ-0650 | `buildah_new_container` | `desc: &VersionDescriptor` | `BuildahContainer` | `anyhow::Error` | creates container from distro base image | [SRS-0180](requirements-cbscore-rs.md#srs-0180-container-image-building) |
 
 ```rust
 // cbscore-lib/src/utils/podman.rs
@@ -1180,12 +1180,12 @@ pub(crate) async fn buildah_new_container(
 
 | req-id | Function | Input | Output | Error | Example | srs-id |
 |--------|----------|-------|--------|-------|---------|--------|
-| REQ-0660 | `s3_upload_str_obj` | `ctx: &S3Context`, `location`, `contents`, `content_type` | `()` | `anyhow::Error` | uploads string as S3 object | [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) |
-| REQ-0670 | `s3_download_str_obj` | `ctx: &S3Context`, `location`, `content_type: Option<&str>` | `Option<String>` | `anyhow::Error` | returns `None` if object not found | [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) |
-| REQ-0680 | `s3_upload_json<T: Serialize>` | `ctx: &S3Context`, `key`, `value: &T` | `()` | `anyhow::Error` | convenience wrapper: content_type = `"application/json"` | [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) |
-| REQ-0690 | `s3_download_json<T: DeserializeOwned>` | `ctx: &S3Context`, `key` | `Option<T>` | `anyhow::Error` | convenience wrapper: content_type = `"application/json"` | [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) |
-| REQ-0700 | `s3_upload_files` | `ctx: &S3Context`, `file_locs: &[S3FileLocator]`, `public: bool` | `()` | `anyhow::Error` | uploads list of local files | [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) |
-| REQ-0710 | `s3_list` | `ctx: &S3Context`, `prefix: Option<&str>`, `prefix_as_directory: bool` | `S3ListResult` | `anyhow::Error` | paginated listing with CommonPrefixes support | [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) |
+| REQ-0660 | `s3_upload_str_obj` | `ctx: &S3Context`, `location`, `contents`, `content_type` | `()` | `anyhow::Error` | uploads string as S3 object | [SRS-0170](requirements-cbscore-rs.md#srs-0170-s3-artifact-upload) |
+| REQ-0670 | `s3_download_str_obj` | `ctx: &S3Context`, `location`, `content_type: Option<&str>` | `Option<String>` | `anyhow::Error` | returns `None` if object not found | [SRS-0100](requirements-cbscore-rs.md#srs-0100-release-listing-from-s3) |
+| REQ-0680 | `s3_upload_json<T: Serialize>` | `ctx: &S3Context`, `key`, `value: &T` | `()` | `anyhow::Error` | convenience wrapper: content_type = `"application/json"` | [SRS-0170](requirements-cbscore-rs.md#srs-0170-s3-artifact-upload) |
+| REQ-0690 | `s3_download_json<T: DeserializeOwned>` | `ctx: &S3Context`, `key` | `Option<T>` | `anyhow::Error` | convenience wrapper: content_type = `"application/json"` | [SRS-0100](requirements-cbscore-rs.md#srs-0100-release-listing-from-s3) |
+| REQ-0700 | `s3_upload_files` | `ctx: &S3Context`, `file_locs: &[S3FileLocator]`, `public: bool` | `()` | `anyhow::Error` | uploads list of local files | [SRS-0170](requirements-cbscore-rs.md#srs-0170-s3-artifact-upload) |
+| REQ-0710 | `s3_list` | `ctx: &S3Context`, `prefix: Option<&str>`, `prefix_as_directory: bool` | `S3ListResult` | `anyhow::Error` | paginated listing with CommonPrefixes support | [SRS-0100](requirements-cbscore-rs.md#srs-0100-release-listing-from-s3) |
 
 ```rust
 // cbscore-lib/src/s3.rs
@@ -1252,17 +1252,17 @@ pub(crate) async fn s3_list(
 
 | req-id | Function | Input | Output | Error | Example | srs-id |
 |--------|----------|-------|--------|-------|---------|--------|
-| REQ-0720 | `skopeo_get_tags` (async) | `img: &str` | `SkopeoTagListResult` | `anyhow::Error` | `skopeo_get_tags("harbor.example.com/proj/ceph")` -> tags list | [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) |
-| REQ-0730 | `skopeo_copy` (async) | `src: &str`, `dst: &str`, `dst_registry: &str`, `secrets: &SecretsMgr`, `transit: &str` | `()` | `anyhow::Error` | copies image + optionally signs | [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) |
-| REQ-0740 | `skopeo_inspect` (async) | `img: &str`, `secrets: &SecretsMgr`, `tls_verify: bool` | `String` (JSON) | `anyhow::Error` | returns raw JSON inspect output | [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) |
-| REQ-0750 | `skopeo_image_exists` (async) | `img: &str`, `secrets: &SecretsMgr`, `tls_verify: bool` | `bool` | `anyhow::Error` | `true` if image exists in registry | [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) |
-| REQ-0760 | `sign` (async) | `img: &str`, `secrets: &SecretsMgr`, `transit: &str` | `()` | `anyhow::Error` | async cosign sign via Vault Transit | [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) |
-| REQ-0770 | `can_sign` | `registry: &str`, `secrets: &SecretsMgr`, `transit: &str` | `bool` | -- | checks vault + transit key + registry creds are available (pure check, no I/O) | [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) |
-| REQ-0780 | `sync_image` (async) | `opts: &SyncImageOpts` | `()` | `anyhow::Error` | syncs image between registries | [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) |
-| REQ-0790 | `get_image_desc` | `version: &str` | `ImageDescriptor` | `CbsError` | loads image descriptor JSON matching version | [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) |
-| REQ-0800 | `get_image_name` | `img: &str` | `String` | -- | `"harbor.example.com/proj:v1"` -> `"harbor.example.com/proj"` | [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) |
-| REQ-0810 | `get_image_tag` | `img: &str` | `Option<String>` | -- | `"harbor.example.com/proj:v1"` -> `Some("v1")` | [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) |
-| REQ-0820 | `get_container_image_base_uri` | `desc: &VersionDescriptor` | `String` | -- | -> `"registry.example.com/image-name"` | [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) |
+| REQ-0720 | `skopeo_get_tags` (async) | `img: &str` | `SkopeoTagListResult` | `anyhow::Error` | `skopeo_get_tags("harbor.example.com/proj/ceph")` -> tags list | [SRS-0180](requirements-cbscore-rs.md#srs-0180-container-image-building) |
+| REQ-0730 | `skopeo_copy` (async) | `src: &str`, `dst: &str`, `dst_registry: &str`, `secrets: &SecretsMgr`, `transit: &str` | `()` | `anyhow::Error` | copies image + optionally signs | [SRS-0180](requirements-cbscore-rs.md#srs-0180-container-image-building) |
+| REQ-0740 | `skopeo_inspect` (async) | `img: &str`, `secrets: &SecretsMgr`, `tls_verify: bool` | `String` (JSON) | `anyhow::Error` | returns raw JSON inspect output | [SRS-0140](requirements-cbscore-rs.md#srs-0140-three-level-artifact-caching) |
+| REQ-0750 | `skopeo_image_exists` (async) | `img: &str`, `secrets: &SecretsMgr`, `tls_verify: bool` | `bool` | `anyhow::Error` | `true` if image exists in registry | [SRS-0140](requirements-cbscore-rs.md#srs-0140-three-level-artifact-caching) |
+| REQ-0760 | `sign` (async) | `img: &str`, `secrets: &SecretsMgr`, `transit: &str` | `()` | `anyhow::Error` | async cosign sign via Vault Transit | [SRS-0190](requirements-cbscore-rs.md#srs-0190-container-image-signing) |
+| REQ-0770 | `can_sign` | `registry: &str`, `secrets: &SecretsMgr`, `transit: &str` | `bool` | -- | checks vault + transit key + registry creds are available (pure check, no I/O) | [SRS-0190](requirements-cbscore-rs.md#srs-0190-container-image-signing) |
+| REQ-0780 | `sync_image` (async) | `opts: &SyncImageOpts` | `()` | `anyhow::Error` | syncs image between registries | [SRS-0180](requirements-cbscore-rs.md#srs-0180-container-image-building) |
+| REQ-0790 | `get_image_desc` | `version: &str` | `ImageDescriptor` | `CbsError` | loads image descriptor JSON matching version | [SRS-0070](requirements-cbscore-rs.md#srs-0070-version-descriptor-creation) |
+| REQ-0800 | `get_image_name` | `img: &str` | `String` | -- | `"harbor.example.com/proj:v1"` -> `"harbor.example.com/proj"` | [SRS-0180](requirements-cbscore-rs.md#srs-0180-container-image-building) |
+| REQ-0810 | `get_image_tag` | `img: &str` | `Option<String>` | -- | `"harbor.example.com/proj:v1"` -> `Some("v1")` | [SRS-0180](requirements-cbscore-rs.md#srs-0180-container-image-building) |
+| REQ-0820 | `get_container_image_base_uri` | `desc: &VersionDescriptor` | `String` | -- | -> `"registry.example.com/image-name"` | [SRS-0180](requirements-cbscore-rs.md#srs-0180-container-image-building) |
 | REQ-0830 | `get_container_image_base_uri_from_str` | `uri: &str` | `String` | `anyhow::Error` | `"registry/name:tag"` -> `"registry/name"` | [SRS-0140](requirements-cbscore-rs.md#srs-0140-three-level-artifact-caching), [SRS-0170](requirements-cbscore-rs.md#srs-0170-s3-artifact-upload) |
 | REQ-0840 | `get_container_canonical_uri` | `desc: &VersionDescriptor`, `digest: Option<&str>` | `String` | -- | `(desc, None)` -> `"registry/name:tag"`; `(desc, Some("sha256:abc"))` -> `"registry/name@sha256:abc"` | [SRS-0140](requirements-cbscore-rs.md#srs-0140-three-level-artifact-caching), [SRS-0170](requirements-cbscore-rs.md#srs-0170-s3-artifact-upload) |
 
@@ -1740,26 +1740,27 @@ Each CLI handler is now implemented in the phase where its library dependencies 
 | [SRS-0010](requirements-cbscore-rs.md#srs-0010-interactive-configuration-wizard) | Interactive config wizard | REQ-0200, REQ-0210 |
 | [SRS-0020](requirements-cbscore-rs.md#srs-0020-batch-configuration-shortcuts) | Batch config shortcuts | REQ-0200, REQ-0210 |
 | [SRS-0030](requirements-cbscore-rs.md#srs-0030-vault-authentication-configuration) | Vault auth configuration | REQ-0220 |
-| [SRS-0040](requirements-cbscore-rs.md#srs-0040-configuration-loading-and-storage) | Config load/store | REQ-0150 – REQ-0200, REQ-0230, REQ-0240 |
+| [SRS-0040](requirements-cbscore-rs.md#srs-0040-configuration-loading-and-storage) | Config load/store | REQ-0150 – REQ-0200, REQ-0230, REQ-0240, REQ-0250 – REQ-0270 |
 | [SRS-0050](requirements-cbscore-rs.md#srs-0050-version-string-parsing) | Version string parsing | REQ-0040, REQ-0050 |
 | [SRS-0060](requirements-cbscore-rs.md#srs-0060-version-normalization) | Version normalization | REQ-0050 |
-| [SRS-0070](requirements-cbscore-rs.md#srs-0070-version-descriptor-creation) | Version descriptor creation | REQ-0060, REQ-0070, REQ-0120, REQ-0130, REQ-0140 |
+| [SRS-0070](requirements-cbscore-rs.md#srs-0070-version-descriptor-creation) | Version descriptor creation | REQ-0060, REQ-0070, REQ-0120, REQ-0130, REQ-0140, REQ-0790 |
 | [SRS-0080](requirements-cbscore-rs.md#srs-0080-component-definition-loading) | Component definition loading | REQ-0120, REQ-0130 |
 | [SRS-0090](requirements-cbscore-rs.md#srs-0090-version-type-classification) | Version type classification | REQ-0060 |
-| [SRS-0100](requirements-cbscore-rs.md#srs-0100-release-listing-from-s3) | Release listing from S3 | REQ-0890, REQ-0900 |
+| [SRS-0100](requirements-cbscore-rs.md#srs-0100-release-listing-from-s3) | Release listing from S3 | REQ-0670, REQ-0690, REQ-0710, REQ-0880, REQ-0890, REQ-0900 |
 | [SRS-0110](requirements-cbscore-rs.md#srs-0110-containerized-build-launch) | Containerized build launch | REQ-1020, REQ-1030, REQ-1040 |
 | [SRS-0120](requirements-cbscore-rs.md#srs-0120-graceful-cancellation) | Graceful cancellation | REQ-1020 |
 | [SRS-0130](requirements-cbscore-rs.md#srs-0130-build-timeout) | Build timeout | REQ-1020 |
-| [SRS-0140](requirements-cbscore-rs.md#srs-0140-three-level-artifact-caching) | Three-level artifact caching | REQ-0750, REQ-0850, REQ-0880 |
-| [SRS-0150](requirements-cbscore-rs.md#srs-0150-rpm-package-building) | RPM package building | REQ-0930 |
+| [SRS-0140](requirements-cbscore-rs.md#srs-0140-three-level-artifact-caching) | Three-level artifact caching | REQ-0740, REQ-0750, REQ-0830, REQ-0840, REQ-0850, REQ-0880 |
+| [SRS-0150](requirements-cbscore-rs.md#srs-0150-rpm-package-building) | RPM package building | REQ-0480 – REQ-0570, REQ-0930 |
 | [SRS-0160](requirements-cbscore-rs.md#srs-0160-rpm-signing) | RPM signing | REQ-0940 |
-| [SRS-0170](requirements-cbscore-rs.md#srs-0170-s3-artifact-upload) | S3 artifact upload | REQ-0850, REQ-0860, REQ-0870, REQ-0950 |
-| [SRS-0180](requirements-cbscore-rs.md#srs-0180-container-image-building) | Container image building | REQ-0970, REQ-0980, REQ-0990, REQ-1000, REQ-1010 |
-| [SRS-0190](requirements-cbscore-rs.md#srs-0190-container-image-signing) | Container image signing | REQ-0760 |
-| [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) | Python FFI bindings | REQ-0010, REQ-0020, REQ-0030, REQ-0040, REQ-0050, REQ-0060, REQ-0070, REQ-0120, REQ-0130, REQ-0140, REQ-0150, REQ-0160, REQ-1020, REQ-1030, REQ-1040 |
+| [SRS-0170](requirements-cbscore-rs.md#srs-0170-s3-artifact-upload) | S3 artifact upload | REQ-0660, REQ-0680, REQ-0700, REQ-0850, REQ-0860, REQ-0870, REQ-0950 |
+| [SRS-0180](requirements-cbscore-rs.md#srs-0180-container-image-building) | Container image building | REQ-0600 – REQ-0650, REQ-0720, REQ-0730, REQ-0780, REQ-0800, REQ-0810, REQ-0820, REQ-0970, REQ-0980, REQ-0990, REQ-1000, REQ-1010 |
+| [SRS-0190](requirements-cbscore-rs.md#srs-0190-container-image-signing) | Container image signing | REQ-0760, REQ-0770 |
+| [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) | Python FFI bindings | REQ-0010, REQ-0020, REQ-0030, REQ-0040, REQ-0050, REQ-0060, REQ-0070, REQ-0120, REQ-0130, REQ-0140, REQ-0150, REQ-0160, REQ-0460, REQ-0470, REQ-1020, REQ-1030, REQ-1040 |
 | [SRS-0210](requirements-cbscore-rs.md#srs-0210-exception-hierarchy-preservation) | Exception hierarchy preservation | REQ-0010, REQ-0020 |
 | [SRS-0220](requirements-cbscore-rs.md#srs-0220-pydantic-model-compatibility) | Pydantic model compatibility | REQ-0080, REQ-0090 (note: Pydantic integration has no dedicated REQ-ID) |
 | [SRS-0230](requirements-cbscore-rs.md#srs-0230-async-runner-bridge) | Async runner bridge | REQ-1020, REQ-1030, REQ-1040 |
+| [SRS-0440](requirements-cbscore-rs.md#srs-0440-secrets-resolution-subsystem) | Secrets resolution subsystem | REQ-0230 – REQ-0270, REQ-0340 |
 
 ### Non-Functional Requirements → Plan REQ-IDs
 
@@ -1769,10 +1770,10 @@ Each CLI handler is now implemented in the phase where its library dependencies 
 | [SRS-0250](requirements-cbscore-rs.md#srs-0250-configuration-file-compatibility) | Config file compatibility | Configuration management |
 | [SRS-0260](requirements-cbscore-rs.md#srs-0260-json-format-compatibility) | JSON format compatibility | Version/release descriptors |
 | [SRS-0270](requirements-cbscore-rs.md#srs-0270-python-import-path-preservation) | Python import path preservation | Python interoperability |
-| [SRS-0280](requirements-cbscore-rs.md#srs-0280-secret-masking-in-logs) | Secret masking in logs | REQ-0310, REQ-0320 |
+| [SRS-0280](requirements-cbscore-rs.md#srs-0280-secret-masking-in-logs) | Secret masking in logs | REQ-0310, REQ-0320, REQ-0410 – REQ-0440, REQ-0450 |
 | [SRS-0290](requirements-cbscore-rs.md#srs-0290-temporary-credential-cleanup) | Temporary credential cleanup | REQ-0350, REQ-0370 |
-| [SRS-0300](requirements-cbscore-rs.md#srs-0300-vault-token-handling) | Vault token handling | REQ-0280, REQ-0300 |
-| [SRS-0310](requirements-cbscore-rs.md#srs-0310-container-security-options) | Container security options | REQ-0580 |
+| [SRS-0300](requirements-cbscore-rs.md#srs-0300-vault-token-handling) | Vault token handling | REQ-0280 – REQ-0300, REQ-0340, REQ-0360, REQ-0380 – REQ-0400 |
+| [SRS-0310](requirements-cbscore-rs.md#srs-0310-container-security-options) | Container security options | REQ-0580, REQ-0590 |
 | [SRS-0320](requirements-cbscore-rs.md#srs-0320-parallel-component-builds) | Parallel component builds | REQ-0930 |
 | [SRS-0330](requirements-cbscore-rs.md#srs-0330-parallel-s3-operations) | Parallel S3 operations | REQ-0890 |
 | [SRS-0340](requirements-cbscore-rs.md#srs-0340-build-timeout-compliance) | Build timeout compliance | REQ-1020 |

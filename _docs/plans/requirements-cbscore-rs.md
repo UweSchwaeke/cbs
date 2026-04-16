@@ -126,6 +126,20 @@ The system SHALL load and store configuration from YAML files with hyphenated fi
 
 ---
 
+#### SRS-0440: Secrets Resolution Subsystem
+
+The system SHALL provide a centralized secrets resolution subsystem that loads secrets from files, optionally authenticates to Vault, and provides credential access for all external integrations.
+
+**Acceptance criteria:**
+- Loads and merges secrets from one or more YAML files
+- Supports 4 secret categories: git, storage, signing, registry
+- Supports both plaintext and Vault-backed secret variants (16 total types)
+- Resolves the best-matching secret for a given URI using prefix/suffix matching
+- Authenticates to Vault if any secrets require it
+- Provides typed access to credentials: S3, transit, registry, git URL, GPG keyring
+
+---
+
 ### 3.2 Version Management
 
 #### SRS-0050: Version String Parsing
@@ -226,6 +240,27 @@ The system SHALL launch a containerized build pipeline (`cbsbuild build`) that p
 
 ---
 
+#### SRS-0450: CBS_DEBUG Environment Variable
+
+The system SHALL propagate the `CBS_DEBUG` environment variable from the host to the build container.
+
+**Acceptance criteria:**
+- `--debug` / `-d` CLI flag sets `CBS_DEBUG=1`
+- The runner passes `CBS_DEBUG` into the Podman container environment
+- Inside the container, `CBS_DEBUG=1` enables debug-level logging
+
+---
+
+#### SRS-0470: TLS Verification Pass-through
+
+The system SHALL propagate the `--tls-verify` flag from the host CLI through the container to the inner build pipeline.
+
+**Acceptance criteria:**
+- `cbsbuild build --tls-verify=false` passes the flag to `cbsbuild runner build --tls-verify=false` inside the container
+- The flag affects all registry operations (push, pull, inspect) within the build
+
+---
+
 #### SRS-0120: Graceful Cancellation
 
 The system SHALL handle Ctrl+C gracefully during builds, stopping the container and cleaning up resources.
@@ -246,6 +281,17 @@ The system SHALL enforce a configurable timeout on the build process.
 - Default timeout: 14,400 seconds (4 hours)
 - Overridable via `--timeout` CLI flag
 - On timeout expiry, the container is stopped and an error is reported
+
+---
+
+#### SRS-0460: Container Run Name Management
+
+The system SHALL generate unique container names and support replacing existing containers by name.
+
+**Acceptance criteria:**
+- `gen_run_name(prefix)` generates a unique name with the given prefix
+- `runner()` accepts `replace_run: bool` — when true, replaces existing container with same name
+- `stop(name)` stops a specific named container; `stop()` without name stops all CBS containers
 
 ---
 
