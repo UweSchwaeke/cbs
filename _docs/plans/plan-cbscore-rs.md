@@ -1018,8 +1018,8 @@ All git async operations (clone, checkout, worktree, fetch, etc.)
 | req-id | Function | Input | Output | Error | Example | srs-id |
 |--------|----------|-------|--------|-------|---------|--------|
 | REQ-0450 | `run_git` | `args: &[CmdArg]`, `path: Option<&Path>` | `String` (stdout) | `anyhow::Error` | `run_git(&[Plain("status")], Some(repo_path))` | [SRS-0280](requirements-cbscore-rs.md#srs-0280-secret-masking-in-logs) |
-| REQ-0460 | `get_git_user` | -- | `GitUser` | `anyhow::Error` | `()` -> `GitUser { name: "John Doe", email: "john@example.com" }` | [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) |
-| REQ-0470 | `get_git_repo_root` | -- | `PathBuf` | `anyhow::Error` | `()` -> `/home/user/repo` | [SRS-0200](requirements-cbscore-rs.md#srs-0200-python-ffi-bindings) |
+| REQ-0460 | `get_git_user` | -- | `GitUser` | `anyhow::Error` | `()` -> `GitUser { name: "John Doe", email: "john@example.com" }` | [SRS-0070](requirements-cbscore-rs.md#srs-0070-version-descriptor-creation) |
+| REQ-0470 | `get_git_repo_root` | -- | `PathBuf` | `anyhow::Error` | `()` -> `/home/user/repo` | [SRS-0070](requirements-cbscore-rs.md#srs-0070-version-descriptor-creation) |
 | REQ-0480 | `get_git_modified_paths` | `base_sha: &str`, `r#ref: &str`, `in_repo_path: Option<&str>`, `repo_path: Option<&Path>` | `GitModifiedPaths` | `anyhow::Error` | returns modified and deleted paths | [SRS-0150](requirements-cbscore-rs.md#srs-0150-rpm-package-building) |
 | REQ-0490 | `git_clone` | `repo: CmdArg`, `base_path: &Path`, `repo_name: &str` | `PathBuf` | `anyhow::Error` | clones mirror or updates existing; returns repo path | [SRS-0150](requirements-cbscore-rs.md#srs-0150-rpm-package-building) |
 | REQ-0500 | `git_checkout` | `repo_path: &Path`, `r#ref: &str`, `worktrees_base: &Path` | `PathBuf` | `anyhow::Error` | creates worktree; returns worktree path | [SRS-0150](requirements-cbscore-rs.md#srs-0150-rpm-package-building) |
@@ -1371,16 +1371,16 @@ Implement release S3 operations (check, upload, list) and the full `Builder` pip
 | req-id | Function | Input | Output | Error | Example | srs-id |
 |--------|----------|-------|--------|-------|---------|--------|
 | REQ-0850 | `check_release_exists` | `ctx: &S3Context`, `bucket_loc`, `version` | `Option<ReleaseDesc>` | `anyhow::Error` | `"18.2.4"` with existing release -> `Some(ReleaseDesc{...})` | [SRS-0140](requirements-cbscore-rs.md#srs-0140-three-level-artifact-caching), [SRS-0170](requirements-cbscore-rs.md#srs-0170-s3-artifact-upload) |
-| REQ-0860 | `release_desc_upload` | `ctx: &S3Context`, `bucket_loc`, `version`, `&ReleaseBuildEntry` | `ReleaseDesc` | `anyhow::Error` | uploads `{bucket_loc}/18.2.4.json` to S3 | [SRS-0140](requirements-cbscore-rs.md#srs-0140-three-level-artifact-caching), [SRS-0150](requirements-cbscore-rs.md#srs-0150-rpm-package-building) |
-| REQ-0870 | `release_upload_components` | `ctx: &S3Context`, `bucket_loc`, `&HashMap<String, ReleaseComponent>` | `()` | `anyhow::Error` | parallel upload of per-component JSON descriptors | [SRS-0150](requirements-cbscore-rs.md#srs-0150-rpm-package-building), [SRS-0160](requirements-cbscore-rs.md#srs-0160-rpm-signing) |
+| REQ-0860 | `release_desc_upload` | `ctx: &S3Context`, `bucket_loc`, `version`, `&ReleaseBuildEntry` | `ReleaseDesc` | `anyhow::Error` | uploads `{bucket_loc}/18.2.4.json` to S3 | [SRS-0170](requirements-cbscore-rs.md#srs-0170-s3-artifact-upload) |
+| REQ-0870 | `release_upload_components` | `ctx: &S3Context`, `bucket_loc`, `&HashMap<String, ReleaseComponent>` | `()` | `anyhow::Error` | parallel upload of per-component JSON descriptors | [SRS-0170](requirements-cbscore-rs.md#srs-0170-s3-artifact-upload) |
 | REQ-0880 | `check_released_components` | `ctx: &S3Context`, `bucket_loc`, `&HashMap<String, String>` | `HashMap<String, ReleaseComponent>` | `anyhow::Error` | `{"ceph": "18.2.4-1.clyso"}` -> existing components in S3 | [SRS-0100](requirements-cbscore-rs.md#srs-0100-release-listing-from-s3), [SRS-0170](requirements-cbscore-rs.md#srs-0170-s3-artifact-upload) |
 | REQ-0890 | `list_releases` | `secrets: &SecretsMgr`, `url: &str`, `bucket: &str`, `bucket_loc: &str` | `HashMap<String, ReleaseDesc>` | `anyhow::Error` | lists all `*.json` under `{bucket_loc}/` | [SRS-0100](requirements-cbscore-rs.md#srs-0100-release-listing-from-s3) |
-| REQ-0900 | `get_component_release_rpm` | `&CoreComponentLoc`, `el_version: i32` | `Option<String>` | `anyhow::Error` | runs release RPM script, returns RPM name | [SRS-0110](requirements-cbscore-rs.md#srs-0110-containerized-build-launch) |
-| REQ-0910 | `Builder::new` | `desc: VersionDescriptor`, `config: &Config`, `flags: BuildFlags` | `Builder` | `CbsError` | constructs builder, loads components, initializes `SecretsMgr` | [SRS-0110](requirements-cbscore-rs.md#srs-0110-containerized-build-launch) |
-| REQ-0920 | `Builder::run` | `&mut self` | `()` | `CbsError` | full pipeline: prepare -> check existing -> build RPMs -> sign -> upload -> container | [SRS-0110](requirements-cbscore-rs.md#srs-0110-containerized-build-launch) |
-| REQ-0930 | `build_rpms` | `opts: &BuildRpmsOpts` | `HashMap<String, ComponentBuild>` | `anyhow::Error` | parallel RPM build via `JoinSet` | [SRS-0110](requirements-cbscore-rs.md#srs-0110-containerized-build-launch) |
-| REQ-0940 | `sign_rpms` | `&SecretsMgr`, `gpg_key_id: &str`, `&HashMap<String, ComponentBuild>` | `()` | `anyhow::Error` | parallel GPG signing of all RPMs per component | [SRS-0110](requirements-cbscore-rs.md#srs-0110-containerized-build-launch) |
-| REQ-0950 | `s3_upload_rpms` | `ctx: &S3Context`, `bucket_loc`, `&HashMap<String, ComponentBuild>`, `el_version` | `HashMap<String, S3ComponentLocation>` | `anyhow::Error` | parallel upload of RPMs + repodata to S3 | [SRS-0110](requirements-cbscore-rs.md#srs-0110-containerized-build-launch) |
+| REQ-0900 | `get_component_release_rpm` | `&CoreComponentLoc`, `el_version: i32` | `Option<String>` | `anyhow::Error` | runs release RPM script, returns RPM name | [SRS-0150](requirements-cbscore-rs.md#srs-0150-rpm-package-building) |
+| REQ-0910 | `Builder::new` | `desc: VersionDescriptor`, `config: &Config`, `flags: BuildFlags` | `Builder` | `CbsError` | constructs builder, loads components, initializes `SecretsMgr` | [SRS-0150](requirements-cbscore-rs.md#srs-0150-rpm-package-building), [SRS-0140](requirements-cbscore-rs.md#srs-0140-three-level-artifact-caching) |
+| REQ-0920 | `Builder::run` | `&mut self` | `()` | `CbsError` | full pipeline: prepare -> check existing -> build RPMs -> sign -> upload -> container | [SRS-0150](requirements-cbscore-rs.md#srs-0150-rpm-package-building), [SRS-0140](requirements-cbscore-rs.md#srs-0140-three-level-artifact-caching), [SRS-0180](requirements-cbscore-rs.md#srs-0180-container-image-building) |
+| REQ-0930 | `build_rpms` | `opts: &BuildRpmsOpts` | `HashMap<String, ComponentBuild>` | `anyhow::Error` | parallel RPM build via `JoinSet` | [SRS-0150](requirements-cbscore-rs.md#srs-0150-rpm-package-building), [SRS-0320](requirements-cbscore-rs.md#srs-0320-parallel-component-builds) |
+| REQ-0940 | `sign_rpms` | `&SecretsMgr`, `gpg_key_id: &str`, `&HashMap<String, ComponentBuild>` | `()` | `anyhow::Error` | parallel GPG signing of all RPMs per component | [SRS-0160](requirements-cbscore-rs.md#srs-0160-rpm-signing) |
+| REQ-0950 | `s3_upload_rpms` | `ctx: &S3Context`, `bucket_loc`, `&HashMap<String, ComponentBuild>`, `el_version` | `HashMap<String, S3ComponentLocation>` | `anyhow::Error` | parallel upload of RPMs + repodata to S3 | [SRS-0170](requirements-cbscore-rs.md#srs-0170-s3-artifact-upload) |
 
 ```rust
 // releases/s3.rs
@@ -1525,15 +1525,15 @@ Implement container image construction (PRE/PACKAGES/POST/CONFIG stages via Buil
 
 | req-id | Function | Input | Output | Error | Example | srs-id |
 |--------|----------|-------|--------|-------|---------|--------|
-| REQ-0960 | `ContainerBuilder::new` | `desc: VersionDescriptor`, `release_desc: ReleaseDesc`, `components: HashMap<String, CoreComponentLoc>` | `ContainerBuilder` | -- | constructs builder with no container yet | [SRS-0110](requirements-cbscore-rs.md#srs-0110-containerized-build-launch), [SRS-0120](requirements-cbscore-rs.md#srs-0120-graceful-cancellation), [SRS-0130](requirements-cbscore-rs.md#srs-0130-build-timeout) |
+| REQ-0960 | `ContainerBuilder::new` | `desc: VersionDescriptor`, `release_desc: ReleaseDesc`, `components: HashMap<String, CoreComponentLoc>` | `ContainerBuilder` | -- | constructs builder with no container yet | [SRS-0180](requirements-cbscore-rs.md#srs-0180-container-image-building) |
 | REQ-0970 | `ContainerBuilder::build` | `&mut self` | `()` | `anyhow::Error` | resolves components, creates buildah container, applies PRE/PACKAGES/POST/CONFIG | [SRS-0180](requirements-cbscore-rs.md#srs-0180-container-image-building) |
 | REQ-0980 | `ContainerBuilder::finish` | `&mut self`, `&SecretsMgr`, `sign_with_transit: Option<&str>` | `()` | `anyhow::Error` | commits, pushes, and optionally signs the image | [SRS-0180](requirements-cbscore-rs.md#srs-0180-container-image-building) |
 | REQ-0990 | `ComponentContainer::new` | `component_loc: &CoreComponentLoc`, `version: &str`, `vars: Option<&HashMap<String, String>>` | `ComponentContainer` | `anyhow::Error` | loads best-match `container.yaml` with variable substitution | [SRS-0180](requirements-cbscore-rs.md#srs-0180-container-image-building) |
 | REQ-1000 | `ContainerDescriptor::load` | `path: &Path`, `vars: Option<&HashMap<String, String>>` | `ContainerDescriptor` | `anyhow::Error` | `"container.yaml"` with `{version}` -> substituted + parsed YAML | [SRS-0180](requirements-cbscore-rs.md#srs-0180-container-image-building), [SRS-0190](requirements-cbscore-rs.md#srs-0190-container-image-signing) |
 | REQ-1010 | `substitute_vars` | `template: &str`, `vars: &HashMap<String, String>` | `String` | `anyhow::Error` | `"v{version}-el{el}"` with `{"version":"18.2.4","el":"9"}` -> `"v18.2.4-el9"` | [SRS-0180](requirements-cbscore-rs.md#srs-0180-container-image-building) |
-| REQ-1020 | `runner` | `desc_file_path`, `cbscore_path`, `config`, `opts: RunnerOpts` | `()` | `CbsError` | launches Podman container with volume mounts, runs entrypoint | [SRS-0230](requirements-cbscore-rs.md#srs-0230-async-runner-bridge) |
-| REQ-1030 | `gen_run_name` | `prefix: &str` | `String` | -- | `"ces_"` -> `"ces_abcdefghij"` (10 random lowercase chars) | [SRS-0230](requirements-cbscore-rs.md#srs-0230-async-runner-bridge) |
-| REQ-1040 | `stop` | `name: Option<&str>`, `timeout: u32` | `()` | `anyhow::Error` | stops named container or all containers | [SRS-0230](requirements-cbscore-rs.md#srs-0230-async-runner-bridge) |
+| REQ-1020 | `runner` | `desc_file_path`, `cbscore_path`, `config`, `opts: RunnerOpts` | `()` | `CbsError` | launches Podman container with volume mounts, runs entrypoint | [SRS-0110](requirements-cbscore-rs.md#srs-0110-containerized-build-launch), [SRS-0120](requirements-cbscore-rs.md#srs-0120-graceful-cancellation), [SRS-0130](requirements-cbscore-rs.md#srs-0130-build-timeout), [SRS-0230](requirements-cbscore-rs.md#srs-0230-async-runner-bridge), [SRS-0430](requirements-cbscore-rs.md#srs-0430-container-deployability), [SRS-0450](requirements-cbscore-rs.md#srs-0450-cbsdebug-environment-variable), [SRS-0470](requirements-cbscore-rs.md#srs-0470-tls-verification-pass-through) |
+| REQ-1030 | `gen_run_name` | `prefix: &str` | `String` | -- | `"ces_"` -> `"ces_abcdefghij"` (10 random lowercase chars) | [SRS-0230](requirements-cbscore-rs.md#srs-0230-async-runner-bridge), [SRS-0460](requirements-cbscore-rs.md#srs-0460-container-run-name-management) |
+| REQ-1040 | `stop` | `name: Option<&str>`, `timeout: u32` | `()` | `anyhow::Error` | stops named container or all containers | [SRS-0230](requirements-cbscore-rs.md#srs-0230-async-runner-bridge), [SRS-0460](requirements-cbscore-rs.md#srs-0460-container-run-name-management) |
 
 ```rust
 // containers/build.rs
@@ -1760,7 +1760,10 @@ Each CLI handler is now implemented in the phase where its library dependencies 
 | [SRS-0210](requirements-cbscore-rs.md#srs-0210-exception-hierarchy-preservation) | Exception hierarchy preservation | REQ-0010, REQ-0020 |
 | [SRS-0220](requirements-cbscore-rs.md#srs-0220-pydantic-model-compatibility) | Pydantic model compatibility | REQ-0080, REQ-0090 (note: Pydantic integration has no dedicated REQ-ID) |
 | [SRS-0230](requirements-cbscore-rs.md#srs-0230-async-runner-bridge) | Async runner bridge | REQ-1020, REQ-1030, REQ-1040 |
-| [SRS-0440](requirements-cbscore-rs.md#srs-0440-secrets-resolution-subsystem) | Secrets resolution subsystem | REQ-0230 – REQ-0270, REQ-0340 |
+| [SRS-0440](requirements-cbscore-rs.md#srs-0440-secrets-resolution-subsystem) | Secrets resolution subsystem | REQ-0230 – REQ-0270, REQ-0330 – REQ-0440 |
+| [SRS-0450](requirements-cbscore-rs.md#srs-0450-cbsdebug-environment-variable) | CBS_DEBUG env var propagation | REQ-1020 |
+| [SRS-0460](requirements-cbscore-rs.md#srs-0460-container-run-name-management) | Container run name management | REQ-1030, REQ-1040 |
+| [SRS-0470](requirements-cbscore-rs.md#srs-0470-tls-verification-pass-through) | TLS verification pass-through | REQ-1020 |
 
 ### Non-Functional Requirements → Plan REQ-IDs
 
