@@ -2,7 +2,6 @@
 
 > **Document type:** Software Requirements Specification (SRS)
 > **Status:** Draft
-> **Traces to:** [plan-cbscore-rs.md](plan-cbscore-rs.md) (REQ-NNNN), [feature-cbscore-rs.md](feature-cbscore-rs.md)
 
 ## Table of Contents
 
@@ -24,7 +23,6 @@
   - [4.6 Deployment](#46-deployment)
 - [5. External System Integrations](#5-external-system-integrations)
 - [6. Constraints](#6-constraints)
-- [7. Traceability Matrix](#7-traceability-matrix)
 
 ---
 
@@ -87,8 +85,6 @@ The system SHALL provide an interactive wizard (`cbsbuild config init`) that gen
 - Confirms before overwriting an existing file
 - Enforces `.yaml` file extension
 
-**Traces to:** REQ-0200, REQ-0210
-
 ---
 
 #### SRS-0020: Batch Configuration Shortcuts
@@ -99,8 +95,6 @@ The system SHALL support non-interactive configuration via shortcut flags that p
 - `--for-systemd-install` pre-fills container-standard paths and writes to `~/.config/cbsd/<deployment>/worker/cbscore.config.yaml`
 - `--for-containerized-run` pre-fills the same container-standard paths using the default config path
 - Pre-filled paths: `/cbs/components`, `/cbs/scratch`, `/var/lib/containers`, `/cbs/ccache`, `/cbs/config/vault.yaml`, `/cbs/config/secrets.yaml`
-
-**Traces to:** REQ-0200, REQ-0210
 
 ---
 
@@ -116,8 +110,6 @@ The system SHALL provide a standalone wizard (`cbsbuild config init-vault`) for 
 - Asks for overwrite confirmation if the target file exists without `--vault`
 - Serializes to YAML with keys: `vault-addr`, `auth-user`, `auth-approle`, or `auth-token`
 
-**Traces to:** REQ-0220
-
 ---
 
 #### SRS-0040: Configuration Loading and Storage
@@ -131,8 +123,6 @@ The system SHALL load and store configuration from YAML files with hyphenated fi
 - All config sections are optional (paths, storage, signing, vault, secrets, logging)
 - `Config::get_secrets()` loads and merges all secrets files referenced in the config
 - `Config::get_vault_config()` loads vault configuration from the referenced path
-
-**Traces to:** REQ-0170, REQ-0180, REQ-0190, REQ-0230, REQ-0240
 
 ---
 
@@ -149,8 +139,6 @@ The system SHALL parse version strings matching the pattern `[prefix-][v]M[.m[.p
 - Invalid inputs (e.g., `"ces-v"`, `"abc"`, `""`) return an error
 - All 33 parse test cases and 19 normalize test cases from the Python codebase pass
 
-**Traces to:** REQ-0040, REQ-0050
-
 ---
 
 #### SRS-0060: Version Normalization
@@ -162,8 +150,6 @@ The system SHALL normalize version strings by ensuring the `v` prefix is present
 - `"ces-v99.99.1"` normalizes to `"ces-v99.99.1"` (unchanged)
 - `"ces-v99"` is rejected (missing minor)
 - `"99"` is rejected (missing minor)
-
-**Traces to:** REQ-0050
 
 ---
 
@@ -181,8 +167,6 @@ The system SHALL create version descriptor JSON files declaring what to build, i
 - Fails if the output file already exists (no overwrites)
 - Warns (non-fatal) if no matching image descriptor exists
 
-**Traces to:** REQ-0060, REQ-0070, REQ-0080, REQ-0090, REQ-0100, REQ-0110, REQ-0120, REQ-0130, REQ-0140
-
 ---
 
 #### SRS-0080: Component Definition Loading
@@ -194,8 +178,6 @@ The system SHALL load core component definitions from `cbs.component.yaml` files
 - Each component has: name, git repository location (URL + optional path), local build location
 - Components are identified by directory name
 - Multiple component paths can be specified (merged)
-
-**Traces to:** REQ-0100, REQ-0110
 
 ---
 
@@ -209,8 +191,6 @@ The system SHALL classify version strings into types: release, dev, test, ci.
 - `"test"` maps to Test type
 - `"ci"` maps to CI type
 - Unknown type names return an error
-
-**Traces to:** REQ-0060
 
 ---
 
@@ -226,8 +206,6 @@ The system SHALL list published releases from an S3-compatible object store.
 - In verbose mode (`-v`), displays per-architecture details: build type, OS version, components with versions, SHA1s, repo URLs, and artifact locations
 - Malformed JSON entries are skipped with a warning (not a crash)
 - `--from` overrides the S3 URL from config
-
-**Traces to:** REQ-0880, REQ-0890
 
 ---
 
@@ -246,8 +224,6 @@ The system SHALL launch a containerized build pipeline (`cbsbuild build`) that p
 - Launches Podman with correct volume mounts (descriptor, cbscore, entrypoint, config, secrets, vault, scratch, containers storage, components, ccache, logs)
 - Podman runs with: `--security-opt label=disable`, `--security-opt seccomp=unconfined` (if applicable), `--device /dev/fuse`, host networking
 
-**Traces to:** REQ-0900, REQ-0910, REQ-0920, REQ-0930, REQ-0940, REQ-0950, REQ-0960
-
 ---
 
 #### SRS-0120: Graceful Cancellation
@@ -260,8 +236,6 @@ The system SHALL handle Ctrl+C gracefully during builds, stopping the container 
 - Temporary files (secrets, config, components dir) are cleaned up
 - No orphaned Podman containers remain after cancellation
 
-**Traces to:** REQ-0960
-
 ---
 
 #### SRS-0130: Build Timeout
@@ -272,8 +246,6 @@ The system SHALL enforce a configurable timeout on the build process.
 - Default timeout: 14,400 seconds (4 hours)
 - Overridable via `--timeout` CLI flag
 - On timeout expiry, the container is stopped and an error is reported
-
-**Traces to:** REQ-0960
 
 ---
 
@@ -289,8 +261,6 @@ The system SHALL check for existing artifacts before each build stage to avoid r
 - **Level 3 (Component):** If individual component RPMs exist in S3 for the correct version/architecture/OS, reuse them
 - `--force` bypasses Level 2 and 3 caches (not Level 1)
 
-**Traces to:** REQ-0830, REQ-0840, REQ-0850, REQ-0860
-
 ---
 
 #### SRS-0150: RPM Package Building
@@ -303,8 +273,6 @@ The system SHALL build RPM packages from component source code.
 - Supports ccache integration if configured
 - `--skip-build` flag skips RPM compilation entirely
 - Build failures for any component halt the pipeline with a clear error
-
-**Traces to:** REQ-0860, REQ-0870
 
 ---
 
@@ -319,8 +287,6 @@ The system SHALL sign RPM packages with GPG if a signing key is configured.
 - GPG keyring created in a temporary directory, deleted after use
 - Signing is skipped (with warning) if no GPG key is configured
 
-**Traces to:** REQ-0870
-
 ---
 
 #### SRS-0170: S3 Artifact Upload
@@ -332,8 +298,6 @@ The system SHALL upload build artifacts (RPMs, release descriptors) to S3.
 - Uploads release descriptor JSON to the releases bucket
 - Supports public ACL on uploaded objects
 - Upload failures report the S3 location and error details
-
-**Traces to:** REQ-0830, REQ-0840, REQ-0850, REQ-0880
 
 ---
 
@@ -348,8 +312,6 @@ The system SHALL build container images using Buildah from the built RPM package
 - Commits the container image with `--squash`
 - Pushes to the configured registry with authentication
 
-**Traces to:** REQ-0970, REQ-0980, REQ-0990, REQ-1000, REQ-1010
-
 ---
 
 #### SRS-0190: Container Image Signing
@@ -362,8 +324,6 @@ The system SHALL sign container images using cosign with Vault Transit if transi
 - Uploads the signature to the image registry
 - Signing is skipped (with warning) if no transit key is configured
 - Signing failures are reported as errors (build is not considered successful)
-
-**Traces to:** REQ-1000
 
 ---
 
@@ -380,8 +340,6 @@ The system SHALL provide Python bindings (via PyO3) that allow existing Python c
 - `crt` can import: `parse_version()`
 - All imports use existing module paths (e.g., `from cbscore.versions.utils import parse_version`)
 
-**Traces to:** REQ-0010 through REQ-1040 (all public interfaces)
-
 ---
 
 #### SRS-0210: Exception Hierarchy Preservation
@@ -394,8 +352,6 @@ The system SHALL map Rust error types to Python exception classes matching the e
 - `raise CESError("test")` works from Python
 - `except MalformedVersionError` catches malformed version errors from Rust
 
-**Traces to:** REQ-0010, REQ-0020
-
 ---
 
 #### SRS-0220: Pydantic Model Compatibility
@@ -406,8 +362,6 @@ The system SHALL ensure `VersionDescriptor` is usable as a Pydantic model field 
 - `VersionDescriptor` implements `__get_pydantic_core_schema__` for Pydantic V2 integration
 - `model_dump_json()` produces valid JSON
 - Round-trip: construct in Python, serialize to JSON, deserialize back — fields preserved
-
-**Traces to:** REQ-0080, REQ-0090
 
 ---
 
@@ -420,8 +374,6 @@ The system SHALL expose the `runner()` function as an async Python function call
 - Log callbacks fire during execution (not batched until completion)
 - GIL is released during long-running Rust operations
 - Cancellation via Python (e.g., `task.cancel()`) propagates to the Rust side
-
-**Traces to:** REQ-1020, REQ-1030, REQ-1040
 
 ---
 
@@ -714,60 +666,3 @@ The system SHALL run inside Podman containers for the container-side build pipel
 - Release descriptors: JSON with snake_case field names
 - Secrets: YAML with discriminated unions (dispatched on `creds` and `type` fields)
 - Component definitions: YAML (`cbs.component.yaml`)
-
----
-
-## 7. Traceability Matrix
-
-### Functional Requirements → Plan REQ-IDs
-
-| SRS ID | Requirement | Plan REQ-IDs |
-|--------|-------------|-------------|
-| SRS-0010 | Interactive config wizard | REQ-0200, REQ-0210 |
-| SRS-0020 | Batch config shortcuts | REQ-0200, REQ-0210 |
-| SRS-0030 | Vault auth configuration | REQ-0220 |
-| SRS-0040 | Config load/store | REQ-0170 – REQ-0240 |
-| SRS-0050 | Version string parsing | REQ-0040, REQ-0050 |
-| SRS-0060 | Version normalization | REQ-0050 |
-| SRS-0070 | Version descriptor creation | REQ-0060 – REQ-0140 |
-| SRS-0080 | Component definition loading | REQ-0100, REQ-0110 |
-| SRS-0090 | Version type classification | REQ-0060 |
-| SRS-0100 | Release listing from S3 | REQ-0880, REQ-0890 |
-| SRS-0110 | Containerized build launch | REQ-0900 – REQ-0960 |
-| SRS-0120 | Graceful cancellation | REQ-0960 |
-| SRS-0130 | Build timeout | REQ-0960 |
-| SRS-0140 | Three-level artifact caching | REQ-0830 – REQ-0860 |
-| SRS-0150 | RPM package building | REQ-0860, REQ-0870 |
-| SRS-0160 | RPM signing | REQ-0870 |
-| SRS-0170 | S3 artifact upload | REQ-0830 – REQ-0880 |
-| SRS-0180 | Container image building | REQ-0970 – REQ-1010 |
-| SRS-0190 | Container image signing | REQ-1000 |
-| SRS-0200 | Python FFI bindings | REQ-0010 – REQ-1040 |
-| SRS-0210 | Exception hierarchy preservation | REQ-0010, REQ-0020 |
-| SRS-0220 | Pydantic model compatibility | REQ-0080, REQ-0090 |
-| SRS-0230 | Async runner bridge | REQ-1020 – REQ-1040 |
-
-### Non-Functional Requirements → Capabilities
-
-| SRS ID | Requirement | Applies to |
-|--------|-------------|-----------|
-| SRS-0240 | CLI compatibility | All subcommands |
-| SRS-0250 | Config file compatibility | Configuration management |
-| SRS-0260 | JSON format compatibility | Version/release descriptors |
-| SRS-0270 | Python import path preservation | Python interoperability |
-| SRS-0280 | Secret masking in logs | Security (all phases) |
-| SRS-0290 | Temporary credential cleanup | Security (build, signing) |
-| SRS-0300 | Vault token handling | Security (vault integration) |
-| SRS-0310 | Container security options | Build execution |
-| SRS-0320 | Parallel component builds | Build orchestration |
-| SRS-0330 | Parallel S3 operations | Release discovery |
-| SRS-0340 | Build timeout compliance | Build execution |
-| SRS-0350 | Structured logging | Observability (all phases) |
-| SRS-0360 | Python logging integration | Python interoperability |
-| SRS-0370 | Subprocess output streaming | Observability (builds) |
-| SRS-0380 | Build parameter logging | Observability (builds) |
-| SRS-0390 | Idempotent build operations | Reliability (builds) |
-| SRS-0400 | Graceful error recovery | Reliability (all phases) |
-| SRS-0410 | Resource cleanup on failure | Reliability (all phases) |
-| SRS-0420 | Dual installation methods | Deployment |
-| SRS-0430 | Container deployability | Deployment |

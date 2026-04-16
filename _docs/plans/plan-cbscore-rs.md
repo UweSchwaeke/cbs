@@ -74,11 +74,11 @@ Define the public error hierarchy and logging setup so all subsequent phases hav
 
 #### Public Interface
 
-| req-id | Function / Type | Input | Output | Error | Example |
-|--------|-----------------|-------|--------|-------|---------|
-| REQ-0010 | `CbsError` enum | N/A (type definition) | N/A | N/A | `CbsError::Config("file not found".into())` |
-| REQ-0020 | `init_logging` | `verbose: bool` | `()` | N/A | `init_logging(false)` sets INFO; `init_logging(true)` sets DEBUG |
-| REQ-0030 | `set_debug_logging` | `()` | `()` | N/A | `set_debug_logging()` switches tracing to DEBUG level at runtime |
+| req-id | Function / Type | Input | Output | Error | Example | srs-id |
+|--------|-----------------|-------|--------|-------|---------|--------|
+| REQ-0010 | `CbsError` enum | N/A (type definition) | N/A | N/A | `CbsError::Config("file not found".into())` | SRS-0210 |
+| REQ-0020 | `init_logging` | `verbose: bool` | `()` | N/A | `init_logging(false)` sets INFO; `init_logging(true)` sets DEBUG | SRS-0210 |
+| REQ-0030 | `set_debug_logging` | `()` | `()` | N/A | `set_debug_logging()` switches tracing to DEBUG level at runtime | SRS-0200 |
 
 ```rust
 // cbscore-lib/src/types/errors.rs
@@ -151,14 +151,14 @@ Implement version parsing/normalization utilities, the version descriptor type, 
 
 **Version utilities** (`cbscore-lib/src/types/versions/utils.rs`):
 
-| req-id | Function | Input | Output | Error | Example |
-|--------|----------|-------|--------|-------|---------|
-| REQ-0040 | `parse_version` | `version: &str` | `ParsedVersion` | `anyhow::Error` | `"ces-v99.99.1-asd"` -> `ParsedVersion { prefix: Some("ces"), major: "99", minor: Some("99"), patch: Some("1"), suffix: Some("asd") }` |
-| REQ-0050 | `normalize_version` | `version: &str` | `String` | `anyhow::Error` | `"ces-99.99.1-asd"` -> `"ces-v99.99.1-asd"` |
-| REQ-0060 | `get_version_type` | `type_name: &str` | `VersionType` | `anyhow::Error` | `"release"` -> `VersionType::Release` |
-| REQ-0070 | `parse_component_refs` | `components: &[String]` | `HashMap<String, String>` | `anyhow::Error` | `["ceph@v18.2.4"]` -> `{"ceph": "v18.2.4"}` |
-| REQ-0080 | `get_major_version` | `version: &str` | `String` | `anyhow::Error` | `"ces-v18.2.4"` -> `"18.2"` |
-| REQ-0090 | `get_minor_version` | `version: &str` | `Option<String>` | `anyhow::Error` | `"ces-v18.2.4"` -> `Some("18.2.4")` |
+| req-id | Function | Input | Output | Error | Example | srs-id |
+|--------|----------|-------|--------|-------|---------|--------|
+| REQ-0040 | `parse_version` | `version: &str` | `ParsedVersion` | `anyhow::Error` | `"ces-v99.99.1-asd"` -> `ParsedVersion { prefix: Some("ces"), major: "99", minor: Some("99"), patch: Some("1"), suffix: Some("asd") }` | SRS-0050 |
+| REQ-0050 | `normalize_version` | `version: &str` | `String` | `anyhow::Error` | `"ces-99.99.1-asd"` -> `"ces-v99.99.1-asd"` | SRS-0050, SRS-0060 |
+| REQ-0060 | `get_version_type` | `type_name: &str` | `VersionType` | `anyhow::Error` | `"release"` -> `VersionType::Release` | SRS-0070, SRS-0090 |
+| REQ-0070 | `parse_component_refs` | `components: &[String]` | `HashMap<String, String>` | `anyhow::Error` | `["ceph@v18.2.4"]` -> `{"ceph": "v18.2.4"}` | SRS-0070 |
+| REQ-0080 | `get_major_version` | `version: &str` | `String` | `anyhow::Error` | `"ces-v18.2.4"` -> `"18.2"` | SRS-0070, SRS-0220 |
+| REQ-0090 | `get_minor_version` | `version: &str` | `Option<String>` | `anyhow::Error` | `"ces-v18.2.4"` -> `Some("18.2.4")` | SRS-0070, SRS-0220 |
 
 ```rust
 // cbscore-lib/src/types/versions/utils.rs
@@ -222,10 +222,10 @@ Test vectors from Python inline tests (33 cases for `parse_version`, 19 for `nor
 
 **Version descriptor** (`cbscore-lib/src/types/versions/desc.rs`):
 
-| req-id | Function | Input | Output | Error | Example |
-|--------|----------|-------|--------|-------|---------|
-| REQ-0100 | `VersionDescriptor::read` | `path: &Path` | `VersionDescriptor` | `anyhow::Error` | reads JSON file |
-| REQ-0110 | `VersionDescriptor::write` | `&self, path: &Path` | `()` | `anyhow::Error` | writes JSON with indent=2 |
+| req-id | Function | Input | Output | Error | Example | srs-id |
+|--------|----------|-------|--------|-------|---------|--------|
+| REQ-0100 | `VersionDescriptor::read` | `path: &Path` | `VersionDescriptor` | `anyhow::Error` | reads JSON file | SRS-0070, SRS-0080 |
+| REQ-0110 | `VersionDescriptor::write` | `&self, path: &Path` | `()` | `anyhow::Error` | writes JSON with indent=2 | SRS-0070, SRS-0080 |
 
 ```rust
 // cbscore-lib/src/types/versions/desc.rs
@@ -270,10 +270,10 @@ impl VersionDescriptor {
 
 **Core components** (`cbscore-lib/src/types/core/component.rs`):
 
-| req-id | Function | Input | Output | Error | Example |
-|--------|----------|-------|--------|-------|---------|
-| REQ-0120 | `CoreComponent::load` | `path: &Path` | `CoreComponent` | `CbsError::Other` (anyhow) | loads `cbs.component.yaml` |
-| REQ-0130 | `load_components` | `paths: &[PathBuf]` | `HashMap<String, CoreComponentLoc>` | N/A (logs and skips errors) | scans directories for `cbs.component.yaml` files |
+| req-id | Function | Input | Output | Error | Example | srs-id |
+|--------|----------|-------|--------|-------|---------|--------|
+| REQ-0120 | `CoreComponent::load` | `path: &Path` | `CoreComponent` | `CbsError::Other` (anyhow) | loads `cbs.component.yaml` | SRS-0070 |
+| REQ-0130 | `load_components` | `paths: &[PathBuf]` | `HashMap<String, CoreComponentLoc>` | N/A (logs and skips errors) | scans directories for `cbs.component.yaml` files | SRS-0070 |
 
 ```rust
 // cbscore-lib/src/types/core/component.rs
@@ -321,9 +321,9 @@ pub fn load_components(paths: &[PathBuf]) -> HashMap<String, CoreComponentLoc>;
 
 **Version creation** (`cbscore-lib/src/versions/create.rs`):
 
-| req-id | Function | Input | Output | Error | Example |
-|--------|----------|-------|--------|-------|---------|
-| REQ-0140 | `version_create_helper` | `req: &VersionCreateRequest` | `VersionDescriptor` | `CbsError::MalformedVersion`, `CbsError::Version` | creates a version descriptor from component refs and metadata |
+| req-id | Function | Input | Output | Error | Example | srs-id |
+|--------|----------|-------|--------|-------|---------|--------|
+| REQ-0140 | `version_create_helper` | `req: &VersionCreateRequest` | `VersionDescriptor` | `CbsError::MalformedVersion`, `CbsError::Version` | creates a version descriptor from component refs and metadata | SRS-0070 |
 
 ```rust
 // cbscore-lib/src/versions/create.rs
@@ -375,14 +375,14 @@ Implement the full configuration model hierarchy with YAML serialization, `load`
 
 **Config types** (`cbscore-lib/src/types/config.rs`):
 
-| req-id | Function | Input | Output | Error | Example |
-|--------|----------|-------|--------|-------|---------|
-| REQ-0150 | `Config::load` | `path: &Path` | `Config` | `CbsError::Config` | `Config::load(Path::new("cbscore.config.yaml"))` |
-| REQ-0160 | `Config::store` | `&self, path: &Path` | `()` | `CbsError::Config` | writes YAML with kebab-case keys |
-| REQ-0170 | `VaultConfig::load` | `path: &Path` | `VaultConfig` | `CbsError::Config` | `VaultConfig::load(Path::new("vault.yaml"))` |
-| REQ-0180 | `VaultConfig::store` | `&self, path: &Path` | `()` | `CbsError::Config` | writes YAML vault config |
-| REQ-0190 | `Config::get_secrets` | `&self` | `Secrets` | `anyhow::Error` | loads + merges secrets from `config.secrets` paths |
-| REQ-0200 | `Config::get_vault_config` | `&self` | `Option<VaultConfig>` | `anyhow::Error` | loads from `config.vault` path, None if not set |
+| req-id | Function | Input | Output | Error | Example | srs-id |
+|--------|----------|-------|--------|-------|---------|--------|
+| REQ-0150 | `Config::load` | `path: &Path` | `Config` | `CbsError::Config` | `Config::load(Path::new("cbscore.config.yaml"))` | |
+| REQ-0160 | `Config::store` | `&self, path: &Path` | `()` | `CbsError::Config` | writes YAML with kebab-case keys | |
+| REQ-0170 | `VaultConfig::load` | `path: &Path` | `VaultConfig` | `CbsError::Config` | `VaultConfig::load(Path::new("vault.yaml"))` | SRS-0040 |
+| REQ-0180 | `VaultConfig::store` | `&self, path: &Path` | `()` | `CbsError::Config` | writes YAML vault config | SRS-0040 |
+| REQ-0190 | `Config::get_secrets` | `&self` | `Secrets` | `anyhow::Error` | loads + merges secrets from `config.secrets` paths | SRS-0040 |
+| REQ-0200 | `Config::get_vault_config` | `&self` | `Option<VaultConfig>` | `anyhow::Error` | loads from `config.vault` path, None if not set | SRS-0010, SRS-0020 |
 
 ```rust
 // cbscore-lib/src/types/config.rs
@@ -509,10 +509,10 @@ impl Config {
 
 **CLI config init** (`cbsbuild/src/cmds/config.rs`):
 
-| req-id | Function | Input | Output | Error | Example |
-|--------|----------|-------|--------|-------|---------|
-| REQ-0210 | `handle_config_init` | `config_path: &Path`, `args: ConfigInitArgs` | `()` (writes YAML to disk) | `anyhow::Error` | `cbsbuild config init --for-containerized-run` |
-| REQ-0220 | `handle_config_init_vault` | `args: ConfigInitVaultArgs` | `()` (prints result) | `anyhow::Error` | `cbsbuild config init-vault --vault vault.yaml` |
+| req-id | Function | Input | Output | Error | Example | srs-id |
+|--------|----------|-------|--------|-------|---------|--------|
+| REQ-0210 | `handle_config_init` | `config_path: &Path`, `args: ConfigInitArgs` | `()` (writes YAML to disk) | `anyhow::Error` | `cbsbuild config init --for-containerized-run` | SRS-0010, SRS-0020 |
+| REQ-0220 | `handle_config_init_vault` | `args: ConfigInitVaultArgs` | `()` (prints result) | `anyhow::Error` | `cbsbuild config init-vault --vault vault.yaml` | SRS-0030 |
 
 ```rust
 // cbsbuild/src/cmds/config.rs
@@ -561,13 +561,13 @@ Implement all 16 secret model structs, 4 discriminated union enums with custom d
 
 #### Public Interface
 
-| req-id | Function | Input | Output | Error | Example |
-|--------|----------|-------|--------|-------|---------|
-| REQ-0230 | `Secrets::load` | `path: &Path` (YAML or JSON) | `Secrets` | `anyhow::Error` | `Secrets::load("secrets.yaml")` loads 4 secret maps |
-| REQ-0240 | `Secrets::store` | `&self`, `path: &Path` | `()` | `anyhow::Error` | `secrets.store("out.yaml")` writes YAML |
-| REQ-0250 | `Secrets::merge` | `&mut self`, `other: Secrets` | `()` | -- | second secrets' entries override first's |
-| REQ-0260 | `find_best_secret_candidate` | `secrets: &[&'a str]`, `uri: &str` | `Option<&'a str>` | -- | `(["github.com", "github.com/ceph"], "github.com/ceph/ceph")` -> `Some("github.com/ceph")` |
-| REQ-0270 | `matches_uri` | `pattern: &str`, `uri: &str` | `UriMatch` | `anyhow::Error` | `("github.com", "https://github.com/ceph")` -> `Partial { remainder: "ceph" }` |
+| req-id | Function | Input | Output | Error | Example | srs-id |
+|--------|----------|-------|--------|-------|---------|--------|
+| REQ-0230 | `Secrets::load` | `path: &Path` (YAML or JSON) | `Secrets` | `anyhow::Error` | `Secrets::load("secrets.yaml")` loads 4 secret maps | SRS-0040 |
+| REQ-0240 | `Secrets::store` | `&self`, `path: &Path` | `()` | `anyhow::Error` | `secrets.store("out.yaml")` writes YAML | SRS-0040 |
+| REQ-0250 | `Secrets::merge` | `&mut self`, `other: Secrets` | `()` | -- | second secrets' entries override first's | SRS-0200 |
+| REQ-0260 | `find_best_secret_candidate` | `secrets: &[&'a str]`, `uri: &str` | `Option<&'a str>` | -- | `(["github.com", "github.com/ceph"], "github.com/ceph/ceph")` -> `Some("github.com/ceph")` | SRS-0200 |
+| REQ-0270 | `matches_uri` | `pattern: &str`, `uri: &str` | `UriMatch` | `anyhow::Error` | `("github.com", "https://github.com/ceph")` -> `Partial { remainder: "ceph" }` | SRS-0200 |
 
 ```rust
 // cbscore-lib/src/types/secrets/models.rs
@@ -728,13 +728,13 @@ Implement the Vault client (AppRole/UserPass/Token auth via `vaultrs`) and the s
 
 #### Public Interface
 
-| req-id | Function | Input | Output | Error | Example |
-|--------|----------|-------|--------|-------|---------|
-| REQ-0280 | `VaultClient::new` | `config: &VaultConfig` | `VaultClient` | `anyhow::Error` | from config with AppRole auth |
-| REQ-0290 | `VaultClient::read_secret` | `&self`, `path: &str` | `HashMap<String, String>` | `anyhow::Error` | `read_secret("ces-kv/data/git")` -> `{"ssh-key": "...", "username": "..."}` |
-| REQ-0300 | `VaultClient::check_connection` | `&self` | `()` | `anyhow::Error` | verifies vault reachable + auth valid |
-| REQ-0310 | `run_cmd` | `args: &[CmdArg]`, `env: Option<&HashMap<String, String>>` | `CmdResult` | `anyhow::Error` | `run_cmd(&[Plain("git"), Plain("status")], None)` -> `CmdResult { exit_code: 0, .. }` |
-| REQ-0320 | `sanitize_cmd` | `args: &[CmdArg]` | `Vec<String>` | -- | `[Plain("gpg"), Plain("--passphrase"), Plain("s3cret")]` -> `["gpg", "--passphrase", "****"]` |
+| req-id | Function | Input | Output | Error | Example | srs-id |
+|--------|----------|-------|--------|-------|---------|--------|
+| REQ-0280 | `VaultClient::new` | `config: &VaultConfig` | `VaultClient` | `anyhow::Error` | from config with AppRole auth | SRS-0200 |
+| REQ-0290 | `VaultClient::read_secret` | `&self`, `path: &str` | `HashMap<String, String>` | `anyhow::Error` | `read_secret("ces-kv/data/git")` -> `{"ssh-key": "...", "username": "..."}` | SRS-0200 |
+| REQ-0300 | `VaultClient::check_connection` | `&self` | `()` | `anyhow::Error` | verifies vault reachable + auth valid | SRS-0200 |
+| REQ-0310 | `run_cmd` | `args: &[CmdArg]`, `env: Option<&HashMap<String, String>>` | `CmdResult` | `anyhow::Error` | `run_cmd(&[Plain("git"), Plain("status")], None)` -> `CmdResult { exit_code: 0, .. }` | SRS-0200 |
+| REQ-0320 | `sanitize_cmd` | `args: &[CmdArg]` | `Vec<String>` | -- | `[Plain("gpg"), Plain("--passphrase"), Plain("s3cret")]` -> `["gpg", "--passphrase", "****"]` | SRS-0200 |
 
 ```rust
 // cbscore-lib/src/vault.rs
@@ -813,20 +813,20 @@ Complete the async command executor with streaming, timeout, and cancellation; i
 
 #### Public Interface
 
-| req-id | Function | Input | Output | Error | Example |
-|--------|----------|-------|--------|-------|---------|
-| REQ-0330 | `async_run_cmd` | `args: &[CmdArg]`, `opts: &CmdOpts` | `CmdResult` | `anyhow::Error` | `async_run_cmd(&[Plain("echo"), Plain("hi")], &default_opts)` -> `CmdResult { exit_code: 0, .. }` |
-| REQ-0340 | `SecretsMgr::new` | `secrets: Secrets`, `vault_config: Option<&VaultConfig>` | `SecretsMgr` | `anyhow::Error` | constructs vault client + verifies connection |
-| REQ-0350 | `SecretsMgr::git_url_for` | `&self`, `url: &str` | `GitUrlGuard` | `anyhow::Error` | `git_url_for("https://github.com/ceph/ceph")` -> guard with SSH or HTTPS URL |
-| REQ-0360 | `SecretsMgr::s3_creds` (async) | `&self`, `url: &str` | `S3Credentials` | `anyhow::Error` | `s3_creds("s3.example.com")` -> `S3Credentials { host, access_id, secret_id }` |
-| REQ-0370 | `SecretsMgr::gpg_signing_key` (async) | `&self`, `id: &str` | `GpgKeyringGuard` | `anyhow::Error` | guard yields `(keyring_path, passphrase, email)` |
-| REQ-0380 | `SecretsMgr::transit` | `&self`, `id: &str` | `TransitKeyInfo` | `anyhow::Error` | `transit("cosign")` -> `TransitKeyInfo { mount: "transit-mount", key: "cosign-key" }` |
-| REQ-0390 | `SecretsMgr::registry_creds` (async) | `&self`, `uri: &str` | `RegistryCredentials` | `anyhow::Error` | `registry_creds("harbor.example.com/proj")` -> `RegistryCredentials { address: "harbor.example.com", username: "user", password: "pass" }` |
-| REQ-0400 | `SecretsMgr::has_vault` | `&self` | `bool` | -- | `true` if vault client is configured |
-| REQ-0410 | `SecretsMgr::has_s3_creds` | `&self`, `url: &str` | `bool` | -- | checks storage map for url |
-| REQ-0420 | `SecretsMgr::has_gpg_signing_key` | `&self`, `id: &str` | `bool` | -- | `true` for GPGPlain/VaultSingle/VaultPrivateKey variants |
-| REQ-0430 | `SecretsMgr::has_transit_key` | `&self`, `id: &str` | `bool` | -- | `true` for VaultTransit variant |
-| REQ-0440 | `SecretsMgr::has_registry_creds` | `&self`, `id: &str` | `bool` | -- | checks registry map for id |
+| req-id | Function | Input | Output | Error | Example | srs-id |
+|--------|----------|-------|--------|-------|---------|--------|
+| REQ-0330 | `async_run_cmd` | `args: &[CmdArg]`, `opts: &CmdOpts` | `CmdResult` | `anyhow::Error` | `async_run_cmd(&[Plain("echo"), Plain("hi")], &default_opts)` -> `CmdResult { exit_code: 0, .. }` | SRS-0200 |
+| REQ-0340 | `SecretsMgr::new` | `secrets: Secrets`, `vault_config: Option<&VaultConfig>` | `SecretsMgr` | `anyhow::Error` | constructs vault client + verifies connection | SRS-0200 |
+| REQ-0350 | `SecretsMgr::git_url_for` | `&self`, `url: &str` | `GitUrlGuard` | `anyhow::Error` | `git_url_for("https://github.com/ceph/ceph")` -> guard with SSH or HTTPS URL | SRS-0200 |
+| REQ-0360 | `SecretsMgr::s3_creds` (async) | `&self`, `url: &str` | `S3Credentials` | `anyhow::Error` | `s3_creds("s3.example.com")` -> `S3Credentials { host, access_id, secret_id }` | SRS-0200 |
+| REQ-0370 | `SecretsMgr::gpg_signing_key` (async) | `&self`, `id: &str` | `GpgKeyringGuard` | `anyhow::Error` | guard yields `(keyring_path, passphrase, email)` | SRS-0200 |
+| REQ-0380 | `SecretsMgr::transit` | `&self`, `id: &str` | `TransitKeyInfo` | `anyhow::Error` | `transit("cosign")` -> `TransitKeyInfo { mount: "transit-mount", key: "cosign-key" }` | SRS-0200 |
+| REQ-0390 | `SecretsMgr::registry_creds` (async) | `&self`, `uri: &str` | `RegistryCredentials` | `anyhow::Error` | `registry_creds("harbor.example.com/proj")` -> `RegistryCredentials { address: "harbor.example.com", username: "user", password: "pass" }` | SRS-0200 |
+| REQ-0400 | `SecretsMgr::has_vault` | `&self` | `bool` | -- | `true` if vault client is configured | SRS-0200 |
+| REQ-0410 | `SecretsMgr::has_s3_creds` | `&self`, `url: &str` | `bool` | -- | checks storage map for url | SRS-0200 |
+| REQ-0420 | `SecretsMgr::has_gpg_signing_key` | `&self`, `id: &str` | `bool` | -- | `true` for GPGPlain/VaultSingle/VaultPrivateKey variants | SRS-0200 |
+| REQ-0430 | `SecretsMgr::has_transit_key` | `&self`, `id: &str` | `bool` | -- | `true` for VaultTransit variant | SRS-0200 |
+| REQ-0440 | `SecretsMgr::has_registry_creds` | `&self`, `id: &str` | `bool` | -- | checks registry map for id | SRS-0200 |
 
 ```rust
 // cbscore-lib/src/cmd.rs (complete -- async added)
@@ -1015,21 +1015,21 @@ All git async operations (clone, checkout, worktree, fetch, etc.)
 
 ##### Public Interface (7a)
 
-| req-id | Function | Input | Output | Error | Example |
-|--------|----------|-------|--------|-------|---------|
-| REQ-0450 | `run_git` | `args: &[CmdArg]`, `path: Option<&Path>` | `String` (stdout) | `anyhow::Error` | `run_git(&[Plain("status")], Some(repo_path))` |
-| REQ-0460 | `get_git_user` | -- | `GitUser` | `anyhow::Error` | `()` -> `GitUser { name: "John Doe", email: "john@example.com" }` |
-| REQ-0470 | `get_git_repo_root` | -- | `PathBuf` | `anyhow::Error` | `()` -> `/home/user/repo` |
-| REQ-0480 | `get_git_modified_paths` | `base_sha: &str`, `r#ref: &str`, `in_repo_path: Option<&str>`, `repo_path: Option<&Path>` | `GitModifiedPaths` | `anyhow::Error` | returns modified and deleted paths |
-| REQ-0490 | `git_clone` | `repo: CmdArg`, `base_path: &Path`, `repo_name: &str` | `PathBuf` | `anyhow::Error` | clones mirror or updates existing; returns repo path |
-| REQ-0500 | `git_checkout` | `repo_path: &Path`, `r#ref: &str`, `worktrees_base: &Path` | `PathBuf` | `anyhow::Error` | creates worktree; returns worktree path |
-| REQ-0510 | `git_remove_worktree` | `repo_path: &Path`, `worktree_path: &Path` | `()` | `anyhow::Error` | force-removes a worktree |
-| REQ-0520 | `git_fetch` | `remote: &str`, `from_ref: &str`, `to_branch: &str`, `repo_path: Option<&Path>` | `()` | `anyhow::Error` | fetches ref from remote to local branch |
-| REQ-0530 | `git_pull` | `remote: CmdArg`, `from_branch: Option<&str>`, `to_branch: Option<&str>`, `repo_path: Option<&Path>` | `()` | `anyhow::Error` | pulls from remote |
-| REQ-0540 | `git_cherry_pick` | `sha: &str`, `sha_end: Option<&str>`, `repo_path: Option<&Path>` | `()` | `anyhow::Error` | cherry-picks commit(s) |
-| REQ-0550 | `git_apply` | `repo_path: &Path`, `patch_path: &Path` | `()` | `anyhow::Error` | applies patch file |
-| REQ-0560 | `git_get_sha1` | `repo_path: &Path` | `String` | `anyhow::Error` | returns HEAD sha1 |
-| REQ-0570 | `git_get_current_branch` | `repo_path: &Path` | `String` | `anyhow::Error` | returns current branch name |
+| req-id | Function | Input | Output | Error | Example | srs-id |
+|--------|----------|-------|--------|-------|---------|--------|
+| REQ-0450 | `run_git` | `args: &[CmdArg]`, `path: Option<&Path>` | `String` (stdout) | `anyhow::Error` | `run_git(&[Plain("status")], Some(repo_path))` | SRS-0200 |
+| REQ-0460 | `get_git_user` | -- | `GitUser` | `anyhow::Error` | `()` -> `GitUser { name: "John Doe", email: "john@example.com" }` | SRS-0200 |
+| REQ-0470 | `get_git_repo_root` | -- | `PathBuf` | `anyhow::Error` | `()` -> `/home/user/repo` | SRS-0200 |
+| REQ-0480 | `get_git_modified_paths` | `base_sha: &str`, `r#ref: &str`, `in_repo_path: Option<&str>`, `repo_path: Option<&Path>` | `GitModifiedPaths` | `anyhow::Error` | returns modified and deleted paths | SRS-0200 |
+| REQ-0490 | `git_clone` | `repo: CmdArg`, `base_path: &Path`, `repo_name: &str` | `PathBuf` | `anyhow::Error` | clones mirror or updates existing; returns repo path | SRS-0200 |
+| REQ-0500 | `git_checkout` | `repo_path: &Path`, `r#ref: &str`, `worktrees_base: &Path` | `PathBuf` | `anyhow::Error` | creates worktree; returns worktree path | SRS-0200 |
+| REQ-0510 | `git_remove_worktree` | `repo_path: &Path`, `worktree_path: &Path` | `()` | `anyhow::Error` | force-removes a worktree | SRS-0200 |
+| REQ-0520 | `git_fetch` | `remote: &str`, `from_ref: &str`, `to_branch: &str`, `repo_path: Option<&Path>` | `()` | `anyhow::Error` | fetches ref from remote to local branch | SRS-0200 |
+| REQ-0530 | `git_pull` | `remote: CmdArg`, `from_branch: Option<&str>`, `to_branch: Option<&str>`, `repo_path: Option<&Path>` | `()` | `anyhow::Error` | pulls from remote | SRS-0200 |
+| REQ-0540 | `git_cherry_pick` | `sha: &str`, `sha_end: Option<&str>`, `repo_path: Option<&Path>` | `()` | `anyhow::Error` | cherry-picks commit(s) | SRS-0200 |
+| REQ-0550 | `git_apply` | `repo_path: &Path`, `patch_path: &Path` | `()` | `anyhow::Error` | applies patch file | SRS-0200 |
+| REQ-0560 | `git_get_sha1` | `repo_path: &Path` | `String` | `anyhow::Error` | returns HEAD sha1 | SRS-0200 |
+| REQ-0570 | `git_get_current_branch` | `repo_path: &Path` | `String` | `anyhow::Error` | returns current branch name | SRS-0200 |
 
 ```rust
 // cbscore-lib/src/utils/git.rs
@@ -1095,16 +1095,16 @@ pub(crate) async fn git_get_current_branch(repo_path: &Path) -> anyhow::Result<S
 
 ##### Public Interface (7b)
 
-| req-id | Function | Input | Output | Error | Example |
-|--------|----------|-------|--------|-------|---------|
-| REQ-0580 | `podman_run` | `opts: &PodmanRunOpts` | `CmdResult` | `anyhow::Error` | runs container with specified image, env, volumes |
-| REQ-0590 | `podman_stop` | `name: Option<&str>`, `timeout: u32` | `()` | `anyhow::Error` | stops container by name or all |
-| REQ-0600 | `BuildahContainer::new` | via `buildah_new_container` | `BuildahContainer` | `anyhow::Error` | `buildah from <distro>` + sets initial config |
-| REQ-0610 | `BuildahContainer::set_config` | `&self`, author, annotations, labels, env | `()` | `anyhow::Error` | `buildah config --author ... --label ...` |
-| REQ-0620 | `BuildahContainer::copy` | `&self`, `source: &Path`, `dest: &str` | `()` | `anyhow::Error` | `buildah copy <cid> <src> <dest>` |
-| REQ-0630 | `BuildahContainer::run` | `&self`, `args: &[String]` | `()` | `anyhow::Error` | `buildah run --isolation chroot <cid> -- <args>` |
-| REQ-0640 | `BuildahContainer::finish` | `&mut self`, `secrets: &SecretsMgr`, `sign_with_transit: Option<&str>` | `()` | `anyhow::Error` | commit, push to registry, optionally cosign sign |
-| REQ-0650 | `buildah_new_container` | `desc: &VersionDescriptor` | `BuildahContainer` | `anyhow::Error` | creates container from distro base image |
+| req-id | Function | Input | Output | Error | Example | srs-id |
+|--------|----------|-------|--------|-------|---------|--------|
+| REQ-0580 | `podman_run` | `opts: &PodmanRunOpts` | `CmdResult` | `anyhow::Error` | runs container with specified image, env, volumes | SRS-0200 |
+| REQ-0590 | `podman_stop` | `name: Option<&str>`, `timeout: u32` | `()` | `anyhow::Error` | stops container by name or all | SRS-0200 |
+| REQ-0600 | `BuildahContainer::new` | via `buildah_new_container` | `BuildahContainer` | `anyhow::Error` | `buildah from <distro>` + sets initial config | SRS-0200 |
+| REQ-0610 | `BuildahContainer::set_config` | `&self`, author, annotations, labels, env | `()` | `anyhow::Error` | `buildah config --author ... --label ...` | SRS-0200 |
+| REQ-0620 | `BuildahContainer::copy` | `&self`, `source: &Path`, `dest: &str` | `()` | `anyhow::Error` | `buildah copy <cid> <src> <dest>` | SRS-0200 |
+| REQ-0630 | `BuildahContainer::run` | `&self`, `args: &[String]` | `()` | `anyhow::Error` | `buildah run --isolation chroot <cid> -- <args>` | SRS-0200 |
+| REQ-0640 | `BuildahContainer::finish` | `&mut self`, `secrets: &SecretsMgr`, `sign_with_transit: Option<&str>` | `()` | `anyhow::Error` | commit, push to registry, optionally cosign sign | SRS-0200 |
+| REQ-0650 | `buildah_new_container` | `desc: &VersionDescriptor` | `BuildahContainer` | `anyhow::Error` | creates container from distro base image | SRS-0200 |
 
 ```rust
 // cbscore-lib/src/utils/podman.rs
@@ -1178,14 +1178,14 @@ pub(crate) async fn buildah_new_container(
 
 ##### Public Interface (7c)
 
-| req-id | Function | Input | Output | Error | Example |
-|--------|----------|-------|--------|-------|---------|
-| REQ-0660 | `s3_upload_str_obj` | `ctx: &S3Context`, `location`, `contents`, `content_type` | `()` | `anyhow::Error` | uploads string as S3 object |
-| REQ-0670 | `s3_download_str_obj` | `ctx: &S3Context`, `location`, `content_type: Option<&str>` | `Option<String>` | `anyhow::Error` | returns `None` if object not found |
-| REQ-0680 | `s3_upload_json<T: Serialize>` | `ctx: &S3Context`, `key`, `value: &T` | `()` | `anyhow::Error` | convenience wrapper: content_type = `"application/json"` |
-| REQ-0690 | `s3_download_json<T: DeserializeOwned>` | `ctx: &S3Context`, `key` | `Option<T>` | `anyhow::Error` | convenience wrapper: content_type = `"application/json"` |
-| REQ-0700 | `s3_upload_files` | `ctx: &S3Context`, `file_locs: &[S3FileLocator]`, `public: bool` | `()` | `anyhow::Error` | uploads list of local files |
-| REQ-0710 | `s3_list` | `ctx: &S3Context`, `prefix: Option<&str>`, `prefix_as_directory: bool` | `S3ListResult` | `anyhow::Error` | paginated listing with CommonPrefixes support |
+| req-id | Function | Input | Output | Error | Example | srs-id |
+|--------|----------|-------|--------|-------|---------|--------|
+| REQ-0660 | `s3_upload_str_obj` | `ctx: &S3Context`, `location`, `contents`, `content_type` | `()` | `anyhow::Error` | uploads string as S3 object | SRS-0200 |
+| REQ-0670 | `s3_download_str_obj` | `ctx: &S3Context`, `location`, `content_type: Option<&str>` | `Option<String>` | `anyhow::Error` | returns `None` if object not found | SRS-0200 |
+| REQ-0680 | `s3_upload_json<T: Serialize>` | `ctx: &S3Context`, `key`, `value: &T` | `()` | `anyhow::Error` | convenience wrapper: content_type = `"application/json"` | SRS-0200 |
+| REQ-0690 | `s3_download_json<T: DeserializeOwned>` | `ctx: &S3Context`, `key` | `Option<T>` | `anyhow::Error` | convenience wrapper: content_type = `"application/json"` | SRS-0200 |
+| REQ-0700 | `s3_upload_files` | `ctx: &S3Context`, `file_locs: &[S3FileLocator]`, `public: bool` | `()` | `anyhow::Error` | uploads list of local files | SRS-0200 |
+| REQ-0710 | `s3_list` | `ctx: &S3Context`, `prefix: Option<&str>`, `prefix_as_directory: bool` | `S3ListResult` | `anyhow::Error` | paginated listing with CommonPrefixes support | SRS-0200 |
 
 ```rust
 // cbscore-lib/src/s3.rs
@@ -1250,21 +1250,21 @@ pub(crate) async fn s3_list(
 
 ##### Public Interface (7d)
 
-| req-id | Function | Input | Output | Error | Example |
-|--------|----------|-------|--------|-------|---------|
-| REQ-0720 | `skopeo_get_tags` (async) | `img: &str` | `SkopeoTagListResult` | `anyhow::Error` | `skopeo_get_tags("harbor.example.com/proj/ceph")` -> tags list |
-| REQ-0730 | `skopeo_copy` (async) | `src: &str`, `dst: &str`, `dst_registry: &str`, `secrets: &SecretsMgr`, `transit: &str` | `()` | `anyhow::Error` | copies image + optionally signs |
-| REQ-0740 | `skopeo_inspect` (async) | `img: &str`, `secrets: &SecretsMgr`, `tls_verify: bool` | `String` (JSON) | `anyhow::Error` | returns raw JSON inspect output |
-| REQ-0750 | `skopeo_image_exists` (async) | `img: &str`, `secrets: &SecretsMgr`, `tls_verify: bool` | `bool` | `anyhow::Error` | `true` if image exists in registry |
-| REQ-0760 | `sign` (async) | `img: &str`, `secrets: &SecretsMgr`, `transit: &str` | `()` | `anyhow::Error` | async cosign sign via Vault Transit |
-| REQ-0770 | `can_sign` | `registry: &str`, `secrets: &SecretsMgr`, `transit: &str` | `bool` | -- | checks vault + transit key + registry creds are available (pure check, no I/O) |
-| REQ-0780 | `sync_image` (async) | `opts: &SyncImageOpts` | `()` | `anyhow::Error` | syncs image between registries |
-| REQ-0790 | `get_image_desc` | `version: &str` | `ImageDescriptor` | `CbsError` | loads image descriptor JSON matching version |
-| REQ-0800 | `get_image_name` | `img: &str` | `String` | -- | `"harbor.example.com/proj:v1"` -> `"harbor.example.com/proj"` |
-| REQ-0810 | `get_image_tag` | `img: &str` | `Option<String>` | -- | `"harbor.example.com/proj:v1"` -> `Some("v1")` |
-| REQ-0820 | `get_container_image_base_uri` | `desc: &VersionDescriptor` | `String` | -- | -> `"registry.example.com/image-name"` |
-| REQ-0830 | `get_container_image_base_uri_from_str` | `uri: &str` | `String` | `anyhow::Error` | `"registry/name:tag"` -> `"registry/name"` |
-| REQ-0840 | `get_container_canonical_uri` | `desc: &VersionDescriptor`, `digest: Option<&str>` | `String` | -- | `(desc, None)` -> `"registry/name:tag"`; `(desc, Some("sha256:abc"))` -> `"registry/name@sha256:abc"` |
+| req-id | Function | Input | Output | Error | Example | srs-id |
+|--------|----------|-------|--------|-------|---------|--------|
+| REQ-0720 | `skopeo_get_tags` (async) | `img: &str` | `SkopeoTagListResult` | `anyhow::Error` | `skopeo_get_tags("harbor.example.com/proj/ceph")` -> tags list | SRS-0200 |
+| REQ-0730 | `skopeo_copy` (async) | `src: &str`, `dst: &str`, `dst_registry: &str`, `secrets: &SecretsMgr`, `transit: &str` | `()` | `anyhow::Error` | copies image + optionally signs | SRS-0200 |
+| REQ-0740 | `skopeo_inspect` (async) | `img: &str`, `secrets: &SecretsMgr`, `tls_verify: bool` | `String` (JSON) | `anyhow::Error` | returns raw JSON inspect output | SRS-0200 |
+| REQ-0750 | `skopeo_image_exists` (async) | `img: &str`, `secrets: &SecretsMgr`, `tls_verify: bool` | `bool` | `anyhow::Error` | `true` if image exists in registry | SRS-0200 |
+| REQ-0760 | `sign` (async) | `img: &str`, `secrets: &SecretsMgr`, `transit: &str` | `()` | `anyhow::Error` | async cosign sign via Vault Transit | SRS-0200 |
+| REQ-0770 | `can_sign` | `registry: &str`, `secrets: &SecretsMgr`, `transit: &str` | `bool` | -- | checks vault + transit key + registry creds are available (pure check, no I/O) | SRS-0200 |
+| REQ-0780 | `sync_image` (async) | `opts: &SyncImageOpts` | `()` | `anyhow::Error` | syncs image between registries | SRS-0200 |
+| REQ-0790 | `get_image_desc` | `version: &str` | `ImageDescriptor` | `CbsError` | loads image descriptor JSON matching version | SRS-0200 |
+| REQ-0800 | `get_image_name` | `img: &str` | `String` | -- | `"harbor.example.com/proj:v1"` -> `"harbor.example.com/proj"` | SRS-0200 |
+| REQ-0810 | `get_image_tag` | `img: &str` | `Option<String>` | -- | `"harbor.example.com/proj:v1"` -> `Some("v1")` | SRS-0200 |
+| REQ-0820 | `get_container_image_base_uri` | `desc: &VersionDescriptor` | `String` | -- | -> `"registry.example.com/image-name"` | SRS-0200 |
+| REQ-0830 | `get_container_image_base_uri_from_str` | `uri: &str` | `String` | `anyhow::Error` | `"registry/name:tag"` -> `"registry/name"` | SRS-0140, SRS-0170 |
+| REQ-0840 | `get_container_canonical_uri` | `desc: &VersionDescriptor`, `digest: Option<&str>` | `String` | -- | `(desc, None)` -> `"registry/name:tag"`; `(desc, Some("sha256:abc"))` -> `"registry/name@sha256:abc"` | SRS-0140, SRS-0170 |
 
 ```rust
 // cbscore-lib/src/images/skopeo.rs
@@ -1368,19 +1368,19 @@ Implement release S3 operations (check, upload, list) and the full `Builder` pip
 
 #### Public Interface
 
-| req-id | Function | Input | Output | Error | Example |
-|--------|----------|-------|--------|-------|---------|
-| REQ-0850 | `check_release_exists` | `ctx: &S3Context`, `bucket_loc`, `version` | `Option<ReleaseDesc>` | `anyhow::Error` | `"18.2.4"` with existing release -> `Some(ReleaseDesc{...})` |
-| REQ-0860 | `release_desc_upload` | `ctx: &S3Context`, `bucket_loc`, `version`, `&ReleaseBuildEntry` | `ReleaseDesc` | `anyhow::Error` | uploads `{bucket_loc}/18.2.4.json` to S3 |
-| REQ-0870 | `release_upload_components` | `ctx: &S3Context`, `bucket_loc`, `&HashMap<String, ReleaseComponent>` | `()` | `anyhow::Error` | parallel upload of per-component JSON descriptors |
-| REQ-0880 | `check_released_components` | `ctx: &S3Context`, `bucket_loc`, `&HashMap<String, String>` | `HashMap<String, ReleaseComponent>` | `anyhow::Error` | `{"ceph": "18.2.4-1.clyso"}` -> existing components in S3 |
-| REQ-0890 | `list_releases` | `secrets: &SecretsMgr`, `url: &str`, `bucket: &str`, `bucket_loc: &str` | `HashMap<String, ReleaseDesc>` | `anyhow::Error` | lists all `*.json` under `{bucket_loc}/` |
-| REQ-0900 | `get_component_release_rpm` | `&CoreComponentLoc`, `el_version: i32` | `Option<String>` | `anyhow::Error` | runs release RPM script, returns RPM name |
-| REQ-0910 | `Builder::new` | `desc: VersionDescriptor`, `config: &Config`, `flags: BuildFlags` | `Builder` | `CbsError` | constructs builder, loads components, initializes `SecretsMgr` |
-| REQ-0920 | `Builder::run` | `&mut self` | `()` | `CbsError` | full pipeline: prepare -> check existing -> build RPMs -> sign -> upload -> container |
-| REQ-0930 | `build_rpms` | `opts: &BuildRpmsOpts` | `HashMap<String, ComponentBuild>` | `anyhow::Error` | parallel RPM build via `JoinSet` |
-| REQ-0940 | `sign_rpms` | `&SecretsMgr`, `gpg_key_id: &str`, `&HashMap<String, ComponentBuild>` | `()` | `anyhow::Error` | parallel GPG signing of all RPMs per component |
-| REQ-0950 | `s3_upload_rpms` | `ctx: &S3Context`, `bucket_loc`, `&HashMap<String, ComponentBuild>`, `el_version` | `HashMap<String, S3ComponentLocation>` | `anyhow::Error` | parallel upload of RPMs + repodata to S3 |
+| req-id | Function | Input | Output | Error | Example | srs-id |
+|--------|----------|-------|--------|-------|---------|--------|
+| REQ-0850 | `check_release_exists` | `ctx: &S3Context`, `bucket_loc`, `version` | `Option<ReleaseDesc>` | `anyhow::Error` | `"18.2.4"` with existing release -> `Some(ReleaseDesc{...})` | SRS-0140, SRS-0170 |
+| REQ-0860 | `release_desc_upload` | `ctx: &S3Context`, `bucket_loc`, `version`, `&ReleaseBuildEntry` | `ReleaseDesc` | `anyhow::Error` | uploads `{bucket_loc}/18.2.4.json` to S3 | SRS-0140, SRS-0150 |
+| REQ-0870 | `release_upload_components` | `ctx: &S3Context`, `bucket_loc`, `&HashMap<String, ReleaseComponent>` | `()` | `anyhow::Error` | parallel upload of per-component JSON descriptors | SRS-0150, SRS-0160 |
+| REQ-0880 | `check_released_components` | `ctx: &S3Context`, `bucket_loc`, `&HashMap<String, String>` | `HashMap<String, ReleaseComponent>` | `anyhow::Error` | `{"ceph": "18.2.4-1.clyso"}` -> existing components in S3 | SRS-0100, SRS-0170 |
+| REQ-0890 | `list_releases` | `secrets: &SecretsMgr`, `url: &str`, `bucket: &str`, `bucket_loc: &str` | `HashMap<String, ReleaseDesc>` | `anyhow::Error` | lists all `*.json` under `{bucket_loc}/` | SRS-0100 |
+| REQ-0900 | `get_component_release_rpm` | `&CoreComponentLoc`, `el_version: i32` | `Option<String>` | `anyhow::Error` | runs release RPM script, returns RPM name | SRS-0110 |
+| REQ-0910 | `Builder::new` | `desc: VersionDescriptor`, `config: &Config`, `flags: BuildFlags` | `Builder` | `CbsError` | constructs builder, loads components, initializes `SecretsMgr` | SRS-0110 |
+| REQ-0920 | `Builder::run` | `&mut self` | `()` | `CbsError` | full pipeline: prepare -> check existing -> build RPMs -> sign -> upload -> container | SRS-0110 |
+| REQ-0930 | `build_rpms` | `opts: &BuildRpmsOpts` | `HashMap<String, ComponentBuild>` | `anyhow::Error` | parallel RPM build via `JoinSet` | SRS-0110 |
+| REQ-0940 | `sign_rpms` | `&SecretsMgr`, `gpg_key_id: &str`, `&HashMap<String, ComponentBuild>` | `()` | `anyhow::Error` | parallel GPG signing of all RPMs per component | SRS-0110 |
+| REQ-0950 | `s3_upload_rpms` | `ctx: &S3Context`, `bucket_loc`, `&HashMap<String, ComponentBuild>`, `el_version` | `HashMap<String, S3ComponentLocation>` | `anyhow::Error` | parallel upload of RPMs + repodata to S3 | SRS-0110 |
 
 ```rust
 // releases/s3.rs
@@ -1523,17 +1523,17 @@ Implement container image construction (PRE/PACKAGES/POST/CONFIG stages via Buil
 
 #### Public Interface
 
-| req-id | Function | Input | Output | Error | Example |
-|--------|----------|-------|--------|-------|---------|
-| REQ-0960 | `ContainerBuilder::new` | `desc: VersionDescriptor`, `release_desc: ReleaseDesc`, `components: HashMap<String, CoreComponentLoc>` | `ContainerBuilder` | -- | constructs builder with no container yet |
-| REQ-0970 | `ContainerBuilder::build` | `&mut self` | `()` | `anyhow::Error` | resolves components, creates buildah container, applies PRE/PACKAGES/POST/CONFIG |
-| REQ-0980 | `ContainerBuilder::finish` | `&mut self`, `&SecretsMgr`, `sign_with_transit: Option<&str>` | `()` | `anyhow::Error` | commits, pushes, and optionally signs the image |
-| REQ-0990 | `ComponentContainer::new` | `component_loc: &CoreComponentLoc`, `version: &str`, `vars: Option<&HashMap<String, String>>` | `ComponentContainer` | `anyhow::Error` | loads best-match `container.yaml` with variable substitution |
-| REQ-1000 | `ContainerDescriptor::load` | `path: &Path`, `vars: Option<&HashMap<String, String>>` | `ContainerDescriptor` | `anyhow::Error` | `"container.yaml"` with `{version}` -> substituted + parsed YAML |
-| REQ-1010 | `substitute_vars` | `template: &str`, `vars: &HashMap<String, String>` | `String` | `anyhow::Error` | `"v{version}-el{el}"` with `{"version":"18.2.4","el":"9"}` -> `"v18.2.4-el9"` |
-| REQ-1020 | `runner` | `desc_file_path`, `cbscore_path`, `config`, `opts: RunnerOpts` | `()` | `CbsError` | launches Podman container with volume mounts, runs entrypoint |
-| REQ-1030 | `gen_run_name` | `prefix: &str` | `String` | -- | `"ces_"` -> `"ces_abcdefghij"` (10 random lowercase chars) |
-| REQ-1040 | `stop` | `name: Option<&str>`, `timeout: u32` | `()` | `anyhow::Error` | stops named container or all containers |
+| req-id | Function | Input | Output | Error | Example | srs-id |
+|--------|----------|-------|--------|-------|---------|--------|
+| REQ-0960 | `ContainerBuilder::new` | `desc: VersionDescriptor`, `release_desc: ReleaseDesc`, `components: HashMap<String, CoreComponentLoc>` | `ContainerBuilder` | -- | constructs builder with no container yet | SRS-0110, SRS-0120, SRS-0130 |
+| REQ-0970 | `ContainerBuilder::build` | `&mut self` | `()` | `anyhow::Error` | resolves components, creates buildah container, applies PRE/PACKAGES/POST/CONFIG | SRS-0180 |
+| REQ-0980 | `ContainerBuilder::finish` | `&mut self`, `&SecretsMgr`, `sign_with_transit: Option<&str>` | `()` | `anyhow::Error` | commits, pushes, and optionally signs the image | SRS-0180 |
+| REQ-0990 | `ComponentContainer::new` | `component_loc: &CoreComponentLoc`, `version: &str`, `vars: Option<&HashMap<String, String>>` | `ComponentContainer` | `anyhow::Error` | loads best-match `container.yaml` with variable substitution | SRS-0180 |
+| REQ-1000 | `ContainerDescriptor::load` | `path: &Path`, `vars: Option<&HashMap<String, String>>` | `ContainerDescriptor` | `anyhow::Error` | `"container.yaml"` with `{version}` -> substituted + parsed YAML | SRS-0180, SRS-0190 |
+| REQ-1010 | `substitute_vars` | `template: &str`, `vars: &HashMap<String, String>` | `String` | `anyhow::Error` | `"v{version}-el{el}"` with `{"version":"18.2.4","el":"9"}` -> `"v18.2.4-el9"` | SRS-0180 |
+| REQ-1020 | `runner` | `desc_file_path`, `cbscore_path`, `config`, `opts: RunnerOpts` | `()` | `CbsError` | launches Podman container with volume mounts, runs entrypoint | SRS-0230 |
+| REQ-1030 | `gen_run_name` | `prefix: &str` | `String` | -- | `"ces_"` -> `"ces_abcdefghij"` (10 random lowercase chars) | SRS-0230 |
+| REQ-1040 | `stop` | `name: Option<&str>`, `timeout: u32` | `()` | `anyhow::Error` | stops named container or all containers | SRS-0230 |
 
 ```rust
 // containers/build.rs
@@ -1728,3 +1728,60 @@ Each CLI handler is now implemented in the phase where its library dependencies 
 - Phase 8 depends on all 4 tracks of Phase 7 (builder uses git, S3, skopeo)
 - Phase 9 depends on Phase 8 (ContainerBuilder consumes `ReleaseDesc` produced by `Builder`)
 - Phase 10 depends on Phase 9 (all Rust interfaces must be complete before replacing Python)
+
+---
+
+## Traceability Matrix
+
+### Functional Requirements → Plan REQ-IDs
+
+| SRS ID | Requirement | Plan REQ-IDs |
+|--------|-------------|-------------|
+| SRS-0010 | Interactive config wizard | REQ-0200, REQ-0210 |
+| SRS-0020 | Batch config shortcuts | REQ-0200, REQ-0210 |
+| SRS-0030 | Vault auth configuration | REQ-0220 |
+| SRS-0040 | Config load/store | REQ-0170 – REQ-0240 |
+| SRS-0050 | Version string parsing | REQ-0040, REQ-0050 |
+| SRS-0060 | Version normalization | REQ-0050 |
+| SRS-0070 | Version descriptor creation | REQ-0060 – REQ-0140 |
+| SRS-0080 | Component definition loading | REQ-0100, REQ-0110 |
+| SRS-0090 | Version type classification | REQ-0060 |
+| SRS-0100 | Release listing from S3 | REQ-0880, REQ-0890 |
+| SRS-0110 | Containerized build launch | REQ-0900 – REQ-0960 |
+| SRS-0120 | Graceful cancellation | REQ-0960 |
+| SRS-0130 | Build timeout | REQ-0960 |
+| SRS-0140 | Three-level artifact caching | REQ-0830 – REQ-0860 |
+| SRS-0150 | RPM package building | REQ-0860, REQ-0870 |
+| SRS-0160 | RPM signing | REQ-0870 |
+| SRS-0170 | S3 artifact upload | REQ-0830 – REQ-0880 |
+| SRS-0180 | Container image building | REQ-0970 – REQ-1010 |
+| SRS-0190 | Container image signing | REQ-1000 |
+| SRS-0200 | Python FFI bindings | REQ-0010 – REQ-1040 |
+| SRS-0210 | Exception hierarchy preservation | REQ-0010, REQ-0020 |
+| SRS-0220 | Pydantic model compatibility | REQ-0080, REQ-0090 |
+| SRS-0230 | Async runner bridge | REQ-1020 – REQ-1040 |
+
+### Non-Functional Requirements → Capabilities
+
+| SRS ID | Requirement | Applies to |
+|--------|-------------|-----------|
+| SRS-0240 | CLI compatibility | All subcommands |
+| SRS-0250 | Config file compatibility | Configuration management |
+| SRS-0260 | JSON format compatibility | Version/release descriptors |
+| SRS-0270 | Python import path preservation | Python interoperability |
+| SRS-0280 | Secret masking in logs | Security (all phases) |
+| SRS-0290 | Temporary credential cleanup | Security (build, signing) |
+| SRS-0300 | Vault token handling | Security (vault integration) |
+| SRS-0310 | Container security options | Build execution |
+| SRS-0320 | Parallel component builds | Build orchestration |
+| SRS-0330 | Parallel S3 operations | Release discovery |
+| SRS-0340 | Build timeout compliance | Build execution |
+| SRS-0350 | Structured logging | Observability (all phases) |
+| SRS-0360 | Python logging integration | Python interoperability |
+| SRS-0370 | Subprocess output streaming | Observability (builds) |
+| SRS-0380 | Build parameter logging | Observability (builds) |
+| SRS-0390 | Idempotent build operations | Reliability (builds) |
+| SRS-0400 | Graceful error recovery | Reliability (all phases) |
+| SRS-0410 | Resource cleanup on failure | Reliability (all phases) |
+| SRS-0420 | Dual installation methods | Deployment |
+| SRS-0430 | Container deployability | Deployment |
