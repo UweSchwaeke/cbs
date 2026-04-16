@@ -377,8 +377,8 @@ Implement the full configuration model hierarchy with YAML serialization, `load`
 
 | req-id | Function | Input | Output | Error | Example | srs-id |
 |--------|----------|-------|--------|-------|---------|--------|
-| REQ-0150 | `Config::load` | `path: &Path` | `Config` | `CbsError::Config` | `Config::load(Path::new("cbscore.config.yaml"))` | |
-| REQ-0160 | `Config::store` | `&self, path: &Path` | `()` | `CbsError::Config` | writes YAML with kebab-case keys | |
+| REQ-0150 | `Config::load` | `path: &Path` | `Config` | `CbsError::Config` | `Config::load(Path::new("cbscore.config.yaml"))` | [SRS-0040](requirements-cbscore-rs.md#srs-0040-configuration-loading-and-storage) |
+| REQ-0160 | `Config::store` | `&self, path: &Path` | `()` | `CbsError::Config` | writes YAML with kebab-case keys | [SRS-0040](requirements-cbscore-rs.md#srs-0040-configuration-loading-and-storage) |
 | REQ-0170 | `VaultConfig::load` | `path: &Path` | `VaultConfig` | `CbsError::Config` | `VaultConfig::load(Path::new("vault.yaml"))` | [SRS-0040](requirements-cbscore-rs.md#srs-0040-configuration-loading-and-storage) |
 | REQ-0180 | `VaultConfig::store` | `&self, path: &Path` | `()` | `CbsError::Config` | writes YAML vault config | [SRS-0040](requirements-cbscore-rs.md#srs-0040-configuration-loading-and-storage) |
 | REQ-0190 | `Config::get_secrets` | `&self` | `Secrets` | `anyhow::Error` | loads + merges secrets from `config.secrets` paths | [SRS-0040](requirements-cbscore-rs.md#srs-0040-configuration-loading-and-storage) |
@@ -1740,7 +1740,7 @@ Each CLI handler is now implemented in the phase where its library dependencies 
 | [SRS-0010](requirements-cbscore-rs.md#srs-0010-interactive-configuration-wizard) | Interactive config wizard | REQ-0200, REQ-0210 |
 | [SRS-0020](requirements-cbscore-rs.md#srs-0020-batch-configuration-shortcuts) | Batch config shortcuts | REQ-0200, REQ-0210 |
 | [SRS-0030](requirements-cbscore-rs.md#srs-0030-vault-authentication-configuration) | Vault auth configuration | REQ-0220 |
-| [SRS-0040](requirements-cbscore-rs.md#srs-0040-configuration-loading-and-storage) | Config load/store | REQ-0170 – REQ-0240 |
+| [SRS-0040](requirements-cbscore-rs.md#srs-0040-configuration-loading-and-storage) | Config load/store | REQ-0150 – REQ-0240 |
 | [SRS-0050](requirements-cbscore-rs.md#srs-0050-version-string-parsing) | Version string parsing | REQ-0040, REQ-0050 |
 | [SRS-0060](requirements-cbscore-rs.md#srs-0060-version-normalization) | Version normalization | REQ-0050 |
 | [SRS-0070](requirements-cbscore-rs.md#srs-0070-version-descriptor-creation) | Version descriptor creation | REQ-0060 – REQ-0140 |
