@@ -24,7 +24,7 @@ default_remote="$(git remote -v 2>/dev/null | grep 'push' | head -n 1 | cut -f1)
 usage() {
   default_remote_str="${default_remote:-N/A}"
   cat <<EOF >/dev/stderr
-usage: $0 <version> [options...]
+usage: $(basename "$0") <version> [options...]
 
 Add an annotated tag to the current branch with the provided version.
 The tag will be pushed to the specified upstream repository, or the first
@@ -94,7 +94,8 @@ cur_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
 
 version="${positional_args[0]}"
 
-[[ ! "${version}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] &&
+version_regex='^v[0-9]+\.[0-9]+\.[0-9]+(-[a-z]+[0-9]+)?$'
+[[ ! "${version}" =~ ${version_regex} ]] &&
   echo "error: malformed version, should be in format vMAJOR.minor.patch" >/dev/stderr &&
   exit 1
 
