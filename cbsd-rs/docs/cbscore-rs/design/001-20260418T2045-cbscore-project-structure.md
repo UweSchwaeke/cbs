@@ -144,7 +144,7 @@ cbsd-rs/
 │       │   └── utils.rs
 │       ├── runner/
 │       │   ├── mod.rs          # gen_run_name, stop
-│       │   └── run.rs          # podman-based runner (entrypoint mount)
+│       │   └── run.rs          # podman-based runner (binary as PID 1)
 │       ├── secrets/
 │       │   ├── mod.rs
 │       │   ├── models.rs       # Secrets, SecretsError
@@ -165,8 +165,6 @@ cbsd-rs/
 │       │   ├── subprocess.rs   # async_run_cmd + SecureArg + _sanitize_cmd
 │       │   ├── uris.rs
 │       │   └── vault.rs        # Vault client (vaultrs)
-│       └── resources/
-│           └── cbscore-entrypoint.sh   # bundled, `include_str!`d into binary
 │
 └── cbsbuild/                   # NEW — CLI binary
     ├── Cargo.toml
@@ -237,11 +235,10 @@ builder pipeline, runner, image signing & sync, release operations.
 - Builder pipeline (`prepare`, `rpmbuild`, `signing`, `upload`).
 - Image signing & sync (`images::signing`, `images::skopeo`, `images::sync`).
 - Release S3 operations (`releases::s3`).
-- Runner (`runner::run`) — spawns a podman container mounting the bundled
-  entrypoint script, re-enters `cbsbuild` inside the container.
-- The `cbscore-entrypoint.sh` shell script, bundled as a resource via
-  `include_str!` (or `include_bytes!`) and extracted to a temp file at runtime
-  when the runner needs to mount it.
+- Runner (`runner::run`) — spawns a podman container with `cbsbuild` mounted at
+  `/runner/cbsbuild` as the container's PID 1 and re-enters
+  `cbsbuild runner build <args>` inside the container. There is no shell
+  entrypoint wrapper; the binary is the entrypoint.
 
 **What does NOT go here:**
 
@@ -468,20 +465,24 @@ mounts the host cbscore codebase, and podman handles the rest.
 
 The Rust port preserves the same shape but changes the mechanics:
 
-- **Entrypoint script** — bundled into the `cbsbuild` binary via `include_str!`.
-  The runner writes it to a temp file with mode `0755` at runtime, then mounts
-  it into the container at `/runner/entrypoint.sh` (matching the existing mount
-  path).
+- **No shell entrypoint wrapper** — the Python runner mounted a bash script at
+  `/runner/entrypoint.sh` that did venv setup, `uv tool install` of the cbscore
+  wheel, `$PATH` manipulation, and finally `exec`'d `cbsbuild`. The Rust port
+  mounts the compiled `cbsbuild` binary at `/runner/cbsbuild` and uses it as the
+  container's PID 1 directly (`podman run --entrypoint /runner/cbsbuild ...`).
+  HOME normalisation that the shell did (`HOME=/runner` if unset or `/`) moves
+  into the `cbsbuild runner build` startup; the `CBS_DEBUG=1` → `--debug`
+  mapping is handled by `clap`'s `env` feature; the
+  `--config /runner/cbs-build.config.yaml runner build <args>` invocation lives
+  directly on the host runner's `podman run` command line.
 - **Binary mount instead of source mount** — the Python runner bind-mounts the
-  host `cbscore/` source tree into `/runner/cbscore`; its entrypoint installs
-  `uv`, creates a Python 3.13 venv, `uv tool install`s cbscore, and then runs
-  `cbsbuild` via `$PATH`. The Rust runner mounts the compiled `cbsbuild` binary
-  at `/runner/cbsbuild` and the bundled entrypoint invokes it by absolute path.
-  This removes `uv`, the cbscore Python wheel, and the venv from the build
-  image. System `python3` stays — Ceph's `do_cmake.sh` and several
-  `python3-mgr-*` RPMs require it (see design 002 § Open Questions, OQ7
-  resolution, for the precise scope of what is and is not removed; § Runner
-  Subsystem there has the exact entrypoint script).
+  host `cbscore/` source tree into `/runner/cbscore`. The Rust runner mounts the
+  compiled `cbsbuild` binary at `/runner/cbsbuild` instead. This removes `uv`,
+  the cbscore Python wheel, and the venv from the build image. System `python3`
+  stays — Ceph's `do_cmake.sh` and several `python3-mgr-*` RPMs require it (see
+  design 002 § Open Questions, OQ7 resolution, for the precise scope of what is
+  and is not removed; § Runner Subsystem there has the full entry-point and
+  HOME-normalisation details).
 - **Config, secrets, components, scratch, ccache** — same mount paths as today
   (`/runner/cbs-build.config.yaml`, `/runner/cbs-build.secrets.yaml`,
   `/runner/components`, `/runner/scratch`, `/runner/ccache`). Temp files on the
