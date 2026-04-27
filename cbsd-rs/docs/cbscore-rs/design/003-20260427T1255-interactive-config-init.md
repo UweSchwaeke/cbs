@@ -1,0 +1,253 @@
+# Interactive `config init` for `cbsbuild`
+
+## Status
+
+**Deferred from M1.** This design specifies the interactive
+`cbsbuild config init` UX that is intentionally out of scope for the M1
+cbscore-rs port (see Open Question 8 in
+[design 002](002-20260418T2120-cbscore-rust-port-design.md)). It is intended for
+implementation post-M1, once the non-interactive flag modes are shipped and
+stable.
+
+## Overview
+
+`cbsbuild config init` produces a `cbs-build.config.yaml` file (and optionally a
+`cbs-build.vault.yaml`) by walking the user through a series of prompts. The
+Python implementation lives in `cbscore/src/cbscore/cmds/config.py` and uses
+`click.prompt`, `click.confirm`, and `click.prompt(hide_input=True)` for
+password fields.
+
+This design preserves the Python flow's UX while porting the implementation to
+`dialoguer`.
+
+## Goals
+
+1. **UX parity with Python.** The same prompts in the same order, with the same
+   defaults, the same yes/no confirmations, and the same password-hiding
+   behaviour for vault credentials.
+2. **Bypass parity.** The flag-based bypasses (`--for-systemd-install`,
+   `--for-containerized-run`, and the per-field flags) skip prompting for any
+   field they pre-fill. Running `cbsbuild config init` with all required values
+   supplied via flags produces a config file with zero prompts (the same
+   behaviour M1 ships).
+3. **Testability.** Interactive code is notoriously hard to test; the design
+   isolates the pure-data computation from the prompt IO so the data layer can
+   be unit-tested without spawning a TTY.
+
+## Non-Goals
+
+- A full TUI (terminal user interface) with multi-line forms, cursor navigation,
+  or live validation. `dialoguer` is a prompt-at-a-time library and that matches
+  Python's flow.
+- Replacing the flag-based bypass modes — they remain the canonical entry point
+  for automation. Interactive mode is for workstation onboarding only.
+- Reading values from environment variables. Anything not supplied via flags is
+  prompted (or, post-M1, asked interactively).
+
+## Library Choice: `dialoguer`
+
+`dialoguer` is chosen over `inquire` because:
+
+- It is sync-only, which fits `config init`'s sequential flow. Async via
+  `inquire` adds complexity for no benefit — there is no IO concurrency to
+  exploit when prompting one question at a time.
+- It is widely used (millions of downloads), well-maintained, and stable.
+- Its primitives map one-to-one to `click`'s primitives we depend on:
+  - `click.prompt(...)` → `dialoguer::Input`
+  - `click.prompt(..., hide_input=True)` → `dialoguer::Password`
+  - `click.confirm(...)` → `dialoguer::Confirm`
+- The crate is small enough that the binary cost is negligible for a one-shot
+  setup command.
+
+`inquire` was considered. It is async-aware and has a richer prompt set
+(`Select`, `MultiSelect`, autocompletion). The existing flow does not use any of
+those features, so `inquire`'s extra surface area is dead weight here.
+
+## Prompt-by-Prompt Mapping
+
+The Python implementation is the spec; this section maps each Python prompt to
+its Rust equivalent. Defaults, fall-backs, and control flow remain identical.
+
+### `cmd_config_init` entry point
+
+| Step                                                                 | Python (`config.py`)                               | Rust (`cbscore::cmds::config`)                                              |
+| -------------------------------------------------------------------- | -------------------------------------------------- | --------------------------------------------------------------------------- |
+| 1. Pre-fill from `--for-systemd-install` / `--for-containerized-run` | Lines 435-441 (overwrite all path / secret fields) | Same: pre-fill the `Init` struct before any prompting; matches M1 behaviour |
+| 2. Pre-fill from per-field flags                                     | `cmd_config_init` parameters                       | Same: clap `Args` struct populates the same fields                          |
+| 3. Call `config_init(...)`                                           | Lines 251-309                                      | `config_init(...)` Rust function with the same shape                        |
+
+### `config_init_paths`
+
+Each entry below is a single user-visible prompt; bypass means the prompt is
+suppressed when the corresponding CLI flag was supplied.
+
+1. **Components path (default)** — if `${cwd}/components` exists, ask `Confirm`:
+   "Use '${cwd}/components' as components path?"
+   (`dialoguer::Confirm::default(true)`).
+2. **Components paths (additional)** — `Confirm`: "Specify additional paths?"
+   then loop on `Input::<String>` for each path; validate that the path exists
+   and is a directory; loop until `Confirm`: "Add another?" returns `false`.
+3. **Scratch path** — `Input::<String>`: "Scratch path".
+4. **Scratch containers path** — `Input::<String>`: "Scratch containers path".
+5. **ccache path (optional)** — `Confirm`: "Specify ccache path?" then
+   `Input::<String>`: "ccache path".
+
+### `config_init_storage`
+
+1. **Configure storage?** — `Confirm`: "Configure storage?". If no, return
+   `None` and skip the rest.
+2. **S3 storage** — `Confirm`: "Configure S3 storage for artifact upload?". If
+   yes, prompt for: S3 URL, artifacts bucket, artifacts location, releases
+   bucket, releases location.
+3. **Registry storage** — `Confirm`: "Configure registry storage for container
+   image upload?". If yes, prompt for registry URL.
+
+### `config_init_signing`
+
+1. **Configure signing?** — `Confirm`. If no, return `None`.
+2. **GPG signing** — `Confirm`: "Specify package GPG signing secret name?". If
+   yes, `Input::<String>`: "GPG signing secret name".
+3. **Transit signing** — `Confirm`: "Specify container image transit signing
+   secret name?". If yes, `Input::<String>`: "Transit signing secret name".
+4. **Skip if neither set** — if both `gpg_secret` and `transit_secret` are
+   `None`, log "no signing methods specified, skipping" and return `None`.
+
+### `config_init_secrets_paths`
+
+1. **Specify secrets files?** — `Confirm`. If no, return empty list.
+2. **First path** — `Input::<String>`: "Path to secrets file".
+3. **Loop** — `Confirm`: "Specify additional secrets files?"; if yes,
+   `Input::<String>` again; loop until `Confirm` returns `false`.
+
+### `config_init_vault` (separate `init-vault` subcommand)
+
+1. **Configure vault?** — `Confirm`. If no, return `None`.
+2. **Vault config path** — `Input::<String>` with default
+   `${cwd}/cbs-build.vault.yaml`.
+3. **Overwrite existing?** — if the path exists, `Confirm`: "Vault config path
+   '${path}' already exists. Overwrite?". If no, return the existing path
+   unchanged.
+4. **Vault address** — `Input::<String>`: "Vault address".
+5. **Auth method** — `Confirm`: "Specify user/pass auth for vault?". If yes,
+   prompt for username (`Input`) and password (`Password`).
+6. **AppRole fallback** — if user/pass declined, `Confirm`: "Specify AppRole
+   auth for vault?". If yes, prompt for role ID and secret ID.
+7. **Token fallback** — if both declined, `Input::<String>`: "Vault token". If
+   empty, exit with `EINVAL` matching Python.
+
+### Final confirmation
+
+1. **Print rendered config** — serialise the assembled `Config` to YAML and echo
+   to stdout.
+2. **Confirm write** — `Confirm`: "Write config to '${path}'?". If no, exit with
+   `ENOTRECOVERABLE` matching Python.
+3. **Write file** — call `Config::store(path)`. On error, exit with
+   `ENOTRECOVERABLE` and print the error to stderr.
+
+## Module Layout
+
+```
+cbsbuild/src/cmds/config/
+  mod.rs              # clap subcommand definitions
+  init.rs             # `config init` implementation
+  init_vault.rs       # `config init-vault` implementation
+  prompts.rs          # thin dialoguer wrappers + a Prompter trait
+                      # for testability
+```
+
+The `Prompter` trait abstracts every interactive call so unit tests can swap in
+a scripted prompter:
+
+```rust
+pub trait Prompter {
+    fn input(&mut self, label: &str, default: Option<&str>) -> Result<String, PromptError>;
+    fn password(&mut self, label: &str) -> Result<String, PromptError>;
+    fn confirm(&mut self, label: &str, default: bool) -> Result<bool, PromptError>;
+}
+
+pub struct DialoguerPrompter;
+impl Prompter for DialoguerPrompter { /* delegates to dialoguer */ }
+
+#[cfg(test)]
+pub struct ScriptedPrompter {
+    answers: VecDeque<PromptAnswer>,
+}
+```
+
+The `config_init` function takes `&mut dyn Prompter`, so the same function is
+exercised in unit tests with a `ScriptedPrompter` and in production with
+`DialoguerPrompter`. All sub-functions in the call chain (`config_init_paths`,
+`config_init_storage`, `config_init_signing`, `config_init_secrets_paths`,
+`config_init_vault`) take the same `&mut dyn Prompter` so the seam is uniform.
+
+## Testing
+
+Three layers:
+
+1. **Unit tests for the data assembly** (no prompting): build a `Config` from a
+   fully-pre-filled `Init` struct; assert the resulting YAML matches an expected
+   snapshot. This covers the "all flags supplied" path that M1 already
+   implements.
+2. **Unit tests for the prompt flow** (scripted prompter): script answers in a
+   `VecDeque`, run `config_init` with a `ScriptedPrompter`, assert the resulting
+   `Config` and that the prompter was called in the expected order with the
+   expected labels. This catches regressions in prompt order, defaults, and skip
+   logic.
+3. **Smoke test** (real `dialoguer`, optional, gated): an integration test that
+   uses `expectrl` or `rexpect` to drive a real `cbsbuild config init`
+   subprocess against a tmpdir. Gated behind a feature flag because TTY-driving
+   tests are flaky on CI.
+
+Layers 1 and 2 are the load-bearing tests; layer 3 is a nice-to-have.
+
+## Bypass Behaviour (consistent with M1)
+
+The flag-based bypass modes ship in M1; this design preserves them unchanged
+when interactive mode lands:
+
+- `--for-systemd-install`: pre-fill paths for the systemd worker layout
+  (`/cbs/components`, `/cbs/scratch`, etc.) and write to
+  `~/.config/cbsd/${deployment}/worker/cbscore.config.yaml`.
+- `--for-containerized-run`: pre-fill the same paths as systemd-install but
+  write to the user-supplied `--config` path.
+- Per-field flags: `--components`, `--scratch`, `--containers-scratch`,
+  `--ccache`, `--vault`, `--secrets`. Any field supplied via a flag skips its
+  corresponding prompt.
+
+After this design ships, running `cbsbuild config init` with no flags activates
+the interactive flow. Until then, M1 errors out with a usage hint pointing the
+user at the flag modes.
+
+## Operator note
+
+When invoking `cbsbuild config init` from a workstation with a personal Python
+virtualenv active (e.g. `source venv/bin/activate` for an unrelated project),
+the venv's `python3` will be first on `PATH`. cbscore-rs does not strip this —
+it's the user's environment to manage. If a subsequent component build needs the
+system `python3` (e.g. Ceph's `do_cmake.sh`), deactivate the venv before
+invoking `cbsbuild`. This is an explicit non-port of Python cbscore's
+`_reset_python_env` workaround (see design 002 OQ5 resolution).
+
+## Migration from M1 to This Design
+
+When this design is implemented:
+
+1. Add `dialoguer` to the `cbsbuild` crate dependencies.
+2. Add the `prompts.rs` module with the `Prompter` trait and `DialoguerPrompter`
+   impl.
+3. Replace the M1 "no flags → error" branch in `cmd_config_init` with a call
+   into the new interactive flow.
+4. Add unit and scripted-prompter tests.
+5. Update `cbsbuild config init --help` text to describe the interactive mode.
+
+No on-disk format change. No CLI flag deprecations. No breaking change for
+automation that uses the flag-based modes.
+
+## Open Questions
+
+- **Default for ccache prompt.** The Python flow asks "Specify ccache path?"
+  (default no). Should we change to default-yes given how often ccache speeds up
+  dev builds? Decide at implementation time; non-blocking for the design.
+- **Validation of S3 / Vault URLs.** The Python flow accepts any string. Worth
+  adding a URL-shape sanity check (`url::Url::parse`) before accepting? Decide
+  at implementation time.
