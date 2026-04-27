@@ -425,6 +425,8 @@ hand-migrate their config and secrets files at cutover.
 ```rust
 // In cbscore-types/src/config/mod.rs
 
+use camino::Utf8PathBuf;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct Config {
@@ -436,19 +438,19 @@ pub struct Config {
     #[serde(default)]
     pub logging:  Option<LoggingConfig>,
     #[serde(default)]
-    pub secrets:  Vec<PathBuf>,
+    pub secrets:  Vec<Utf8PathBuf>,
     #[serde(default)]
-    pub vault:    Option<PathBuf>,
+    pub vault:    Option<Utf8PathBuf>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct PathsConfig {
-    pub components:         Vec<PathBuf>,
-    pub scratch:            PathBuf,
-    pub scratch_containers: PathBuf,
+    pub components:         Vec<Utf8PathBuf>,
+    pub scratch:            Utf8PathBuf,
+    pub scratch_containers: Utf8PathBuf,
     #[serde(default)]
-    pub ccache:             Option<PathBuf>,
+    pub ccache:             Option<Utf8PathBuf>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -461,9 +463,14 @@ pub struct VaultConfig {
 }
 ```
 
+`camino` must appear in `cbscore-types/Cargo.toml` with the `serde1` feature
+because the `Utf8PathBuf` fields above participate in the
+`#[derive(Serialize, Deserialize)]` on the types crate side; depending on
+`camino` only from `cbscore` would not be sufficient.
+
 One implementation detail: the Python `Config.store()` round-trips through JSON
 before dumping YAML so that `Path` objects serialise correctly. In Rust
-`PathBuf` implements `Serialize` directly and the round-trip is unnecessary.
+`Utf8PathBuf` implements `Serialize` directly and the round-trip is unnecessary.
 `Config::store` produces YAML via `serde_saphyr::to_string` (two-space indent,
 flow-style off). Round-trip equivalence on the Rust side (write → load → equal)
 is the contract; cross-language byte-equality with pydantic output is not
@@ -474,12 +481,14 @@ required since Python and Rust cbscore do not share files.
 Loading and storing live in the `cbscore` library crate:
 
 ```rust
+use camino::Utf8Path;
+
 impl Config {
     /// Load config from `path`. YAML if extension is `.yaml`/`.yml`;
     /// JSON otherwise. Matches the Python implementation exactly.
-    pub fn load(path: &Path) -> Result<Config, ConfigError> { /* ... */ }
+    pub fn load(path: &Utf8Path) -> Result<Config, ConfigError> { /* ... */ }
 
-    pub fn store(&self, path: &Path) -> Result<(), ConfigError> { /* ... */ }
+    pub fn store(&self, path: &Utf8Path) -> Result<(), ConfigError> { /* ... */ }
 }
 ```
 
@@ -814,8 +823,8 @@ equivalent with `rand`:
 
 ```rust
 pub fn gen_run_name(prefix: Option<&str>) -> String {
-    use rand::{seq::IteratorRandom, thread_rng};
-    let mut rng = thread_rng();
+    use rand::seq::IteratorRandom;
+    let mut rng = rand::rng();
     let suffix: String = ('a'..='z').choose_multiple(&mut rng, 10).into_iter().collect();
     format!("{}{}", prefix.unwrap_or("ces_"), suffix)
 }
@@ -926,7 +935,8 @@ library runs on top of:
 - `run_cmd(cmd, env)` — sync wrapper around `subprocess.run`
 - `async_run_cmd(cmd, outcb, timeout, cwd, extra_env)` — async wrapper with
   line-granular stream callback (the Python `reset_python_env` flag is
-  intentionally **not ported** — see Open Questions)
+  intentionally **not ported** — the Rust `cbsbuild` binary has no
+  venv-shadowing problem to solve)
 - `SecureArg` / `Password` / `PasswordArg` / `SecureURL` — secret carriers with
   `__str__` that redacts
 - `_sanitize_cmd(cmd)` — walks a command, replaces secret args with `"****"` and
@@ -1290,6 +1300,32 @@ candidates for future Rust rewrites (mirroring the `cbsd-rs` effort); `cbc` and
 consumer is migrated or retired, the Python `cbscore/` package is deleted from
 the repository.
 
+### Rollout considerations
+
+A worker fleet may share the source content of a `secrets.yaml` (e.g., a k8s
+ConfigMap, an NFS mount, a config-management-managed file). During a rolling
+upgrade where some workers are still on Python cbscore and some are on Rust
+cbscore:
+
+- Python workers continue reading and writing the existing un-tagged shape.
+- Rust workers reject any `secrets.yaml` lacking `schema_version: 1` or the
+  per-entry `type:` tag for git secrets (see § Wire-Format Versioning and §
+  Configuration & Secrets Subsystem).
+
+To avoid Rust workers hard-failing during rollout, **tag the source
+`secrets.yaml` first** — add `schema_version: 1` and the per-git-entry `type:`
+tags before deploying the first Rust worker. Pydantic's `extra = "ignore"`
+silently drops the extra keys on the Python side, so tagging the file early does
+not break workers still running Python cbscore. After every worker has been
+upgraded, the source file remains in the new shape; no re-tag step at the end of
+the rollout.
+
+This guidance applies regardless of mount mechanism: the runner copies
+`secrets.yaml` to a tmpfile and mounts the tmpfile into the podman container, so
+the source file is read at runner-spawn time and any in-flight build works on
+its own snapshot — but the tag must be present at the source the moment a Rust
+worker first reads it.
+
 ### Rollback
 
 Every milestone is independently revertable. All of M0–M3 happen inside
@@ -1353,11 +1389,9 @@ migrations, no cross-repo coordination.
   produces from the descriptor structs. There is no file interchange in steady
   state — Python and Rust executables do not read each other's release
   descriptors after the cutover. Existing Python-written release descriptors in
-  S3 are regenerated or migrated at cutover time (see Migration Strategy); this
-  assumes `crt` is rewritten or retired as part of that cutover, since it is
-  currently the only remaining Python consumer of `ReleaseDesc`. Round-trip
-  tests on the Rust side (serialize → parse → equal) are sufficient; no
-  golden-file test against pydantic output is required.
+  S3 are regenerated or migrated at cutover time (see Migration Strategy).
+  Round-trip tests on the Rust side (serialize → parse → equal) are sufficient;
+  no golden-file test against pydantic output is required.
 - **Builder image Python dependency.** **Resolved: drop only the cbscore Python
   wheel (and its `uv` / venv installation), keep system `python3`.** Removing
   system `python3` from the builder image is impossible: Ceph's `do_cmake.sh`
@@ -1370,12 +1404,12 @@ migrations, no cross-repo coordination.
   - `uv tool install` of the cbscore wheel (lines 48-52).
   - The host-side mount of `${RUNNER_PATH}/cbscore` (the cbscore source tree).
 
-  The new entrypoint mounts the `cbsbuild` static binary at
-  `${RUNNER_PATH}/bin/cbsbuild` and invokes it directly. System `python3`
-  (provided by the EL9-derived base image) remains as a transitive build dep for
-  Ceph and other components — this is **not** a "Python in the builder"
-  dependency from cbscore's perspective; it is a Ceph build dependency that
-  cbscore inherits.
+  The new entrypoint mounts the `cbsbuild` static binary at `/runner/cbsbuild`
+  (matching the mount table in § Runner Subsystem and the bundled entrypoint
+  script) and invokes it directly. System `python3` (provided by the EL9-derived
+  base image) remains as a transitive build dep for Ceph and other components —
+  this is **not** a "Python in the builder" dependency from cbscore's
+  perspective; it is a Ceph build dependency that cbscore inherits.
 
 - **Interactive `config init`.** **Resolved: deferred — out of M1 scope.** M1
   ships `cbsbuild config init` with the existing non-interactive flag modes
