@@ -164,7 +164,8 @@ state and invariants each one owns, and how the parts plug together.
   crate dep once the subprocess bridge is retired).
 - **Runner mounts the binary, not the source.** The builder container no longer
   needs a Python interpreter. `cbsbuild` is a single static binary mounted at
-  `/runner/cbsbuild` and invoked by the entrypoint script.
+  `/runner/cbsbuild` and runs as the container's PID 1 directly — no shell
+  entrypoint wrapper.
 - **Secrets redaction is type-enforced.** A `SecureArg` trait + a `SecretArg`
   enum make it a type error to pass a bare `&str` as a password to the
   subprocess runner.
@@ -711,7 +712,6 @@ changes most visibly — binary mount replaces source mount.
    │
    ├── setup components dir (temp)
    ├── write config + secrets to temp files
-   ├── extract entrypoint.sh to 0755 temp file
    ▼
  Spawning ───── podman error ───► Failed ────► Cleanup
    │
@@ -726,8 +726,7 @@ changes most visibly — binary mount replaces source mount.
    └────────────────────────────► Cleanup (always)
                                     │
                                     ├── rm temp components dir
-                                    ├── rm temp config/secrets files
-                                    └── rm temp entrypoint file
+                                    └── rm temp config/secrets files
 ```
 
 ### In-container mount layout
@@ -735,86 +734,75 @@ changes most visibly — binary mount replaces source mount.
 Exact paths — must match the current Python runner bit-for-bit (see
 `cbscore/runner.py` line 255-274 and `cbscore/_tools/cbscore-entrypoint.sh`).
 
-| Host path (generated)       | Mount point                      | Rust port change                                  |
-| --------------------------- | -------------------------------- | ------------------------------------------------- |
-| tempfile `descriptor.json`  | `/runner/<name>.json`            | —                                                 |
-| `include_str!`'d entrypoint | `/runner/entrypoint.sh`          | bundled into binary                               |
-| `cbsbuild` binary (self)    | `/runner/cbsbuild`               | **new** — replaces `/runner/cbscore` source mount |
-| tempfile config             | `/runner/cbs-build.config.yaml`  | —                                                 |
-| tempfile secrets            | `/runner/cbs-build.secrets.yaml` | —                                                 |
-| config vault (if set)       | `/runner/cbs-build.vault.yaml`   | —                                                 |
-| `paths.scratch`             | `/runner/scratch`                | —                                                 |
-| `paths.scratch_containers`  | `/var/lib/containers:Z`          | —                                                 |
-| components aggregate (temp) | `/runner/components`             | —                                                 |
-| `paths.ccache` (if set)     | `/runner/ccache`                 | —                                                 |
+| Host path (generated)       | Mount point                      | Rust port change                                                 |
+| --------------------------- | -------------------------------- | ---------------------------------------------------------------- |
+| tempfile `descriptor.json`  | `/runner/<name>.json`            | —                                                                |
+| `cbsbuild` binary (self)    | `/runner/cbsbuild`               | **new** — replaces `/runner/cbscore` source mount; runs as PID 1 |
+| tempfile config             | `/runner/cbs-build.config.yaml`  | —                                                                |
+| tempfile secrets            | `/runner/cbs-build.secrets.yaml` | —                                                                |
+| config vault (if set)       | `/runner/cbs-build.vault.yaml`   | —                                                                |
+| `paths.scratch`             | `/runner/scratch`                | —                                                                |
+| `paths.scratch_containers`  | `/var/lib/containers:Z`          | —                                                                |
+| components aggregate (temp) | `/runner/components`             | —                                                                |
+| `paths.ccache` (if set)     | `/runner/ccache`                 | —                                                                |
 
-### Entrypoint script
+### Container entry point
 
-The current Python entrypoint (`cbscore/_tools/cbscore-entrypoint.sh`, ~60
-lines) exists because cbscore is source-mounted: it downloads `uv`, creates a
-Python 3.13 venv, installs the cbscore wheel via `uv tool install`, prepends
-`/runner/bin` to `$PATH`, and then invokes `cbsbuild` by name. None of that is
-needed once `cbsbuild` is a single static binary. The Rust port replaces the
-script with a much smaller version:
+There is no shell entrypoint script. The Python implementation needed one
+(`cbscore/_tools/cbscore-entrypoint.sh`, ~60 lines) because cbscore was
+source-mounted and the entrypoint had to download `uv`, create a Python 3.13
+venv, `uv tool install` the cbscore wheel, and prepend `/runner/bin` to `$PATH`
+before invoking `cbsbuild`. With a single static `cbsbuild` binary, none of that
+setup exists; the binary becomes the container's PID 1 directly.
 
-```bash
-#!/bin/bash
-# Bundled into the cbsbuild binary via include_str!.
-# No uv, no venv, no $PATH prepending — cbsbuild is mounted directly
-# at /runner/cbsbuild and called by absolute path.
-
-# Defensive: fail fast on any unchecked error. Today every
-# post-preamble statement is safe (assignments, test, exec) so
-# `set -e` is decorative — but keeping it means any future
-# additions (network fetches, prerequisite checks, etc.) inherit
-# fail-fast behaviour without the editor having to remember.
-set -e
-
-RUNNER_PATH="/runner"
-
-if [[ -z ${HOME} ]] || [[ ${HOME} == "/" ]]; then
-  HOME="${RUNNER_PATH}"
-  export HOME
-fi
-
-dbg=
-[[ -n ${CBS_DEBUG} ]] && [[ ${CBS_DEBUG} == "1" ]] && dbg="--debug"
-
-# shellcheck disable=SC2086  # ${dbg} intentionally unquoted:
-# when empty it must produce zero args, not one empty arg.
-exec "${RUNNER_PATH}/cbsbuild" \
-  --config "${RUNNER_PATH}/cbs-build.config.yaml" ${dbg} \
-  runner build "$@"
-```
-
-The `exec` is load-bearing: it replaces the shell process with `cbsbuild` so
-that SIGTERM from `podman stop` reaches the Rust binary as PID 1 rather than
-being intercepted by bash (see SIGTERM Propagation below).
-
-Bundled and written out by the host runner:
+The host-side runner spawns podman with `cbsbuild` as the entrypoint command,
+supplying the in-container CLI invocation as podman command-line arguments:
 
 ```rust
-use std::io::Write as _;
+podman_run()
+    .arg("--entrypoint").arg("/runner/cbsbuild")
+    // ... mounts, --cidfile, --timeout, env vars (incl. CBS_DEBUG) ...
+    .arg(image_ref)
+    .arg("--config").arg("/runner/cbs-build.config.yaml")
+    .arg("runner").arg("build")
+    .args(user_args)
+    .spawn()?;
+```
 
-const ENTRYPOINT_SH: &str = include_str!("resources/cbscore-entrypoint.sh");
+The `--debug` flag is not passed explicitly; `cbsbuild` reads it from the
+`CBS_DEBUG` env var via `clap`'s `env` feature
+(`#[arg(long, env = "CBS_DEBUG")] debug: bool`). The host runner forwards
+`CBS_DEBUG` into the container with `podman run -e CBS_DEBUG`.
 
-async fn write_entrypoint() -> io::Result<NamedTempFile> {
-    let mut f = tempfile::Builder::new()
-        .prefix("cbs-entry-").suffix(".sh").tempfile()?;
-    // sync write — ENTRYPOINT_SH is a small in-memory &str, no
-    // benefit to async IO; tempfile::NamedTempFile is std::io::Write,
-    // not tokio::io::AsyncWrite.
-    f.write_all(ENTRYPOINT_SH.as_bytes())?;
-    let mut perms = f.as_file().metadata()?.permissions();
-    perms.set_mode(0o755);                        // unix-only
-    f.as_file().set_permissions(perms)?;
-    Ok(f)
+### HOME normalisation
+
+The previous shell entrypoint defended against bare-bones containers where
+`$HOME` is unset or `/` by setting `HOME=/runner` before exec'ing the CLI; some
+build-time tools (`gpg`, `npm`, `pip`, …) read `$HOME` for cache and keyring
+locations and break on `HOME=/`. The Rust port keeps the same defence, scoped to
+the in-container subcommand:
+
+```rust
+// Top of cbscore::cmds::runner::build, before any subprocess spawn.
+const RUNNER_PATH: &str = "/runner";
+
+let needs_fix = std::env::var_os("HOME")
+    .map(|s| s.is_empty() || s == "/")
+    .unwrap_or(true);
+if needs_fix {
+    // SAFETY: set_var is unsafe in current Rust because it mutates
+    // process-global env without synchronisation. We call it before
+    // tokio's runtime starts (i.e. before any other thread exists),
+    // which is the only thread-safe window. main.rs uses #[tokio::main]
+    // so this normalisation must run *before* the runtime takes over —
+    // structure the runner subcommand to do this in a sync prelude.
+    unsafe { std::env::set_var("HOME", RUNNER_PATH); }
 }
 ```
 
-The bundled script is mounted at `/runner/entrypoint.sh`; the binary is mounted
-at `/runner/cbsbuild` (both paths appear in the mount table above). No `$PATH`
-manipulation is needed inside the container.
+Scope is deliberately narrow: only the `cbsbuild runner build` subcommand
+performs this normalisation, so workstation invocations of other subcommands
+keep the user's `$HOME` unchanged.
 
 ### Running name generation
 
@@ -845,14 +833,10 @@ reads the cidfile and calls `podman_stop(name=cid)` — matching the Python
 ### SIGTERM propagation
 
 `stop(name=None, timeout=1)` calls `podman stop --time 1 <name>` (or `--all`).
-Podman itself forwards SIGTERM to the container's PID 1 (`entrypoint.sh`).
-Inside the container, the entrypoint must `exec` the CLI so SIGTERM reaches
-`cbsbuild` directly — preserving that `exec` in the shell script is a
-**correctness invariant**.
-
-`cbsbuild` installs a tokio signal handler for SIGTERM that cooperatively
-cancels the running build future. Graceful timeout is bounded by the outer
-`podman stop --time`.
+Podman forwards SIGTERM to the container's PID 1, which is `cbsbuild` itself —
+there is no shell wrapper to traverse. `cbsbuild` installs a tokio signal
+handler for SIGTERM that cooperatively cancels the running build future.
+Graceful timeout is bounded by the outer `podman stop --time`.
 
 ## Build Pipeline
 
@@ -1404,12 +1388,13 @@ migrations, no cross-repo coordination.
   - `uv tool install` of the cbscore wheel (lines 48-52).
   - The host-side mount of `${RUNNER_PATH}/cbscore` (the cbscore source tree).
 
-  The new entrypoint mounts the `cbsbuild` static binary at `/runner/cbsbuild`
-  (matching the mount table in § Runner Subsystem and the bundled entrypoint
-  script) and invokes it directly. System `python3` (provided by the EL9-derived
-  base image) remains as a transitive build dep for Ceph and other components —
-  this is **not** a "Python in the builder" dependency from cbscore's
-  perspective; it is a Ceph build dependency that cbscore inherits.
+  The Rust port mounts the `cbsbuild` static binary at `/runner/cbsbuild`
+  (matching the mount table in § Runner Subsystem) and uses it as the
+  container's PID 1 directly — there is no shell entrypoint wrapper. System
+  `python3` (provided by the EL9-derived base image) remains as a transitive
+  build dep for Ceph and other components — this is **not** a "Python in the
+  builder" dependency from cbscore's perspective; it is a Ceph build dependency
+  that cbscore inherits.
 
 - **Interactive `config init`.** **Resolved: deferred — out of M1 scope.** M1
   ships `cbsbuild config init` with the existing non-interactive flag modes
