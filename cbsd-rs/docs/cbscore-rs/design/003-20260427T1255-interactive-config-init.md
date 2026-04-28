@@ -182,7 +182,7 @@ exercised in unit tests with a `ScriptedPrompter` and in production with
 
 ## Testing
 
-Three layers:
+Two layers:
 
 1. **Unit tests for the data assembly** (no prompting): build a `Config` from a
    fully-pre-filled `Init` struct; assert the resulting YAML matches an expected
@@ -193,12 +193,10 @@ Three layers:
    `Config` and that the prompter was called in the expected order with the
    expected labels. This catches regressions in prompt order, defaults, and skip
    logic.
-3. **Smoke test** (real `dialoguer`, optional, gated): an integration test that
-   uses `expectrl` or `rexpect` to drive a real `cbsbuild config init`
-   subprocess against a tmpdir. Gated behind a feature flag because TTY-driving
-   tests are flaky on CI.
 
-Layers 1 and 2 are the load-bearing tests; layer 3 is a nice-to-have.
+No TTY-driving integration test is part of this design — the `Prompter` seam
+plus the scripted prompter cover the prompt flow without the flakiness that
+real-pty tests would introduce on CI.
 
 ## Bypass Behaviour (consistent with M1)
 
