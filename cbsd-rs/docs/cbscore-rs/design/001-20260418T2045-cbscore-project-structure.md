@@ -470,9 +470,12 @@ The Rust port preserves the same shape but changes the mechanics:
   wheel, `$PATH` manipulation, and finally `exec`'d `cbsbuild`. The Rust port
   mounts the compiled `cbsbuild` binary at `/runner/cbsbuild` and uses it as the
   container's PID 1 directly (`podman run --entrypoint /runner/cbsbuild ...`).
-  HOME normalisation that the shell did (`HOME=/runner` if unset or `/`) moves
-  into the `cbsbuild runner build` startup; the `CBS_DEBUG=1` → `--debug`
-  mapping is handled by `clap`'s `env` feature; the
+  HOME normalisation that the shell did (`HOME=/runner` if unset or `/`) is
+  preserved by passing `-e HOME=/runner` to `podman run` from the host runner —
+  the flag overrides whatever the image or host process exports, so all edge
+  cases (image without HOME, `--user`-altered HOME, rootless podman with weird
+  UID maps) are handled without any in-container code. The `CBS_DEBUG=1` →
+  `--debug` mapping is handled by `clap`'s `env` feature; the
   `--config /runner/cbs-build.config.yaml runner build <args>` invocation lives
   directly on the host runner's `podman run` command line.
 - **Binary mount instead of source mount** — the Python runner bind-mounts the
@@ -481,8 +484,8 @@ The Rust port preserves the same shape but changes the mechanics:
   the cbscore Python wheel, and the venv from the build image. System `python3`
   stays — Ceph's `do_cmake.sh` and several `python3-mgr-*` RPMs require it (see
   design 002 § Open Questions, OQ7 resolution, for the precise scope of what is
-  and is not removed; § Runner Subsystem there has the full entry-point and
-  HOME-normalisation details).
+  and is not removed; § Container entry point in design 002 § Runner Subsystem
+  covers the full `podman run` invocation and the `-e HOME=/runner` flag).
 - **Config, secrets, components, scratch, ccache** — same mount paths as today
   (`/runner/cbs-build.config.yaml`, `/runner/cbs-build.secrets.yaml`,
   `/runner/components`, `/runner/scratch`, `/runner/ccache`). Temp files on the
