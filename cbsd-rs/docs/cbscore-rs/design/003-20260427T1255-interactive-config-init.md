@@ -97,10 +97,14 @@ suppressed when the corresponding CLI flag was supplied.
 1. **Configure storage?** — `Confirm`: "Configure storage?". If no, return
    `None` and skip the rest.
 2. **S3 storage** — `Confirm`: "Configure S3 storage for artifact upload?". If
-   yes, prompt for: S3 URL, artifacts bucket, artifacts location, releases
-   bucket, releases location.
+   yes, prompt for: S3 URL (URL-validated), artifacts bucket, artifacts
+   location, releases bucket, releases location.
 3. **Registry storage** — `Confirm`: "Configure registry storage for container
-   image upload?". If yes, prompt for registry URL.
+   image upload?". If yes, prompt for registry URL (URL-validated).
+
+URL-validated prompts wrap the `Input::<String>` in `dialoguer`'s
+`validate_with` hook, calling `url::Url::parse` and re-asking the user on parse
+failure (see § URL validation).
 
 ### `config_init_signing`
 
@@ -127,7 +131,8 @@ suppressed when the corresponding CLI flag was supplied.
 3. **Overwrite existing?** — if the path exists, `Confirm`: "Vault config path
    '${path}' already exists. Overwrite?". If no, return the existing path
    unchanged.
-4. **Vault address** — `Input::<String>`: "Vault address".
+4. **Vault address** — `Input::<String>`: "Vault address" (URL-validated; see §
+   URL validation).
 5. **Auth method** — `Confirm`: "Specify user/pass auth for vault?". If yes,
    prompt for username (`Input`) and password (`Password`).
 6. **AppRole fallback** — if user/pass declined, `Confirm`: "Specify AppRole
@@ -143,6 +148,31 @@ suppressed when the corresponding CLI flag was supplied.
    `ENOTRECOVERABLE` matching Python.
 3. **Write file** — call `Config::store(path)`. On error, exit with
    `ENOTRECOVERABLE` and print the error to stderr.
+
+### URL validation
+
+Three prompts accept URLs: the S3 storage URL, the registry storage URL, and the
+Vault address. Python cbscore accepts any string and surfaces malformed URLs
+only when the SDK first tries to connect — typically during the next build, far
+from the input that caused the problem. The Rust port validates URL shape at
+prompt time using `url::Url::parse` via dialoguer's `validate_with` hook:
+
+```rust
+let url = Input::<String>::new()
+    .with_prompt("Vault address (incl. scheme, e.g. https://...)")
+    .validate_with(|s: &String| -> Result<(), String> {
+        url::Url::parse(s)
+            .map(|_| ())
+            .map_err(|e| format!("invalid URL: {e}"))
+    })
+    .interact()?;
+```
+
+The validator catches missing-scheme / typo cases (`htps://`, `vault.local`
+without a scheme, etc.) and re-prompts in-place. Semantic validity (host
+reachable, port correct, TLS cert valid) is **not** checked here; that remains
+the SDK's job at first connect. The point is to fail fast on syntactic typos,
+not to verify deployment.
 
 ## Module Layout
 
@@ -220,7 +250,9 @@ user at the flag modes.
 
 When this design is implemented:
 
-1. Add `dialoguer` to the `cbsbuild` crate dependencies.
+1. Add `dialoguer` and `url` to the `cbsbuild` crate dependencies (`url` is
+   already a `cbscore` dep but is needed at the binary level for prompt-time
+   validation; depending on the cbscore re-export is also acceptable).
 2. Add the `prompts.rs` module with the `Prompter` trait and `DialoguerPrompter`
    impl.
 3. Replace the M1 "no flags → error" branch in `cmd_config_init` with a call
@@ -231,11 +263,17 @@ When this design is implemented:
 No on-disk format change. No CLI flag deprecations. No breaking change for
 automation that uses the flag-based modes.
 
-## Open Questions
+## Resolved Decisions
 
-- **Default for ccache prompt.** The Python flow asks "Specify ccache path?"
-  (default no). Should we change to default-yes given how often ccache speeds up
-  dev builds? Decide at implementation time; non-blocking for the design.
-- **Validation of S3 / Vault URLs.** The Python flow accepts any string. Worth
-  adding a URL-shape sanity check (`url::Url::parse`) before accepting? Decide
-  at implementation time.
+- **ccache prompt default: no.** The Python flow asks "Specify ccache path?"
+  with default **no**, and the Rust port preserves that behaviour. Operators who
+  want ccache opt in either via the prompt or by passing `--ccache <path>` on
+  the command line; the `--for-systemd-install` and `--for-containerized-run`
+  bypass flags continue to pre-fill `/cbs/ccache`. Default-yes was considered
+  and rejected: muscle-memory parity with Python cbscore wins over the
+  build-speedup convenience for the (small) interactive workstation cohort.
+- **URL validation: yes, via `url::Url::parse`.** The S3 storage URL, registry
+  storage URL, and Vault address prompts all use dialoguer's `validate_with`
+  hook to call `url::Url::parse` and re-prompt on syntactic failure. See § URL
+  validation above for the rationale and the contract (catch typos at prompt
+  time, not semantic deployment errors).
