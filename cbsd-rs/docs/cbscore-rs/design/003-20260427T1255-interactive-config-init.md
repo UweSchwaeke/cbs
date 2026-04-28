@@ -216,16 +216,6 @@ After this design ships, running `cbsbuild config init` with no flags activates
 the interactive flow. Until then, M1 errors out with a usage hint pointing the
 user at the flag modes.
 
-## Operator note
-
-When invoking `cbsbuild config init` from a workstation with a personal Python
-virtualenv active (e.g. `source venv/bin/activate` for an unrelated project),
-the venv's `python3` will be first on `PATH`. cbscore-rs does not strip this —
-it's the user's environment to manage. If a subsequent component build needs the
-system `python3` (e.g. Ceph's `do_cmake.sh`), deactivate the venv before
-invoking `cbsbuild`. This is an explicit non-port of Python cbscore's
-`_reset_python_env` workaround (see design 002 OQ5 resolution).
-
 ## Migration from M1 to This Design
 
 When this design is implemented:
