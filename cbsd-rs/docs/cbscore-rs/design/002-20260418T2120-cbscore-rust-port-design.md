@@ -761,7 +761,9 @@ supplying the in-container CLI invocation as podman command-line arguments:
 ```rust
 podman_run()
     .arg("--entrypoint").arg("/runner/cbsbuild")
-    // ... mounts, --cidfile, --timeout, env vars (incl. CBS_DEBUG) ...
+    .arg("-e").arg("HOME=/runner")
+    .arg("-e").arg("CBS_DEBUG")
+    // ... mounts, --cidfile, --timeout, other env vars ...
     .arg(image_ref)
     .arg("--config").arg("/runner/cbs-build.config.yaml")
     .arg("runner").arg("build")
@@ -774,35 +776,16 @@ The `--debug` flag is not passed explicitly; `cbsbuild` reads it from the
 (`#[arg(long, env = "CBS_DEBUG")] debug: bool`). The host runner forwards
 `CBS_DEBUG` into the container with `podman run -e CBS_DEBUG`.
 
-### HOME normalisation
-
-The previous shell entrypoint defended against bare-bones containers where
-`$HOME` is unset or `/` by setting `HOME=/runner` before exec'ing the CLI; some
-build-time tools (`gpg`, `npm`, `pip`, …) read `$HOME` for cache and keyring
-locations and break on `HOME=/`. The Rust port keeps the same defence, scoped to
-the in-container subcommand:
-
-```rust
-// Top of cbscore::cmds::runner::build, before any subprocess spawn.
-const RUNNER_PATH: &str = "/runner";
-
-let needs_fix = std::env::var_os("HOME")
-    .map(|s| s.is_empty() || s == "/")
-    .unwrap_or(true);
-if needs_fix {
-    // SAFETY: set_var is unsafe in current Rust because it mutates
-    // process-global env without synchronisation. We call it before
-    // tokio's runtime starts (i.e. before any other thread exists),
-    // which is the only thread-safe window. main.rs uses #[tokio::main]
-    // so this normalisation must run *before* the runtime takes over —
-    // structure the runner subcommand to do this in a sync prelude.
-    unsafe { std::env::set_var("HOME", RUNNER_PATH); }
-}
-```
-
-Scope is deliberately narrow: only the `cbsbuild runner build` subcommand
-performs this normalisation, so workstation invocations of other subcommands
-keep the user's `$HOME` unchanged.
+The `-e HOME=/runner` flag preserves the Python shell entrypoint's
+`HOME=/runner` defaulting. The Python entrypoint set `HOME` only when it was
+unset or equal to `/`; the Rust port sets it unconditionally on the podman
+command line because `-e HOME=/runner` overrides whatever the image or the host
+process exports, which fixes the same edge cases (`--user`-altered HOME, image
+without HOME, rootless podman with weird UID maps) without any in-container
+code. Tools that fall back to `$HOME` for cache/state (`buildah`, `podman`,
+`pip`, ...) write to `/runner/.<dotfile>` in the container's writable layer;
+nothing leaks onto the host because `/runner` itself is not bind-mounted (only
+specific subpaths under it are).
 
 ### Running name generation
 
