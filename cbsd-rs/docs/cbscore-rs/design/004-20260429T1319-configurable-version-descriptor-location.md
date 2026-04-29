@@ -115,19 +115,23 @@ existing Python-side invariant; this design preserves it.
 ## Open Questions
 
 The discussion progresses one item at a time; each entry below moves to Resolved
-Decisions once landed. 4. **Read vs write paths.** Does `versions create` write
-to one location and consumers (cbsd, cbsd-rs, future tooling) read from a
-different one — or even a search path of multiple locations? Or is there a
-single "the descriptor store" location used by all paths? 5. **Backwards
-compatibility for existing `_versions/` trees.** What happens to the descriptor
-files already populated in operator repos? Migration step, automatic detection,
-or manual operator action? 6. **Schema-version implications.** Adding
-`Config.paths.versions` is a schema change to `Config`. Does this bump
-`Config.schema_version` to 2, or stay at 1 because the field is `Option` with a
-default? See design 002 § Wire-Format Versioning for the dispatch policy. 7.
-**CLI-flag bypass interactions.** Does `--for-systemd-install` /
-`--for-containerized-run` pre-fill `--versions-dir` like the other paths? If
-yes, what value? If no, why is `versions` the exception?
+Decisions once landed. OQ numbering is stable across the whole design (OQ1–OQ3
+are above in Resolved Decisions; OQ4–OQ7 remain here).
+
+- **OQ4 — Read vs write paths.** Does `versions create` write to one location
+  and consumers (cbsd, cbsd-rs, future tooling) read from a different one — or
+  even a search path of multiple locations? Or is there a single "the descriptor
+  store" location used by all paths?
+- **OQ5 — Backwards compatibility for existing `_versions/` trees.** What
+  happens to the descriptor files already populated in operator repos? Migration
+  step, automatic detection, or manual operator action?
+- **OQ6 — Schema-version implications.** Adding `Config.paths.versions` is a
+  schema change to `Config`. Does this bump `Config.schema_version` to 2, or
+  stay at 1 because the field is `Option` with a default? See design 002 §
+  Wire-Format Versioning for the dispatch policy.
+- **OQ7 — CLI-flag bypass interactions.** Does `--for-systemd-install` /
+  `--for-containerized-run` pre-fill `--versions-dir` like the other paths? If
+  yes, what value? If no, why is `versions` the exception?
 
 ## Design Sketch
 
