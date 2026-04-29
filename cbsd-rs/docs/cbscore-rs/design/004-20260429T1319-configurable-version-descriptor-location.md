@@ -2,17 +2,16 @@
 
 ## Status
 
-**Draft — discussion phase.** This design refines the storage location of
-version descriptors written by `cbsbuild versions create` and read by the rest
-of cbscore-rs. It exists because the Python implementation hardcodes the path
-`<git-repo-root>/_versions/<type>/<VERSION>.json` and carries a
-`# FIXME: make this configurable` comment
+**Approved, ready for M1 implementation.** All seven Open Questions (OQ1–OQ7)
+are resolved (see § Resolved Decisions). The § Design Sketch and § Migration
+sections describe the concrete shape of the change. This design refines the
+storage location of version descriptors written by `cbsbuild versions create`
+and read by the rest of cbscore-rs. It exists because the Python implementation
+hardcodes the path `<git-repo-root>/_versions/<type>/<VERSION>.json` and carries
+a `# FIXME: make this configurable` comment
 (`cbscore/src/cbscore/cmds/versions.py:88`). The Rust port is a natural moment
-to fix this; design 002 § Version Descriptors & Creation references this
+to fix it; design 002 § Version Descriptors & Creation references this
 follow-up.
-
-Sections below are populated as the design discussion progresses with the user.
-Open Questions block enumerates the decision points.
 
 ## Context
 
@@ -222,8 +221,154 @@ Both edits land in design 003 in the same commit as this resolution.
 
 ## Design Sketch
 
-(filled in after the Open Questions are resolved)
+The change consists of one new config field, one new CLI flag, one resolver, one
+path-builder, and a small set of edits at the existing write site. All pieces
+land in M1 1.0.0; nothing is staged separately.
+
+### Config schema
+
+`cbscore-types/src/config/paths.rs`:
+
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct PathsConfig {
+    pub components:         Vec<Utf8PathBuf>,
+    pub scratch:            Utf8PathBuf,
+    pub scratch_containers: Utf8PathBuf,
+    #[serde(default)]
+    pub ccache:             Option<Utf8PathBuf>,
+    #[serde(default)]
+    pub versions:           Option<Utf8PathBuf>,   // NEW (design 004)
+}
+```
+
+YAML key is `versions` (kebab-case is a no-op for a single word). The field is
+`Option`; absent means "fall back to the OQ2 default at runtime".
+
+### CLI flag
+
+`cbsbuild versions create` gains:
+
+```rust
+#[arg(long, value_name = "PATH")]
+versions_dir: Option<Utf8PathBuf>,
+```
+
+Per design 002 §Capability Mapping the type is `Utf8PathBuf` (camino). clap
+parses it via the `Utf8PathBuf: FromStr` impl.
+
+### Resolver
+
+`cbscore::versions::resolve_root` in `cbscore/src/versions/mod.rs`:
+
+```rust
+pub async fn resolve_root(
+    cli: Option<&Utf8Path>,
+    config: &Config,
+) -> Result<Utf8PathBuf, VersionError> {
+    if let Some(p) = cli {
+        return Ok(p.to_owned());
+    }
+    if let Some(p) = config.paths.versions.as_deref() {
+        return Ok(p.to_owned());
+    }
+    // Fallback: <git-rev-parse --show-toplevel>/_versions.
+    match cbscore::utils::git::repo_root().await {
+        Ok(root) => Ok(root.join("_versions")),
+        Err(_) => Err(VersionError::NoDescriptorRoot {
+            cwd: std::env::current_dir()?.try_into()?,
+        }),
+    }
+}
+```
+
+`VersionError::NoDescriptorRoot` carries enough context that its `Display` impl
+produces the OQ5 error message (no git, no override, mention both
+`--versions-dir` and `Config.paths.versions`).
+
+### Path builder
+
+`cbscore::versions::desc::descriptor_path` in
+`cbscore-types/src/versions/desc.rs`:
+
+```rust
+pub fn descriptor_path(
+    root: &Utf8Path,
+    ty: VersionType,
+    version: &str,
+) -> Utf8PathBuf {
+    root.join(ty.as_dir_name()).join(format!("{version}.json"))
+}
+```
+
+`VersionType::as_dir_name(&self) -> &str` returns `"release"`, `"dev"`,
+`"test"`, `"ci"` — the existing pydantic enum value strings, locked in by
+Correctness Invariant 4 (snake_case wire keys).
+
+This helper is the single source of truth for the `<root>/<type>/<VERSION>.json`
+layout. Both write (`versions create`) and any future read-side consumer call
+it.
+
+### Write site
+
+`cbsbuild versions create` (in `cbsbuild/src/cmds/versions.rs`):
+
+```rust
+let root = cbscore::versions::resolve_root(
+    args.versions_dir.as_deref(),
+    &config,
+).await?;
+let path = cbscore::versions::desc::descriptor_path(
+    &root, version_type, &desc.version,
+);
+
+if path.exists() {
+    return Err(VersionError::AlreadyExists { path });
+}
+
+path.parent().expect("path has parent").create_dir_all_async().await?;
+desc.write(&path).await?;
+```
+
+The `create_dir_all` already lives in `Config::store` per design 002 F3 — but
+`desc.write` (a `VersionDescriptor` method) needs the same behaviour, OR the
+call site does the `mkdir -p` explicitly. Decide at implementation time; either
+is correct.
+
+### Bypass-mode pre-fill
+
+In `cbsbuild config init`'s `--for-systemd-install` / `--for-containerized-run`
+handler, alongside the other path pre-fills:
+
+```rust
+init.paths.versions = Some(Utf8PathBuf::from("/cbs/_versions"));
+```
+
+Listed in design 003 §Bypass Behaviour for completeness.
 
 ## Migration
 
-(filled in after the Open Questions are resolved)
+### Code
+
+| Step | Where                                                    | What                                                                                                                                                        |
+| ---- | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1    | `cbscore-types/src/config/paths.rs`                      | Add `versions: Option<Utf8PathBuf>` field with `#[serde(default)]`.                                                                                         |
+| 2    | `cbscore-types/src/versions/desc.rs`                     | Add `descriptor_path()` helper. Add `VersionType::as_dir_name()` if not already present.                                                                    |
+| 3    | `cbscore/src/versions/mod.rs`                            | Add `resolve_root()`. Add `VersionError::NoDescriptorRoot` variant with the OQ5 error text.                                                                 |
+| 4    | `cbsbuild/src/cmds/versions.rs`                          | Add `--versions-dir` flag. Call `resolve_root()` then `descriptor_path()`. Drop the old hardcoded `repo_root.join("_versions").join(type).join(...)` chain. |
+| 5    | `cbsbuild/src/cmds/config/init.rs` (post-M1, design 003) | Add the optional "Versions path" prompt. Add `versions = "/cbs/_versions"` to the bypass-mode pre-fill set.                                                 |
+
+Steps 1–4 land in M1. Step 5 lands when design 003 is implemented post-M1.
+
+### Operator-side
+
+| Operator scenario                                                       | Required action at upgrade                                                                                                                                                                                                                          |
+| ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Existing operator with `<git-root>/_versions/` populated, doing nothing | None. Default fallback resolves to `<git-root>/_versions`. Bit-identical behaviour.                                                                                                                                                                 |
+| Operator who wants to relocate the descriptor store                     | Set `paths.versions: /new/path` in `cbs-build.config.yaml`, or pass `--versions-dir /new/path` per invocation. Move existing files via shell: `cp -r <git-root>/_versions/* /new/path/`.                                                            |
+| Operator using `--for-systemd-install` / `--for-containerized-run`      | Re-run `cbsbuild config init --for-systemd-install` (or equivalent) on the bypass-pre-fill side; the regenerated `cbscore.config.yaml` will include `paths.versions: /cbs/_versions`. Alternatively, manually add the field to the existing config. |
+| Operator on a worker host without a git checkout (today: blocked)       | Set `paths.versions` in config or pass `--versions-dir`. The blocking constraint is removed.                                                                                                                                                        |
+
+No Python-side patches; no schema_version bump (per OQ6, design 004 is a pre-M1
+change, the rule applies post-1.0).
