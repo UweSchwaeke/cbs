@@ -103,10 +103,13 @@ Three reasons:
   filesystem-encoded to a new field in `VersionDescriptor`, contradicting this
   design's Non-Goal "Changing the wire format of `VersionDescriptor` itself".
 - **Single read/write path-resolution function.** A helper
-  `cbscore::versions::desc::descriptor_path(root, type, version) -> Utf8PathBuf`
+  `cbscore_types::versions::desc::descriptor_path(root, type, version) -> Utf8PathBuf`
   lives in one place and is shared between `versions create` (write) and every
   reader (cbsd, cbsd-rs, future tooling). The layout convention has exactly one
-  place in the codebase that encodes it.
+  place in the codebase that encodes it. The helper is pure (a chain of
+  `Utf8Path::join` calls), has no IO or async, and lives in `cbscore-types` per
+  the cbscore-types-vs-cbscore split in design 001 (types in `cbscore-types`, IO
+  in `cbscore`).
 
 The "type encoded in directory layout, not in descriptor" property is an
 existing Python-side invariant; this design preserves it.
@@ -276,20 +279,30 @@ pub async fn resolve_root(
     // Fallback: <git-rev-parse --show-toplevel>/_versions.
     match cbscore::utils::git::repo_root().await {
         Ok(root) => Ok(root.join("_versions")),
-        Err(_) => Err(VersionError::NoDescriptorRoot {
-            cwd: std::env::current_dir()?.try_into()?,
-        }),
+        Err(_) => {
+            // Best-effort cwd capture for the error context; never propagate
+            // a std::io::Error here, that would bypass the OQ5 friendly text.
+            let cwd = std::env::current_dir()
+                .ok()
+                .and_then(|p| Utf8PathBuf::try_from(p).ok())
+                .unwrap_or_else(|| Utf8PathBuf::from("<unknown>"));
+            Err(VersionError::NoDescriptorRoot { cwd })
+        }
     }
 }
 ```
 
 `VersionError::NoDescriptorRoot` carries enough context that its `Display` impl
 produces the OQ5 error message (no git, no override, mention both
-`--versions-dir` and `Config.paths.versions`).
+`--versions-dir` and `Config.paths.versions`). The `cwd` is captured
+best-effort: if `std::env::current_dir()` itself fails (working directory
+deleted under the process) or the path is not UTF-8, the error renders with
+`<unknown>` rather than propagating a `std::io::Error` that would mask the
+intended message.
 
 ### Path builder
 
-`cbscore::versions::desc::descriptor_path` in
+`cbscore_types::versions::desc::descriptor_path` in
 `cbscore-types/src/versions/desc.rs`:
 
 ```rust
@@ -319,7 +332,7 @@ let root = cbscore::versions::resolve_root(
     args.versions_dir.as_deref(),
     &config,
 ).await?;
-let path = cbscore::versions::desc::descriptor_path(
+let path = cbscore_types::versions::desc::descriptor_path(
     &root, version_type, &desc.version,
 );
 
