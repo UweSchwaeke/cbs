@@ -886,12 +886,12 @@ pub async fn run_build(
     desc: &VersionDescriptor,
     config: &Config,
     opts: &BuildOptions,
-) -> Result<BuildReport, BuilderError> {
+) -> Result<BuildArtifactReport, BuilderError> {
     let prep      = prepare::run(desc, config, opts).await?;
     let rpms      = rpmbuild::run(desc, config, &prep).await?;
     let signed    = signing::run(desc, config, &rpms).await?;
     let uploaded  = upload::run(desc, config, &signed).await?;
-    Ok(BuildReport::new(prep, rpms, signed, uploaded))
+    Ok(BuildArtifactReport::new(prep, rpms, signed, uploaded))
 }
 ```
 

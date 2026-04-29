@@ -31,21 +31,28 @@ The existing `cbscore/` package has these top-level subsystems (LoC from
 | Area                  | Python location                                                     | LoC   |
 | --------------------- | ------------------------------------------------------------------- | ----- |
 | CLI entry             | `__main__.py`                                                       | ~80   |
-| CLI commands          | `cmds/{advanced,builds,config,versions}`                            | ~1400 |
+| CLI commands          | `cmds/{advanced,builds,config,versions}`                            | ~1230 |
 | Config (load/store)   | `config.py`                                                         | ~250  |
 | Errors                | `errors.py`                                                         | ~50   |
 | Logger                | `logger.py`                                                         | ~25   |
-| Core components       | `core/component.py`                                                 | ~100  |
-| Version descriptors   | `versions/{desc,utils,create,errors}`                               | ~550  |
-| Container descriptors | `containers/{build,component,desc,repos}`                           | ~850  |
-| Image sign & sync     | `images/{desc,signing,skopeo,sync}`                                 | ~600  |
-| Release descriptors   | `releases/{desc,s3,utils}`                                          | ~460  |
-| Builder pipeline      | `builder/{prepare,rpmbuild,signing,upload,builder,utils}`           | ~1450 |
-| Runner                | `runner.py`                                                         | ~325  |
-| Secrets               | `utils/secrets/{models,mgr,git,registry,signing,storage,utils}`     | ~1200 |
-| Subsystem wrappers    | `utils/{buildah,podman,s3,vault,git,uris,paths,containers}`         | ~1500 |
+| Core components       | `core/component.py`                                                 | ~110  |
+| Version descriptors   | `versions/{desc,utils,create,errors}`                               | ~630  |
+| Container descriptors | `containers/{build,component,desc,repos}`                           | ~890  |
+| Image sign & sync     | `images/{desc,signing,skopeo,sync}`                                 | ~640  |
+| Release descriptors   | `releases/{desc,s3,utils}`                                          | ~520  |
+| Builder pipeline      | `builder/{prepare,rpmbuild,signing,upload,builder,report,utils}`    | ~1870 |
+| Runner                | `runner.py`                                                         | ~345  |
+| Secrets               | `utils/secrets/{models,mgr,git,registry,signing,storage,utils}`     | ~1380 |
+| Subsystem wrappers    | `utils/{buildah,podman,s3,vault,git,uris,paths,containers}`         | ~1670 |
 | Subprocess + redact   | `utils/__init__.py` (`SecureArg`, `_sanitize_cmd`, `async_run_cmd`) | ~270  |
-| Entrypoint script     | `_tools/cbscore-entrypoint.sh`                                      | ~40   |
+| Entrypoint script     | `_tools/cbscore-entrypoint.sh`                                      | ~60   |
+
+`builder/report.py` was added by
+`cbscore: add artifact report and return from builder/runner` (commit
+`d04b54c`); it defines the `BuildArtifactReport` pydantic models that summarise
+what a build produced (container image, release descriptor, components). The
+Rust port surfaces this as `BuildArtifactReport` in `cbscore-types::builder`
+(see design 002 §Wire-Format Versioning and §Build Pipeline).
 
 ## Downstream Consumers
 
@@ -108,6 +115,8 @@ cbsd-rs/
 │       │   └── errors.rs       # ImageDescriptorError
 │       ├── releases/
 │       │   └── desc.rs         # ReleaseDesc, ReleaseComponent, ArchType
+│       ├── builder/
+│       │   └── report.rs       # BuildArtifactReport, ContainerImageReport, ...
 │       └── core/
 │           └── component.rs    # CoreComponent yaml structs
 │
@@ -141,6 +150,7 @@ cbsd-rs/
 │       │   ├── rpmbuild.rs
 │       │   ├── signing.rs
 │       │   ├── upload.rs
+│       │   ├── report.rs        # BuildArtifactReport assembly
 │       │   └── utils.rs
 │       ├── runner/
 │       │   ├── mod.rs          # gen_run_name, stop
