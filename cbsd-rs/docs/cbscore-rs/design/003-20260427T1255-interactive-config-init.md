@@ -150,11 +150,24 @@ failure (see § URL validation).
 
 ### Final confirmation
 
-1. **Print rendered config** — serialise the assembled `Config` to YAML and echo
+1. **Suffix normalisation.** If the target `config_path` does not end in
+   `.yaml`, rename it to use the `.yaml` extension
+   (`Path::with_extension("yaml")` / `Utf8PathBuf::with_extension`) and echo a
+   warning: `"config at '${old}' not YAML, use '${new}' instead."`. Mirrors
+   Python `config_init` lines 283-288. This is load-bearing: `Config::load`
+   picks the deserialiser by extension (YAML vs JSON), so writing YAML to a
+   `.json`-named file would cause a parse failure on the next invocation.
+   Non-interactive — a log line, not a prompt.
+2. **Overwrite confirm.** If `config_path` already exists on disk, prompt
+   `Confirm`: `"Config file exists, overwrite?"`. If no, echo
+   `"do not write config file to '${path}'"` to stderr and exit with
+   `ENOTRECOVERABLE`. Mirrors Python lines 290-292. This is separate from Step 4
+   below; Python emits both prompts when the file exists.
+3. **Print rendered config** — serialise the assembled `Config` to YAML and echo
    to stdout.
-2. **Confirm write** — `Confirm`: "Write config to '${path}'?". If no, exit with
-   `ENOTRECOVERABLE` matching Python.
-3. **Write file** — call `Config::store(path)`. On error, exit with
+4. **Confirm write** — `Confirm`: `"Write config to '${path}'?"`. If no, exit
+   with `ENOTRECOVERABLE` matching Python.
+5. **Write file** — call `Config::store(path)`. On error, exit with
    `ENOTRECOVERABLE` and print the error to stderr.
 
 ### URL validation
