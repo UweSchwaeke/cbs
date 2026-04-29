@@ -197,6 +197,29 @@ reachable, port correct, TLS cert valid) is **not** checked here; that remains
 the SDK's job at first connect. The point is to fail fast on syntactic typos,
 not to verify deployment.
 
+The validation logic lives in a free function:
+
+```rust
+pub fn validate_url(s: &str) -> Result<(), String> {
+    url::Url::parse(s)
+        .map(|_| ())
+        .map_err(|e| format!("invalid URL: {e}"))
+}
+```
+
+Each URL prompt's `validate_with` closure simply delegates:
+`|s: &String| validate_url(s)`. The function is unit-tested directly,
+parametrised over a list of well-formed and malformed URLs — that is the
+load-bearing test for URL validation. The `Prompter` trait does **not** thread
+the validator through `input()`; widening the trait to carry a validator at
+every call site adds surface area for the three URL prompts and zero benefit for
+the ~20 other text prompts. The trade-off: `ScriptedPrompter` (used in
+prompt-flow unit tests) does not invoke `validate_url`, so scripts must supply
+pre-validated answers — invalid URLs in test scripts won't trigger a re-prompt
+loop. That is acceptable because the URL validator is exercised directly by its
+own tests; the prompt-flow tests cover ordering / defaults / skip logic, not URL
+parsing.
+
 ## Module Layout
 
 ```
@@ -205,7 +228,7 @@ cbsbuild/src/cmds/config/
   init.rs             # `config init` implementation
   init_vault.rs       # `config init-vault` implementation
   prompts.rs          # thin dialoguer wrappers + a Prompter trait
-                      # for testability
+                      # for testability + the free validate_url fn
 ```
 
 The `Prompter` trait abstracts every interactive call so unit tests can swap in
@@ -235,7 +258,7 @@ exercised in unit tests with a `ScriptedPrompter` and in production with
 
 ## Testing
 
-Two layers:
+Three layers:
 
 1. **Unit tests for the data assembly** (no prompting): build a `Config` from a
    fully-pre-filled `Init` struct; assert the resulting YAML matches an expected
@@ -245,7 +268,13 @@ Two layers:
    `VecDeque`, run `config_init` with a `ScriptedPrompter`, assert the resulting
    `Config` and that the prompter was called in the expected order with the
    expected labels. This catches regressions in prompt order, defaults, and skip
-   logic.
+   logic. Scripts supply pre-validated answers; URL validation is exercised
+   separately (layer 3) — see § URL validation.
+3. **Unit tests for `validate_url`** (pure function): parametrised over a list
+   of well-formed URLs (`https://...`, `http://localhost:9000`, `s3://bucket`,
+   etc.) that must accept and a list of malformed inputs (`htps://`,
+   `vault.local`, empty string, etc.) that must reject with a usable error
+   message. Independent of the prompt flow.
 
 No TTY-driving integration test is part of this design — the `Prompter` seam
 plus the scripted prompter cover the prompt flow without the flakiness that
