@@ -167,8 +167,10 @@ failure (see § URL validation).
    to stdout.
 4. **Confirm write** — `Confirm`: `"Write config to '${path}'?"`. If no, exit
    with `ENOTRECOVERABLE` matching Python.
-5. **Write file** — call `Config::store(path)`. On error, exit with
-   `ENOTRECOVERABLE` and print the error to stderr.
+5. **Write file** — call `Config::store(path)`. `Config::store` creates the
+   parent directory if needed (mirrors Python `config_path.parent.mkdir(...)` on
+   line 302 — see design 002 § Configuration & Secrets / IO for the contract).
+   On error, exit with `ENOTRECOVERABLE` and print the error to stderr.
 
 ### URL validation
 

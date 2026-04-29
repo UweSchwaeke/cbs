@@ -489,6 +489,15 @@ impl Config {
     /// JSON otherwise. Matches the Python implementation exactly.
     pub fn load(path: &Utf8Path) -> Result<Config, ConfigError> { /* ... */ }
 
+    /// Store config to `path` as YAML.
+    ///
+    /// Creates the parent directory if it does not exist
+    /// (`std::fs::create_dir_all` semantics — equivalent to `mkdir -p`).
+    /// Mirrors Python `config_path.parent.mkdir(exist_ok=True,
+    /// parents=True)` in `cmds/config.py:302`. Callers (notably
+    /// `cbsbuild config init` writing to
+    /// `~/.config/cbsd/${deployment}/worker/cbscore.config.yaml` on a fresh
+    /// workstation) rely on this — they do not pre-create the parent.
     pub fn store(&self, path: &Utf8Path) -> Result<(), ConfigError> { /* ... */ }
 }
 ```
