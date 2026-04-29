@@ -125,6 +125,14 @@ failure (see § URL validation).
 
 ### `config_init_vault` (separate `init-vault` subcommand)
 
+0. **Skip if pre-configured.** If `vault_config_path` was supplied (via the
+   `--vault` flag or by a `--for-systemd-install` / `--for-containerized-run`
+   bypass mode) AND the file already exists on disk, return that path unchanged
+   with no prompts. Mirrors Python `config_init_vault` lines 42-44. This is the
+   path operators take on every re-run of `cbsbuild config init` against an
+   already-configured deployment, and the bypass must be silent (no "Configure
+   vault?" prompt) to preserve the muscle-memory of operators who currently see
+   zero prompts in that scenario.
 1. **Configure vault?** — `Confirm`. If no, return `None`.
 2. **Vault config path** — `Input::<String>` with default
    `${cwd}/cbs-build.vault.yaml`.
@@ -241,6 +249,11 @@ when interactive mode lands:
 - Per-field flags: `--components`, `--scratch`, `--containers-scratch`,
   `--ccache`, `--vault`, `--secrets`. Any field supplied via a flag skips its
   corresponding prompt.
+- `--vault <path>` is special: when the supplied path already exists on disk,
+  the entire vault flow (the `config_init_vault` Step 0 short-circuit) is
+  skipped — no prompts, no overwrite confirmation. Operators re-running
+  `cbsbuild config init` against an already-configured deployment see zero
+  prompts on the vault side, matching Python.
 
 After this design ships, running `cbsbuild config init` with no flags activates
 the interactive flow. Until then, M1 errors out with a usage hint pointing the
