@@ -189,15 +189,36 @@ This decision applies the same way to any other wire-format file extended during
 M0–M1 development: extensions accumulate into v1 and the first bump comes after
 the M1 cut.
 
-## Open Questions
+### OQ7 — CLI-flag bypass interactions
 
-The discussion progresses one item at a time; each entry below moves to Resolved
-Decisions once landed. OQ numbering is stable across the whole design (OQ1–OQ6
-are above in Resolved Decisions; OQ7 remains here).
+**Resolved: `--for-systemd-install` / `--for-containerized-run` pre-fill
+`Config.paths.versions = "/cbs/_versions"`** alongside the other path fields.
+This makes `versions` symmetric with `components`, `scratch`,
+`scratch_containers`, `ccache`, `secrets`, and `vault` — every path field has
+both a config-init interactive prompt and a slot in the bypass-mode pre-fill
+set, and `versions` joins them.
 
-- **OQ7 — CLI-flag bypass interactions.** Does `--for-systemd-install` /
-  `--for-containerized-run` pre-fill `--versions-dir` like the other paths? If
-  yes, what value? If no, why is `versions` the exception?
+The systemd / containerized deployments do not necessarily _use_
+`cbsbuild versions create` today (workers typically read descriptors authored
+elsewhere via an explicit `desc_path` per OQ4), but pre- filling the path keeps
+the layout uniform and lets future workflows (e.g., a CI worker that authors
+descriptors locally) work without a config edit.
+
+The chosen value `/cbs/_versions` keeps the leading-underscore convention from
+the Python `<git-root>/_versions` directory, so operators familiar with the
+existing layout see a recognisable name under `/cbs/`.
+
+Concrete consequences for design 003 (interactive `config init`):
+
+- §`config_init_paths` gains a new prompt — "Specify versions path?" `Confirm`
+  (default no), then `Input::<String>` for the path. Mirrors the existing
+  optional `ccache path` prompt.
+- §Bypass Behaviour: `--versions-dir` is added to the per-field flags list (it
+  skips the prompt above when supplied). The systemd / containerized bypass-mode
+  pre-fill set gains `versions = /cbs/_versions`, listed alongside the other
+  paths.
+
+Both edits land in design 003 in the same commit as this resolution.
 
 ## Design Sketch
 
