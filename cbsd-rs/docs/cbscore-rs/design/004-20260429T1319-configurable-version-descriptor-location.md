@@ -112,16 +112,38 @@ Three reasons:
 The "type encoded in directory layout, not in descriptor" property is an
 existing Python-side invariant; this design preserves it.
 
+### OQ4 — Read vs write paths
+
+**Resolved: single configured store; read sites stay explicit-path.**
+`versions create` is the only **write** site and writes to the resolved root
+(per OQ1 / OQ2 / OQ3). The **read** sites — `cbsbuild build`,
+`cbsbuild advanced` builds, `cbscore::runner::run`, and any future tooling —
+continue to take the descriptor path as an explicit CLI argument or function
+parameter from the caller. None of them resolves descriptors automatically
+against the configured root.
+
+This matches actual current Python behaviour: every read site already takes a
+`desc_path` argument supplied by the caller (verified across
+`cbscore/cmds/builds.py:135`, `cbscore/cmds/builds.py:263`,
+`cbscore/runner.py:202`, and `cbsd-rs/scripts/cbscore-wrapper.py` — the wrapper
+builds the `VersionDescriptor` in-memory rather than reading from disk). The
+only place a known-layout path is computed today is the write site in
+`cbscore/cmds/versions.py:90`. Making that write location configurable does not
+require changing any reader.
+
+A multi-root **search path** (`Config.paths.versions: Vec<Utf8PathBuf>`) and a
+**descriptor auto-discovery** UX (e.g. `cbsbuild build VERSION --type dev`
+resolving `<root>/dev/<VERSION>.json` for the operator) are separate features.
+Both are out of scope here — the multi-root option is listed under Non-Goals;
+auto-discovery would expand `cbsbuild build`'s CLI surface and warrants its own
+design pass if ever pursued.
+
 ## Open Questions
 
 The discussion progresses one item at a time; each entry below moves to Resolved
-Decisions once landed. OQ numbering is stable across the whole design (OQ1–OQ3
-are above in Resolved Decisions; OQ4–OQ7 remain here).
+Decisions once landed. OQ numbering is stable across the whole design (OQ1–OQ4
+are above in Resolved Decisions; OQ5–OQ7 remain here).
 
-- **OQ4 — Read vs write paths.** Does `versions create` write to one location
-  and consumers (cbsd, cbsd-rs, future tooling) read from a different one — or
-  even a search path of multiple locations? Or is there a single "the descriptor
-  store" location used by all paths?
 - **OQ5 — Backwards compatibility for existing `_versions/` trees.** What
   happens to the descriptor files already populated in operator repos? Migration
   step, automatic detection, or manual operator action?
