@@ -91,6 +91,11 @@ suppressed when the corresponding CLI flag was supplied.
 4. **Scratch containers path** — `Input::<String>`: "Scratch containers path".
 5. **ccache path (optional)** — `Confirm`: "Specify ccache path?" then
    `Input::<String>`: "ccache path".
+6. **Versions path (optional)** — `Confirm`: "Specify versions path?" then
+   `Input::<String>`: "Versions path". The field is `Config.paths.versions`
+   (added by design 004); when unset, cbscore-rs falls back at runtime to
+   `<git-root>/_versions` (per design 004 OQ2). Setting this decouples
+   `cbsbuild versions create` from being inside a git checkout.
 
 ### `config_init_storage`
 
@@ -294,13 +299,14 @@ The flag-based bypass modes ship in M1; this design preserves them unchanged
 when interactive mode lands:
 
 - `--for-systemd-install`: pre-fill paths for the systemd worker layout
-  (`/cbs/components`, `/cbs/scratch`, etc.) and write to
+  (`/cbs/components`, `/cbs/scratch`, `/cbs/_versions` for
+  `Config.paths.versions` per design 004 OQ7, etc.) and write to
   `~/.config/cbsd/${deployment}/worker/cbscore.config.yaml`.
 - `--for-containerized-run`: pre-fill the same paths as systemd-install but
   write to the user-supplied `--config` path.
 - Per-field flags: `--components`, `--scratch`, `--containers-scratch`,
-  `--ccache`, `--vault`, `--secrets`. Any field supplied via a flag skips its
-  corresponding prompt.
+  `--ccache`, `--versions-dir` (design 004), `--vault`, `--secrets`. Any field
+  supplied via a flag skips its corresponding prompt.
 - `--vault <path>` is special: when the supplied path already exists on disk,
   the entire vault flow (the `config_init_vault` Step 0 short-circuit) is
   skipped — no prompts, no overwrite confirmation. Operators re-running
