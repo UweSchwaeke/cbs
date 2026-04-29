@@ -138,15 +138,41 @@ Both are out of scope here — the multi-root option is listed under Non-Goals;
 auto-discovery would expand `cbsbuild build`'s CLI surface and warrants its own
 design pass if ever pursued.
 
+### OQ5 — Backwards compatibility for existing `_versions/` trees
+
+**Resolved: no migration tooling and no auto-detection.** Operators who do
+nothing keep working — the OQ2 default fallback resolves to
+`<git-root>/_versions`, which is exactly where their existing descriptor files
+already live. Operators who choose to relocate the root by setting
+`Config.paths.versions` or passing `--versions-dir` are making an informed
+choice; moving existing descriptor files into the new root (typically a one-shot
+`cp -r <git-root>/_versions/* <new-root>/`) is left to the operator. cbsbuild
+does not detect, warn about, or migrate descriptor files between roots.
+
+If a concrete operator ask for a migration helper or auto-detection warning
+shows up later, it can be added as a small follow-up. Designing it now means
+committing to a UX shape with no concrete requirements.
+
+One implementation note for the OQ2 fallback's error path: when no
+`--versions-dir` is supplied, no `Config.paths.versions` is set, and the caller
+is **not** inside a git checkout, the error message must name both overrides
+explicitly so the operator knows the two ways to fix it (rather than the bare
+`git rev-parse` error). For example:
+
+```
+error: cannot resolve descriptor store location.
+  no --versions-dir flag was supplied,
+  no `paths.versions` field is set in cbs-build.config.yaml,
+  and the current directory is not inside a git checkout.
+  set one of the above to choose where descriptors live.
+```
+
 ## Open Questions
 
 The discussion progresses one item at a time; each entry below moves to Resolved
-Decisions once landed. OQ numbering is stable across the whole design (OQ1–OQ4
-are above in Resolved Decisions; OQ5–OQ7 remain here).
+Decisions once landed. OQ numbering is stable across the whole design (OQ1–OQ5
+are above in Resolved Decisions; OQ6–OQ7 remain here).
 
-- **OQ5 — Backwards compatibility for existing `_versions/` trees.** What
-  happens to the descriptor files already populated in operator repos? Migration
-  step, automatic detection, or manual operator action?
 - **OQ6 — Schema-version implications.** Adding `Config.paths.versions` is a
   schema change to `Config`. Does this bump `Config.schema_version` to 2, or
   stay at 1 because the field is `Option` with a default? See design 002 §
