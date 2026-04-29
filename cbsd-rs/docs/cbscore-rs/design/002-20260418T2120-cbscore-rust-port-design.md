@@ -705,6 +705,15 @@ name+ref pairs, resolves each git SHA via subprocess `git ls-remote`, and
 assembles a `VersionDescriptor`. The Rust port preserves the same signature; git
 calls go through `cbscore::utils::git` (subprocess).
 
+The Python `cbsbuild versions create` command writes the resulting descriptor to
+a hardcoded `<git-root>/_versions/<type>/<VERSION>.json` path
+(`cbscore/cmds/versions.py:88`, with an explicit
+`# FIXME: make this configurable` comment). The Rust port treats the
+descriptor-store location as configurable; the design lives in
+[design 004](004-20260429T1319-configurable-version-descriptor-location.md) and
+is currently in the discussion phase. Until that lands, the Rust port preserves
+the Python behaviour (hardcoded `<git-root>/_versions/<type>` path).
+
 ## Runner Subsystem
 
 The runner is the most distinctive piece of cbscore and the part the Rust port
