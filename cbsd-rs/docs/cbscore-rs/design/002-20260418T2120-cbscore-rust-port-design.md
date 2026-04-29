@@ -285,7 +285,12 @@ key must switch to `schema_version` (see Migration Strategy).
   read. Absent is **not** v0; there is no implicit-version fallback.
 - **Every change bumps.** Renaming, removing, retyping, or **adding an optional
   field** all bump the integer. The version doubles as a human-readable "this is
-  a different file" marker; additive changes are not exempt.
+  a different file" marker; additive changes are not exempt. **This rule applies
+  from the M1 release onward.** During M0–M1 the schema is still being defined
+  and per-format `schema_version: 1` accumulates every change up to the M1 1.0.0
+  cut; the first post-1.0 change to any format is the first bump. Pre-M1
+  cbscore-rs is a 0.x release with no stability promise (see design 001 §
+  Versioning).
 - **No migration tool.** There is no `cbsbuild migrate`. Operators re-edit files
   by hand when a bump lands, or rely on their own scripts. Tooling is explicitly
   out of scope for this plan and may return in a future design.
