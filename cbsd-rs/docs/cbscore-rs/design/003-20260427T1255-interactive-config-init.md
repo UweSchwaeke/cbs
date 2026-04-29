@@ -125,6 +125,14 @@ failure (see § URL validation).
 
 ### `config_init_vault` (separate `init-vault` subcommand)
 
+The prompts in this subsection fire from `cbsbuild config init-vault` — a
+separate subcommand — **not** from `cbsbuild config init`. The primary
+`config init` flow only records the vault config file _path_ (it stores
+`Config.vault = <path>` and writes the main config); the vault address, auth
+method, and credentials are gathered when the operator runs `init-vault` to
+populate the vault file. The prompts here mirror Python `config_init_vault` in
+`cbscore/cmds/config.py`.
+
 0. **Skip if pre-configured.** If `vault_config_path` was supplied (via the
    `--vault` flag or by a `--for-systemd-install` / `--for-containerized-run`
    bypass mode) AND the file already exists on disk, return that path unchanged
