@@ -167,16 +167,34 @@ error: cannot resolve descriptor store location.
   set one of the above to choose where descriptors live.
 ```
 
+### OQ6 — Schema-version implications
+
+**Resolved: no bump.** `Config.schema_version` stays at 1 when this design
+lands. Design 004 is a pre-M1 change; cbscore-rs is in its 0.x development
+phase, where the schema is still being defined and accumulates additions into
+`schema_version: 1` until M1 1.0.0 ships. Design 002 § Wire-Format Versioning
+has been updated to make this qualifier explicit ("every change bumps" applies
+from M1 onward; pre-M1 the schema is mutable).
+
+Concrete consequences:
+
+- The `Config` struct grows a `paths.versions: Option<Utf8PathBuf>` field in the
+  M1 1.0.0 release. Files written by cbscore-rs M1 carry `schema_version: 1` as
+  today; the field is just there in the schema.
+- No transform code, no deprecation warning, no operator manual edit.
+- The first post-1.0 change to `Config` (whatever it is) bumps to
+  `schema_version: 2` per the standing rule.
+
+This decision applies the same way to any other wire-format file extended during
+M0–M1 development: extensions accumulate into v1 and the first bump comes after
+the M1 cut.
+
 ## Open Questions
 
 The discussion progresses one item at a time; each entry below moves to Resolved
-Decisions once landed. OQ numbering is stable across the whole design (OQ1–OQ5
-are above in Resolved Decisions; OQ6–OQ7 remain here).
+Decisions once landed. OQ numbering is stable across the whole design (OQ1–OQ6
+are above in Resolved Decisions; OQ7 remains here).
 
-- **OQ6 — Schema-version implications.** Adding `Config.paths.versions` is a
-  schema change to `Config`. Does this bump `Config.schema_version` to 2, or
-  stay at 1 because the field is `Option` with a default? See design 002 §
-  Wire-Format Versioning for the dispatch policy.
 - **OQ7 — CLI-flag bypass interactions.** Does `--for-systemd-install` /
   `--for-containerized-run` pre-fill `--versions-dir` like the other paths? If
   yes, what value? If no, why is `versions` the exception?
