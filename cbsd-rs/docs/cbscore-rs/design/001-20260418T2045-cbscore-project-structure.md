@@ -290,8 +290,13 @@ cbscommon-rs is scoped):
 1. `git mv cbscore/src/utils/git.rs cbscommon-rs/src/git.rs`
 2. `git mv cbscore/src/utils/subprocess.rs cbscommon-rs/src/process.rs`
 3. Add `cbscommon-rs` to the workspace `Cargo.toml` and to cbscore's
-   `[dependencies]`. Move the cargo deps listed above out of cbscore's
-   `Cargo.toml`.
+   `[dependencies]`. Add the allowlist deps (`tokio`, `tracing`, `thiserror`,
+   `regex`, `camino`, `which`) to `cbscommon-rs/Cargo.toml`. From cbscore's
+   `Cargo.toml`, remove only the deps that are now exclusively used by
+   `cbscommon-rs` — in practice `regex` (used solely by the `_sanitize_cmd`
+   redaction logic) and `which` (used solely by the git binary lookup). The
+   other four (`tokio`, `tracing`, `thiserror`, `camino`) stay in cbscore
+   because they are used throughout the rest of the library.
 4. Flip `use cbscore::utils::git::...` → `use cbscommon::git::...` (and the same
    for subprocess) wherever cbscore-rs or cbsbuild imports them.
 5. Rename the tracing targets per the second invariant.
@@ -387,7 +392,7 @@ futures-util = "0.3"
 aws-config  = "1"
 aws-sdk-s3  = "1"
 vaultrs     = "0.8"
-reqwest     = { version = "0.12", features = ["rustls-tls", "json"] }
+reqwest     = { version = "0.13", features = ["rustls-tls", "json"] }
 
 # crypto + hashing
 sha2 = "0.10"
