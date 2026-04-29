@@ -716,8 +716,9 @@ a hardcoded `<git-root>/_versions/<type>/<VERSION>.json` path
 `# FIXME: make this configurable` comment). The Rust port treats the
 descriptor-store location as configurable; the design lives in
 [design 004](004-20260429T1319-configurable-version-descriptor-location.md) and
-is currently in the discussion phase. Until that lands, the Rust port preserves
-the Python behaviour (hardcoded `<git-root>/_versions/<type>` path).
+is approved for M1 implementation. The default fallback (no flag, no config)
+preserves the Python behaviour at runtime by resolving to
+`<git-root>/_versions/<type>`.
 
 ## Runner Subsystem
 
