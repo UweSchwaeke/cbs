@@ -168,11 +168,12 @@ cbsd-rs/
 │       │   ├── mod.rs
 │       │   ├── buildah.rs      # buildah subprocess wrapper
 │       │   ├── containers.rs
-│       │   ├── git.rs          # git subprocess wrapper
+│       │   ├── git.rs          # git subprocess wrapper (lift-out candidate)
 │       │   ├── paths.rs
 │       │   ├── podman.rs       # podman_run, podman_stop
 │       │   ├── s3.rs           # S3 client helpers (aws-sdk-s3)
 │       │   ├── subprocess.rs   # async_run_cmd + SecureArg + _sanitize_cmd
+│       │   │                   #   (lift-out candidate)
 │       │   ├── uris.rs
 │       │   └── vault.rs        # Vault client (vaultrs)
 │
@@ -255,6 +256,58 @@ builder pipeline, runner, image signing & sync, release operations.
 - Types that need to cross process / FFI boundaries (those live in
   `cbscore-types`).
 - CLI argument parsing or clap structs (those live in `cbsbuild`).
+
+#### Lift-out invariants for `utils::git` and `utils::subprocess`
+
+`cbscommon` is a Python package on `origin/feature/cbscommon/unite-git-commands`
+that lifts `cbscore/utils/git.py` and the `async_run_cmd` / `SecureArg` /
+`_sanitize_cmd` block from `cbscore/utils/__init__.py` into a separate package.
+It has not landed on main yet. When the Python side merges and a Rust port of
+cbscommon is eventually scoped, the cbscore-rs Rust analogues —
+`cbscore::utils::git` and `cbscore::utils::subprocess` — are intended to lift
+out to a sister crate `cbscommon-rs` in the same workspace.
+
+To make that lift-out a near-mechanical move rather than a refactor, the two
+modules are constrained from the outset:
+
+- **No cbscore-internal types.** They MUST NOT import from
+  `cbscore-types::config`, `cbscore-types::versions`, `cbscore-types::releases`,
+  etc. They take primitives (`&str`, `&Utf8Path`) or generics (`T: SecureArg`)
+  and return primitives or per-module error types (`GitError`, `CommandError`).
+- **No cbscore-internal logging targets.** They use their own tracing target
+  (`cbscore::utils::git`, `cbscore::utils::subprocess`) that will rename cleanly
+  when the modules move (`cbscommon::git`, `cbscommon::process`).
+- **No transitive cbscore-only deps.** Cargo deps for these two modules should
+  be limited to `tokio`, `tracing`, `thiserror`, `regex` (for the
+  `_sanitize_cmd` redaction), `camino`, and the `which` crate. No `aws-sdk-*`,
+  no `vaultrs`, no `serde_saphyr`. If a future change wants to add a
+  cbscore-specific dep here, that is a signal the change belongs outside
+  `utils::git` / `utils::subprocess`.
+
+**Post-merge migration recipe** (when cbscommon Python lands AND a Rust
+cbscommon-rs is scoped):
+
+1. `git mv cbscore/src/utils/git.rs cbscommon-rs/src/git.rs`
+2. `git mv cbscore/src/utils/subprocess.rs cbscommon-rs/src/process.rs`
+3. Add `cbscommon-rs` to the workspace `Cargo.toml` and to cbscore's
+   `[dependencies]`. Move the cargo deps listed above out of cbscore's
+   `Cargo.toml`.
+4. Flip `use cbscore::utils::git::...` → `use cbscommon::git::...` (and the same
+   for subprocess) wherever cbscore-rs or cbsbuild imports them.
+5. Rename the tracing targets per the second invariant.
+
+If the constraints above held during implementation, no other code change is
+required.
+
+**Re-evaluation trigger.** If `cbscommon` lands on main **before M0 begins**
+(i.e., before any Rust crate is created in this workspace), switch directly to a
+`cbscommon-rs` sister crate from day one (the formerly-rejected "Option A" in
+the design discussion that produced this section) and skip these lift-out
+invariants. The rejection of Option A was based on cbscommon Python being on a
+feature branch; once it's concrete on main, the speculative-scaffolding concern
+is resolved and A is the right design. If cbscommon Python lands during or after
+M0–M1 implementation, stay on the lift-out invariants and do the move as a
+post-M1 effort.
 
 ### `cbsbuild`
 
