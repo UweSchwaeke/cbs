@@ -153,6 +153,27 @@ UUIDv7 instead of a parseable version string, and how the design handles it.
 `patches/*.patch` files apply unconditionally; deeper subdirectories apply only
 when their name matches a parsed VERSION component.
 
+### Consumer parsing: covered by items 1 + 2
+
+`parse_version()` is the function that fails on a UUIDv7. Inside cbscore, it is
+called by exactly two sites: the patch walker (item 1) and the title generator
+(item 2). Both are handled. A third reference in
+`cbscore/containers/component.py:49` is a comment about a copied regex, not a
+call. The internal `_validate_version()` check (`cbscore/versions/create.py:39`)
+runs only on the **supplied-VERSION** path; the UUIDv7 path skips it.
+
+External Python consumers (`cbc`, `crt`) call `parse_version()` against
+descriptor values. Per design 002 §Python Coexistence — "no cross-language file
+interchange" — these are not part of cbscore-rs's compatibility surface. They
+will be addressed when/if they are rewritten to Rust; until then, mixing UUIDv7
+descriptors with Python `cbc`/`crt` is not supported (operators run one
+implementation per deployment, per that policy).
+
+`parse_version()`'s contract does not change. Each Rust call site that needs
+major / minor / patch must already handle the `MalformedVersionError` case
+(because the regex can fail on malformed operator input today); no new error
+path is added by UUIDv7.
+
 ### Title: emit a created-at form
 
 `cbscore/versions/create.py:_do_version_title()` parses VERSION via
