@@ -724,6 +724,16 @@ see no change; operators who want to relocate the descriptor store set the new
 field or pass the new flag. See design 004 for the full context, the seven Open
 Questions and their resolutions, the Design Sketch, and the Migration plan.
 
+A second **follow-up design** covers an orthogonal CLI-UX question: making the
+VERSION positional argument optional on `cbsbuild versions create` and deriving
+it automatically from some source (latest-in-store, env var, git describe,
+etc.). M1 ships with VERSION required, matching Python parity. The design
+discussion lives in
+[design 005 — Optional VERSION on `cbsbuild versions create`](005-20260504T1145-optional-version-on-versions-create.md)
+and is intentionally post-M1: the source-of-truth question (table of options in
+design 005's OQ1) is contentious enough that resolving it inside M1's scope adds
+risk for limited gain. Once M1 is stable, design 005 lands as a 1.x.0 minor add.
+
 ## Runner Subsystem
 
 The runner is the most distinctive piece of cbscore and the part the Rust port
