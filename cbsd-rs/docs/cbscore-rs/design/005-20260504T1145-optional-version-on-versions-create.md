@@ -153,6 +153,35 @@ UUIDv7 instead of a parseable version string, and how the design handles it.
 `patches/*.patch` files apply unconditionally; deeper subdirectories apply only
 when their name matches a parsed VERSION component.
 
+### Title: emit a created-at form
+
+`cbscore/versions/create.py:_do_version_title()` parses VERSION via
+`parse_version()` to produce a title like
+`Release Development version 19.2.3 (DEV 1)`. With a UUIDv7, the parse raises
+`MalformedVersionError` and the whole command fails.
+
+**When VERSION is a UUIDv7**, the title generator skips the parser and emits:
+
+```
+Release <type-desc> version created at <timestamp>
+```
+
+where `<type-desc>` is the existing `get_version_type_desc(type)` value
+(`Development`, `General Availability`, `Testing`, `CI/CD`), and `<timestamp>`
+is the creation time extracted from the UUIDv7's first 48 bits (milliseconds
+since the Unix epoch per RFC 9562), formatted as ISO 8601 in UTC. Example for a
+`dev`-type UUIDv7 created on 2026-05-04 at 11:45 UTC:
+
+```
+Release Development version created at 2026-05-04T11:45:00Z
+```
+
+ISO 8601 in UTC is chosen because it is unambiguous, sortable, and locale-free —
+operators reading titles in `versions list` output get a self-explanatory
+creation time rather than a placeholder. The `<type-desc>` prefix preserves the
+existing title structure for the parseable-VERSION path; only the body shape
+changes.
+
 When VERSION is a UUIDv7, no major/minor/patch can be extracted. All
 subdirectory matches fail by definition, so **only top-level patches apply**.
 Per-major and per-minor-patch subdirectories are unreachable for UUIDv7 builds.
