@@ -121,7 +121,44 @@ Decisions once landed. Same convention as design 004.
 
 ## Resolved Decisions
 
-(filled in as Open Questions are settled)
+### OQ1 — Source of the auto-derived VERSION
+
+**Resolved: generate a UUIDv7 when no positional VERSION is supplied.** The
+shape is binary: the operator either passes a positional VERSION (as today,
+regex-validated against `[prefix-]vM.m.p[-suffix]`) or omits it, in which case
+`cbsbuild versions create` generates a UUIDv7 and uses that string as the
+VERSION. No env var, no store-bump, no config template, no git-describe — those
+alternatives were rejected (see discussion notes).
+
+UUIDv7 is preferred over UUIDv4 because v7 is timestamp-prefixed: strings sort
+approximately by creation time, which gives operators a useful ordering when
+listing the descriptor store.
+
+A UUIDv7 does not match the existing `[prefix-]vM.m.p[-suffix]` regex. The
+downstream code paths and conventions that depend on parsing VERSION need
+adjustment to handle the no-positional case. Each affected area is enumerated
+under § Effects of UUIDv7 VERSIONs below; the discussion progresses one item at
+a time.
+
+## Effects of UUIDv7 VERSIONs
+
+Each subsection records one affected area: what breaks when the VERSION is a
+UUIDv7 instead of a parseable version string, and how the design handles it.
+
+### Patches: only top-level apply
+
+`cbscore/builder/prepare.py:_get_patches_by_prio` walks
+`components/<comp>/patches/` and matches subdirectory names against parsed major
+/ major-minor / full-version components of VERSION. Only the top-level
+`patches/*.patch` files apply unconditionally; deeper subdirectories apply only
+when their name matches a parsed VERSION component.
+
+When VERSION is a UUIDv7, no major/minor/patch can be extracted. All
+subdirectory matches fail by definition, so **only top-level patches apply**.
+Per-major and per-minor-patch subdirectories are unreachable for UUIDv7 builds.
+This is a natural extension of the existing walker behaviour ("subdirectory
+whose name doesn't match is skipped"), not a new code path. Operators who need
+version-specific patches for a UUIDv7 build place them at the top level.
 
 ## Design Sketch
 
