@@ -713,12 +713,16 @@ calls go through `cbscore::utils::git` (subprocess).
 The Python `cbsbuild versions create` command writes the resulting descriptor to
 a hardcoded `<git-root>/_versions/<type>/<VERSION>.json` path
 (`cbscore/cmds/versions.py:88`, with an explicit
-`# FIXME: make this configurable` comment). The Rust port treats the
-descriptor-store location as configurable; the design lives in
-[design 004](004-20260429T1319-configurable-version-descriptor-location.md) and
-is approved for M1 implementation. The default fallback (no flag, no config)
-preserves the Python behaviour at runtime by resolving to
-`<git-root>/_versions/<type>`.
+`# FIXME: make this configurable` comment). Making this location configurable in
+the Rust port is a **follow-up design** that builds on this one:
+[design 004 — Configurable VersionDescriptor Location](004-20260429T1319-configurable-version-descriptor-location.md).
+Design 004 is approved for M1 implementation and adds a
+`Config.paths.versions: Option<Utf8PathBuf>` field plus a `--versions-dir` CLI
+flag, with the OQ2 default fallback preserving the current Python behaviour at
+runtime by resolving to `<git-root>/_versions/<type>`. Operators who do nothing
+see no change; operators who want to relocate the descriptor store set the new
+field or pass the new flag. See design 004 for the full context, the seven Open
+Questions and their resolutions, the Design Sketch, and the Migration plan.
 
 ## Runner Subsystem
 
