@@ -174,6 +174,14 @@ major / minor / patch must already handle the `MalformedVersionError` case
 (because the regex can fail on malformed operator input today); no new error
 path is added by UUIDv7.
 
+### Sortability: no change needed
+
+UUIDv7 strings sort lexicographically by creation time (the timestamp lives in
+the high-order bits per RFC 9562). No in-tree call site compares two VERSIONs:
+`versions list` lists releases from S3 in dict-iteration order, and the existing
+parseable-VERSION sort behaviour (filesystem listing of `<root>/<type>/`) lines
+up naturally with UUIDv7's chronological ordering. No design action required.
+
 ### Title: emit a created-at form
 
 `cbscore/versions/create.py:_do_version_title()` parses VERSION via
