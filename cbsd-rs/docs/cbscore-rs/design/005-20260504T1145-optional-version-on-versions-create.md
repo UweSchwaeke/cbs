@@ -75,13 +75,6 @@ Decisions once landed. Same convention as design 004.
   Multiple sources may coexist with a precedence rule. The decision is which to
   support and in what order.
 
-- **OQ4 — Echo / output of the derived VERSION.** When VERSION is auto-derived,
-  what does `versions create` print? The current command prints
-  `version: {desc.version}`, `version title: …`, the rendered JSON, and
-  `-> written to {path}`. With auto-derivation, scripts may want a
-  machine-readable form — e.g., a final line
-  `derived-version=ces-v19.2.3-dev.43` for shell `eval`.
-
 - **OQ5 — Determinism / racing.** If two operators run
   `cbsbuild versions create -t dev` concurrently against the same store, both
   might derive the same next VERSION (Option A) and one hit the existing-file
@@ -172,6 +165,26 @@ The optional positional is unambiguous: there is only one positional slot on
 this subcommand, so an absent argument means absent. clap's
 `Option<String>`-on-positional handles the parsing; the resolver picks UUIDv7
 when the parsed value is `None`.
+
+### OQ4 — Echo / output of the derived VERSION
+
+**Resolved: no change to existing output.** `cbsbuild versions create` already
+prints `version: <desc.version>`, `version title: <title>`, the rendered JSON,
+and `-> written to <path>`. When VERSION is auto-derived as a UUIDv7, those same
+lines are emitted with the UUIDv7 string in the `version:` slot and the
+created-at title (per item 2) in the `version title:` slot.
+
+No new `derived-version=…` line, no `--print-path-only` flag. Two reasons:
+
+- **Human readers** get the path from the existing `-> written to <path>` echo,
+  which is load-bearing per item 6 (operator UX).
+- **Script consumers** can grep `^version: ` or `^-> written to ` from the
+  existing output. Adding a parallel machine-readable form duplicates
+  information that is already there.
+
+The output shape is uniform — supplied-VERSION and auto-derived-VERSION paths
+emit the same line structure. No CLI-side branching on whether VERSION came from
+the operator or the resolver.
 
 ## Effects of UUIDv7 VERSIONs
 
