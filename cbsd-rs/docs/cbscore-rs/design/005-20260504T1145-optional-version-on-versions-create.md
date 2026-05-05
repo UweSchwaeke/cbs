@@ -75,11 +75,6 @@ Decisions once landed. Same convention as design 004.
   Multiple sources may coexist with a precedence rule. The decision is which to
   support and in what order.
 
-- **OQ2 — Behaviour for `release` type.** The auto-derivation workflows are most
-  useful for transient `dev`/`test`/`ci` types. For `release`, operators usually
-  want to be explicit. Does `cbsbuild versions create -t release` (no VERSION)
-  refuse, or derive like the others?
-
 - **OQ3 — CLI shape.** Is VERSION an optional positional argument
   (`cbsbuild versions create [VERSION]`), or does it migrate to a named flag
   (`--version <V>` or similar) so the positional becomes unambiguously absent?
@@ -139,6 +134,27 @@ downstream code paths and conventions that depend on parsing VERSION need
 adjustment to handle the no-positional case. Each affected area is enumerated
 under § Effects of UUIDv7 VERSIONs below; the discussion progresses one item at
 a time.
+
+### OQ2 — Behaviour for `release` type
+
+**Resolved: allow uniformly across all types.** No `--type`-based special-
+casing. The CLI behaviour is one rule everywhere: positional VERSION supplied →
+use it; omitted → generate UUIDv7. `cbsbuild versions create -t release` (no
+VERSION) generates a UUIDv7 just like `-t dev`/`-t test`/`-t ci`.
+
+The earlier framing of this OQ assumed `release` was semantically distinct.
+Inspecting the existing Python code shows the four types differ in only two
+places: the `<type>/` subdirectory of the descriptor store, and the human-
+readable phrase that goes into the auto-generated title
+(`"General Availability"` vs `"Development"` vs `"Testing"` vs `"CI/CD"`). There
+is no type-specific validation, no different build/sign/upload path, no special
+handling. `release` and `dev` are functionally identical labels. Refusing the
+no-VERSION shortcut for `-t release` would lean on cultural intuition ("releases
+are real, dev is throwaway") rather than any code-level distinction, and would
+add an asymmetric error path for no payoff.
+
+Operators who want a human-readable release name pass it explicitly, exactly
+like for any other type.
 
 ## Effects of UUIDv7 VERSIONs
 
