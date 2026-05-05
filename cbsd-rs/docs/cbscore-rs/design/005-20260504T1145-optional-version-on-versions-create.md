@@ -233,6 +233,24 @@ the 36-char hyphenated UUIDv7 form. The fallback works as-is. Operators who want
 a stable image tag across a sequence of UUIDv7 builds pass `--image-tag`
 explicitly — same escape hatch as today.
 
+### Operator UX: rely on the printed path
+
+A UUIDv7 string (`0193e1a8-7c2e-7000-89ab-1234567890ab`) is unambiguous but
+unfriendly to type. With the no-VERSION flow, the descriptor lands at e.g.
+`<root>/dev/0193e1a8-7c2e-7000-89ab-1234567890ab.json` and the operator's next
+command is `cbsbuild build <that-path>`.
+
+`cbsbuild versions create` already prints `-> written to <path>` on success.
+That printed path is the operator's handle: they copy it into the subsequent
+`cbsbuild build` invocation. No new flag, no "build latest" shortcut, no
+discovery affordance — the path echo is load-bearing for this UX, but it already
+exists. Per design 004 OQ4, readers do not auto-discover against the configured
+root; an explicit-path-only `cbsbuild build` is the established convention and
+is preserved here.
+
+Operators who prefer human-readable VERSIONs continue to pass an explicit
+positional VERSION as today.
+
 ## Design Sketch
 
 (filled in after the Open Questions are resolved)
