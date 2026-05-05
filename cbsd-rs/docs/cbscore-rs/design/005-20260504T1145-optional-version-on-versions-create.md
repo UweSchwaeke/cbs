@@ -218,6 +218,21 @@ This is a natural extension of the existing walker behaviour ("subdirectory
 whose name doesn't match is skipped"), not a new code path. Operators who need
 version-specific patches for a UUIDv7 build place them at the top level.
 
+### Image tag: no change needed
+
+`cbscore/versions/create.py:133` falls back to VERSION when `--image-tag` is
+unsupplied:
+
+```python
+image_tag_str = image_tag if image_tag else version
+```
+
+When VERSION is a UUIDv7, the fallback yields the UUIDv7 string as the image
+tag. OCI image-tag rules (alphanumerics plus `_`, `.`, `-`; ≤128 chars) admit
+the 36-char hyphenated UUIDv7 form. The fallback works as-is. Operators who want
+a stable image tag across a sequence of UUIDv7 builds pass `--image-tag`
+explicitly — same escape hatch as today.
+
 ## Design Sketch
 
 (filled in after the Open Questions are resolved)
