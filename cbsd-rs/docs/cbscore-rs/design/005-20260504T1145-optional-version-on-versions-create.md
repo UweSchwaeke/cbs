@@ -251,6 +251,22 @@ is preserved here.
 Operators who prefer human-readable VERSIONs continue to pass an explicit
 positional VERSION as today.
 
+### Schema / wire format: no bump
+
+Design 002 §Wire-Format Versioning's post-M1 rule is that the first schema
+change to any wire format bumps that format's `schema_version` to 2. Design 005
+touches no schema:
+
+- **`VersionDescriptor` JSON** — the descriptor's contents are unchanged.
+  `desc.version` is a string field today and stays a string field; UUIDv7 just
+  produces different _values_. No `VersionDescriptor.schema_version` bump.
+- **`Config` YAML** — the resolved shape (UUIDv7 when no positional VERSION) is
+  pure CLI-side behaviour. No new `Config` field, no `Config` schema change. No
+  `Config.schema_version` bump.
+
+Other wire formats (`ReleaseDescriptor`, `ContainerDescriptor`,
+`cbs.component.yaml`, `secrets.yaml`) are not touched by this design.
+
 ## Design Sketch
 
 (filled in after the Open Questions are resolved)
