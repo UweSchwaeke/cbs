@@ -92,8 +92,10 @@ pub fn build_router(
         .nest("/channels", routes::channels::router());
 
     // Split into plain Router + OpenApi spec; health and WS stay on Router.
-    let (api, _openapi) = api.split_for_parts();
-    let api = api.route("/health", get(health));
+    let (api, openapi_spec) = api.split_for_parts();
+    let api = api
+        .route("/health", get(health))
+        .merge(crate::openapi::doc_routes(openapi_spec));
 
     // Request/response tracing: logs method, URI, status, and latency
     // for every HTTP request. The request ID is generated per-request
