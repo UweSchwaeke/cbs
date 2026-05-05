@@ -57,49 +57,7 @@ it on every invocation is the design goal.
 
 ## Open Questions
 
-The discussion progresses one item at a time; each entry below moves to Resolved
-Decisions once landed. Same convention as design 004.
-
-- **OQ1 — Source of the auto-derived VERSION.** Five plausible sources, each
-  suiting a different workflow:
-  - **A. Latest-in-store + bump.** Read `<root>/<type>/`, parse filenames, find
-    the highest, increment the suffix counter (`dev.42` → `dev.43`).
-  - **B. Timestamp suffix.** `<base>-<type>.YYYYMMDDTHHmm`. The `<base>` still
-    has to come from somewhere.
-  - **C. Config template.** A new `Config.versions.default_template` plus a
-    counter.
-  - **D. Env var.** `CBS_VERSION="ces-v19.2.3-dev.42"` exported by the operator
-    or CI.
-  - **E. Git describe.** `git describe --tags` against a configured repository.
-
-  Multiple sources may coexist with a precedence rule. The decision is which to
-  support and in what order.
-
-- **OQ5 — Determinism / racing.** If two operators run
-  `cbsbuild versions create -t dev` concurrently against the same store, both
-  might derive the same next VERSION (Option A) and one hit the existing-file
-  `EEXIST` check. Is that an acceptable failure mode (operator retries) or do we
-  add file locking? Option D (env var) sidesteps this by making the source
-  explicit.
-
-- **OQ6 — Interaction with design 004.** If Option A or C is picked, the
-  auto-derivation reads the configured descriptor store (which moved to
-  `Config.paths.versions` per design 004). Walking that directory must respect
-  the same `<type>/` layout (design 004 OQ3) and the same fallback when the
-  directory does not exist.
-
-- **OQ7 — Image tag when VERSION is auto-derived.** Today the image tag defaults
-  to VERSION when `--image-tag` is unsupplied. With an auto-derived VERSION, the
-  image tag follows the derived value — but operators who want a stable image
-  tag across a sequence of dev versions (`dev.42`, `dev.43`, … all pushed to the
-  same image tag) will not be served by the default. Document or change?
-
-- **OQ8 — Schema / wire-format implications.** This design is also a post-M1
-  change (per the framing in §Status), so by the design 002 rule the answer is
-  "the first post-1.0 schema change to any format bumps that format's
-  `schema_version` to 2". Does this design force such a bump? Likely no for
-  `VersionDescriptor` (the descriptor's contents are unchanged); possibly yes
-  for `Config` if Option C lands (new field).
+All open questions have been resolved. See § Resolved Decisions below.
 
 ## Resolved Decisions
 
@@ -185,6 +143,33 @@ No new `derived-version=…` line, no `--print-path-only` flag. Two reasons:
 The output shape is uniform — supplied-VERSION and auto-derived-VERSION paths
 emit the same line structure. No CLI-side branching on whether VERSION came from
 the operator or the resolver.
+
+### OQ5–OQ8 — Dissolved or subsumed
+
+The remaining open questions presupposed the rejected "derive-from-something"
+model (store-bump / config template / env var / git describe) or were answered
+by the per-item analysis above. They are recorded here as
+resolved-by-elimination rather than as separate decisions:
+
+- **OQ5 — Determinism / racing.** Dissolved by OQ1's UUIDv7 resolution. Each
+  invocation calls `Uuid::now_v7()` and gets a fresh value. The 74 random bits
+  remaining after the 48-bit timestamp and 6 version/variant bits make collision
+  astronomically unlikely at any plausible CLI invocation rate. Two concurrent
+  operators produce two distinct UUIDv7s and two distinct descriptor files. No
+  file locking, no race window, no retry logic.
+- **OQ6 — Interaction with design 004.** Dissolved by OQ1's UUIDv7 resolution.
+  The resolver does not read the descriptor store: it calls `Uuid::now_v7()` and
+  returns the string. The descriptor write still uses design 004's resolved root
+  as the destination for `<root>/<type>/<UUIDv7>.json`, but that's the standard
+  write path (already exercised by the supplied-VERSION case) — no
+  auto-discovery, no walk.
+- **OQ7 — Image tag when VERSION is auto-derived.** Subsumed by item 5 (image
+  tag) under § Effects of UUIDv7 VERSIONs. The OCI tag fallback works as-is for
+  UUIDv7 strings; operators wanting a stable tag across a sequence pass
+  `--image-tag` explicitly.
+- **OQ8 — Schema / wire-format implications.** Subsumed by item 7 (schema) under
+  § Effects of UUIDv7 VERSIONs. No `schema_version` bump on any wire format —
+  `desc.version` stays a string field, `Config` gains no new field.
 
 ## Effects of UUIDv7 VERSIONs
 
