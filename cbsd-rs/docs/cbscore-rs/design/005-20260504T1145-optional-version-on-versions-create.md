@@ -75,12 +75,6 @@ Decisions once landed. Same convention as design 004.
   Multiple sources may coexist with a precedence rule. The decision is which to
   support and in what order.
 
-- **OQ3 — CLI shape.** Is VERSION an optional positional argument
-  (`cbsbuild versions create [VERSION]`), or does it migrate to a named flag
-  (`--version <V>` or similar) so the positional becomes unambiguously absent?
-  clap supports both shapes; the positional form is more compact, the named-flag
-  form is more explicit.
-
 - **OQ4 — Echo / output of the derived VERSION.** When VERSION is auto-derived,
   what does `versions create` print? The current command prints
   `version: {desc.version}`, `version title: …`, the rendered JSON, and
@@ -155,6 +149,29 @@ add an asymmetric error path for no payoff.
 
 Operators who want a human-readable release name pass it explicitly, exactly
 like for any other type.
+
+### OQ3 — CLI shape
+
+**Resolved: optional positional argument.** VERSION stays a positional argument;
+clap declares it as `Option<String>`. Absent positional → resolver generates a
+UUIDv7. The CLI signature becomes:
+
+```
+cbsbuild versions create [OPTIONS] [VERSION]
+```
+
+Migrating to a named `--version <V>` flag was rejected. The current command has
+been positional since day one (`cbscore/cmds/versions.py:180`); changing the
+shape would break every existing operator script and CI invocation. CLAUDE.md
+correctness invariant 2 (CLI UX parity) says subcommand names, flags, and
+stdout/stderr contracts remain the same unless a design document says otherwise
+— making the positional optional satisfies that constraint without breaking
+anything, while migrating to a named flag would not.
+
+The optional positional is unambiguous: there is only one positional slot on
+this subcommand, so an absent argument means absent. clap's
+`Option<String>`-on-positional handles the parsing; the resolver picks UUIDv7
+when the parsed value is `None`.
 
 ## Effects of UUIDv7 VERSIONs
 
