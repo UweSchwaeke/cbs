@@ -76,10 +76,11 @@ it on every invocation is the design goal.
   shortcut.
 - Schema / wire-format changes. No `schema_version` bump on `VersionDescriptor`,
   `Config`, or any other wire format (item 7 / OQ8).
-- Cross-language interchange. Python `cbc`/`crt` parse `desc.version` against
-  the legacy regex and would reject a UUIDv7. Per design 002 §Python
-  Coexistence, mixing Python and Rust against the same on-disk files is not
-  supported anyway; operators run one implementation per deployment.
+- Cross-language interchange. Per design 002 §Python Coexistence, mixing Python
+  and Rust against the same on-disk files is not supported; operators run one
+  implementation per deployment. UUIDv7 descriptors are not portable to Python
+  `cbc`/`crt`, regardless of how those tools handle the `desc.version` field
+  internally.
 - Python-side changes. `cbscore/` (the Python package) keeps the
   VERSION-required CLI. This design lands only in the Rust `cbsbuild` /
   `cbscore` crates.
@@ -240,12 +241,13 @@ called by exactly two sites: the patch walker (item 1) and the title generator
 call. The internal `_validate_version()` check (`cbscore/versions/create.py:39`)
 runs only on the **supplied-VERSION** path; the UUIDv7 path skips it.
 
-External Python consumers (`cbc`, `crt`) call `parse_version()` against
-descriptor values. Per design 002 §Python Coexistence — "no cross-language file
-interchange" — these are not part of cbscore-rs's compatibility surface. They
-will be addressed when/if they are rewritten to Rust; until then, mixing UUIDv7
-descriptors with Python `cbc`/`crt` is not supported (operators run one
-implementation per deployment, per that policy).
+External Python consumers (`cbc`, `crt`) are not part of cbscore-rs's
+compatibility surface. Per design 002 §Python Coexistence — "no cross-language
+file interchange" — operators run one implementation per deployment; mixing
+UUIDv7 descriptors with Python `cbc`/`crt` is not supported, regardless of
+whether those tools call `parse_version()` directly or pass `desc.version`
+through to other layers. They will be addressed when / if they are rewritten to
+Rust.
 
 `parse_version()`'s contract does not change. Each Rust call site that needs
 major / minor / patch must handle the `MalformedVersion` error case. The
