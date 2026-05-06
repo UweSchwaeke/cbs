@@ -51,10 +51,10 @@ pub fn load_components(components_dir: &Path) -> Result<Vec<ComponentInfo>, std:
         }
 
         let yaml_contents = std::fs::read_to_string(&yaml_path)?;
-        let parsed: ComponentYaml = serde_yml::from_str(&yaml_contents).map_err(|e| {
+        let parsed: ComponentYaml = serde_saphyr::from_str(&yaml_contents).map_err(|e| {
             std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
-                format!("failed to parse {}: {e}", yaml_path.display()),
+                format!("failed to parse '{}':\n{e}", yaml_path.display()),
             )
         })?;
 

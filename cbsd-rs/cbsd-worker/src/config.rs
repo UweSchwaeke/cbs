@@ -133,7 +133,8 @@ impl WorkerConfig {
     pub fn load(path: &std::path::Path) -> Result<Self, ConfigError> {
         let contents =
             std::fs::read_to_string(path).map_err(|e| ConfigError::Read(path.to_path_buf(), e))?;
-        let config: WorkerConfig = serde_yml::from_str(&contents).map_err(ConfigError::Parse)?;
+        let config: WorkerConfig = serde_saphyr::from_str(&contents)
+            .map_err(|e| ConfigError::Parse(path.to_path_buf(), Box::new(e)))?;
         Ok(config)
     }
 
@@ -274,7 +275,7 @@ fn parse_arch(s: &str) -> Result<cbsd_proto::Arch, ConfigError> {
 #[derive(Debug)]
 pub enum ConfigError {
     Read(PathBuf, std::io::Error),
-    Parse(serde_yml::Error),
+    Parse(PathBuf, Box<serde_saphyr::Error>),
     Validation(String),
 }
 
@@ -284,7 +285,13 @@ impl std::fmt::Display for ConfigError {
             Self::Read(path, err) => {
                 write!(f, "failed to read config file '{}': {err}", path.display())
             }
-            Self::Parse(err) => write!(f, "failed to parse config YAML: {err}"),
+            Self::Parse(path, err) => {
+                write!(
+                    f,
+                    "failed to parse config file '{}':\n{err}",
+                    path.display()
+                )
+            }
             Self::Validation(msg) => write!(f, "config validation error: {msg}"),
         }
     }
@@ -294,7 +301,7 @@ impl std::error::Error for ConfigError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Read(_, err) => Some(err),
-            Self::Parse(err) => Some(err),
+            Self::Parse(_, err) => Some(err),
             Self::Validation(_) => None,
         }
     }

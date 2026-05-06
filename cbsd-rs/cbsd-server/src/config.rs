@@ -339,8 +339,8 @@ impl ServerConfig {
 pub fn load_config(path: &std::path::Path) -> ServerConfig {
     let contents = std::fs::read_to_string(path)
         .unwrap_or_else(|e| panic!("failed to read config file {}: {e}", path.display()));
-    let config: ServerConfig = serde_yml::from_str(&contents)
-        .unwrap_or_else(|e| panic!("failed to parse config file {}: {e}", path.display()));
+    let config: ServerConfig = serde_saphyr::from_str(&contents)
+        .unwrap_or_else(|e| panic!("failed to parse config file '{}':\n{e}", path.display()));
     config.validate();
     config
 }

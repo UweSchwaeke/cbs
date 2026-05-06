@@ -3,7 +3,7 @@
 - **Component:** `cbsd-rs` (`cbsd-server` + `cbsd-worker`)
 - **Design:**
   [018 — serde-saphyr migration](../design/018-20260506T1015-serde-saphyr-migration.md)
-- **Status:** Pending
+- **Status:** Done
 - **Author:** Joao Eduardo Luis
 - **Date:** 2026-05-06
 
@@ -30,9 +30,9 @@ error-variant payload swap, and the rich-error formatting tweaks form one
 atomic, irreducible unit. Splitting them would create broken intermediate
 commits.
 
-| Phase   | Description                                                  | Commits | Status  |
-| ------- | ------------------------------------------------------------ | ------- | ------- |
-| Phase 1 | Replace `serde_yml` with `serde-saphyr`; surface rich errors | 1       | Pending |
+| Phase   | Description                                                  | Commits | Status |
+| ------- | ------------------------------------------------------------ | ------- | ------ |
+| Phase 1 | Replace `serde_yml` with `serde-saphyr`; surface rich errors | 1       | Done   |
 
 ### Phase 1 — replace `serde_yml` with `serde-saphyr`
 
@@ -96,17 +96,23 @@ Three coupled edits:
  pub enum ConfigError {
      Read(PathBuf, std::io::Error),
 -    Parse(serde_yml::Error),
-+    Parse(PathBuf, serde_saphyr::Error),
++    Parse(PathBuf, Box<serde_saphyr::Error>),
      Validation(String),
  }
 ```
 
-2. Update the call site at `cbsd-worker/src/config.rs:136` to attach the path:
+`serde_saphyr::Error` is ≥128 bytes (60 variants, several carrying owned data).
+Boxing it avoids `clippy::result_large_err` on every `Result<_, ConfigError>`
+returning function in the worker. `std::io::Error` does not need boxing — it
+already stores its payload behind a pointer internally.
+
+2. Update the call site at `cbsd-worker/src/config.rs:136` to attach the path
+   and box the error:
 
 ```diff
 -        let config: WorkerConfig = serde_yml::from_str(&contents).map_err(ConfigError::Parse)?;
 +        let config: WorkerConfig = serde_saphyr::from_str(&contents)
-+            .map_err(|e| ConfigError::Parse(path.to_path_buf(), e))?;
++            .map_err(|e| ConfigError::Parse(path.to_path_buf(), Box::new(e)))?;
 ```
 
 3. Update the `Display` and `source` impls so the new payload is formatted
@@ -268,13 +274,13 @@ continue to parse under `serde-saphyr` (per the audit) and vice versa.
 
 ## Progress
 
-| Step                                            | Status  |
-| ----------------------------------------------- | ------- |
-| 1.1 Cargo.toml swap (server)                    | Pending |
-| 1.1 Cargo.toml swap (worker)                    | Pending |
-| 1.2 components/mod.rs swap + reformat           | Pending |
-| 1.3 server/config.rs swap + reformat            | Pending |
-| 1.4 worker/config.rs swap + Parse(PathBuf, ...) | Pending |
-| Verification (cargo + manual smoke)             | Pending |
-| Rich-error sanity check                         | Pending |
-| Commit                                          | Pending |
+| Step                                            | Status |
+| ----------------------------------------------- | ------ |
+| 1.1 Cargo.toml swap (server)                    | Done   |
+| 1.1 Cargo.toml swap (worker)                    | Done   |
+| 1.2 components/mod.rs swap + reformat           | Done   |
+| 1.3 server/config.rs swap + reformat            | Done   |
+| 1.4 worker/config.rs swap + Parse(PathBuf, ...) | Done   |
+| Verification (cargo + manual smoke)             | Done   |
+| Rich-error sanity check                         | Done   |
+| Commit                                          | Done   |
