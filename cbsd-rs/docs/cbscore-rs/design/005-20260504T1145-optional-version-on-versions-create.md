@@ -294,6 +294,13 @@ creation time rather than a placeholder. The `<type-desc>` prefix preserves the
 existing title structure for the parseable-VERSION path; only the body shape
 changes.
 
+The displayed timestamp is rendered at seconds precision (`%H:%M:%SZ`), even
+though UUIDv7 stores millisecond precision. This is a readability choice for the
+title — the full millisecond timestamp remains in the UUID itself for any
+consumer that needs it, and chronological ordering is unaffected (the tie-break
+for two UUIDv7s minted in the same second lives in the random bits, not in the
+displayed seconds).
+
 When VERSION is a UUIDv7, no major/minor/patch can be extracted. All
 subdirectory matches fail by definition, so **only top-level patches apply**.
 Per-major and per-minor-patch subdirectories are unreachable for UUIDv7 builds.
