@@ -49,11 +49,43 @@ it on every invocation is the design goal.
 
 ## Goals
 
-(filled in as decisions land)
+- Operators can run `cbsbuild versions create` without supplying a VERSION on
+  every invocation. When the positional is omitted, the command generates a
+  UUIDv7 string and uses it as the descriptor identifier — the file lands at
+  `<root>/<type>/<UUIDv7>.json` (with `<root>` resolved per design 004) and
+  `desc.version` carries the UUIDv7 string verbatim.
+- Operators who continue passing an explicit VERSION see no behaviour change.
+  The existing regex validation (`[prefix-]vM.m.p[-suffix]`),
+  `parse_version()`-driven title format, and patch-walker matching all run
+  unchanged on the supplied-VERSION path. Per CLAUDE.md correctness invariant 2
+  (CLI UX parity), existing operator scripts and CI invocations keep working.
+- The auto-derived path produces (a) chronologically-sortable filenames in
+  `<root>/<type>/`, since UUIDv7 strings sort lexicographically by creation time
+  per RFC 9562, and (b) a self-explanatory created-at title so operators reading
+  `versions list` output see when each descriptor was minted instead of an
+  opaque ID.
 
 ## Non-Goals
 
-(filled in as decisions land)
+- Auto-derivation from a store, config template, env var, or git-describe.
+  Rejected in OQ1; UUIDv7 is the only auto-derivation source.
+- Reader-side discovery. `cbsbuild build` still takes an explicit descriptor
+  path; design 004 OQ4 locked that in. A "build latest in `<type>`" shortcut is
+  also out of scope (item 6).
+- Type-specific behaviour (`release` vs `dev`/`test`/`ci`). OQ2 resolved that
+  all four types behave uniformly. No `--type`-based refusal of the no-VERSION
+  shortcut.
+- Schema / wire-format changes. No `schema_version` bump on `VersionDescriptor`,
+  `Config`, or any other wire format (item 7 / OQ8).
+- Cross-language interchange. Python `cbc`/`crt` parse `desc.version` against
+  the legacy regex and would reject a UUIDv7. Per design 002 §Python
+  Coexistence, mixing Python and Rust against the same on-disk files is not
+  supported anyway; operators run one implementation per deployment.
+- Python-side changes. `cbscore/` (the Python package) keeps the
+  VERSION-required CLI. This design lands only in the Rust `cbsbuild` /
+  `cbscore` crates.
+- M1 scope. The design ships post-M1 as a 1.x.0 minor add. M1 itself ships with
+  VERSION required, matching Python parity.
 
 ## Open Questions
 
@@ -300,8 +332,136 @@ Other wire formats (`ReleaseDescriptor`, `ContainerDescriptor`,
 
 ## Design Sketch
 
-(filled in after the Open Questions are resolved)
+The change consists of one CLI-shape edit, one resolver helper, one branch in
+the title generator, and one Cargo-feature add. No new config field, no new
+flag, no schema change, no patch-walker code (item 1 is graceful degradation of
+the existing walker).
+
+### CLI shape
+
+`cbsbuild versions create` (in `cbsbuild/src/cmds/versions.rs`) gains an
+optional positional, replacing the required `String` form:
+
+```rust
+#[arg(value_name = "VERSION")]
+version: Option<String>,
+```
+
+clap parses an absent positional as `None`. The handler keeps every other flag —
+`--type`, `--image-tag`, `--versions-dir` (design 004) — unchanged.
+
+### Resolver
+
+`cbscore::versions::resolve_version` (alongside `resolve_root` from design 004,
+in `cbscore/src/versions/mod.rs`):
+
+```rust
+pub fn resolve_version(cli: Option<&str>) -> String {
+    match cli {
+        Some(v) => v.to_owned(),
+        None => uuid::Uuid::now_v7().to_string(),
+    }
+}
+```
+
+The function is sync and infallible. `Uuid::now_v7()` reads the system clock
+internally; no IO, no errors to propagate. Returns the canonical hyphenated
+36-char form.
+
+The supplied-VERSION path keeps the existing regex validation by calling the
+equivalent of `_validate_version()` after resolution but only when the caller
+passed an explicit value:
+
+```rust
+let version = resolve_version(args.version.as_deref());
+if args.version.is_some() {
+    validate_version(&version)?;   // existing [prefix-]vM.m.p[-suffix] check
+}
+```
+
+A UUIDv7 deliberately bypasses validation — it does not match the regex by
+construction.
+
+### Title generator
+
+`cbscore::versions::create::do_version_title` (port of
+`cbscore/versions/create.py:_do_version_title`) branches on whether the version
+is a UUIDv7:
+
+```rust
+pub fn do_version_title(version: &str, version_type: VersionType) -> String {
+    let type_desc = version_type.get_desc();   // "Development" / "General Availability" / ...
+    if let Ok(uuid) = uuid::Uuid::parse_str(version) {
+        if uuid.get_version_num() == 7 {
+            let ts = uuid_v7_timestamp(&uuid);     // chrono::DateTime<Utc>
+            return format!(
+                "Release {type_desc} version created at {}",
+                ts.format("%Y-%m-%dT%H:%M:%SZ"),
+            );
+        }
+    }
+    // Supplied-VERSION path: existing parse_version + format.
+    let parsed = parse_version(version)?;        // -> "Release {type_desc} {parsed.title}"
+    format!("Release {type_desc} {}", parsed.title())
+}
+```
+
+`uuid_v7_timestamp()` extracts the leading 48 bits as milliseconds since the
+Unix epoch (per RFC 9562 §5.7) and converts to `chrono::DateTime<Utc>`. The
+`uuid` crate exposes this via `Uuid::get_timestamp()` returning a
+`uuid::Timestamp` for v6/v7/v1 inputs.
+
+The `parse_str` + `get_version_num` check is robust: a UUIDv4 (which today's
+`gen_run_name` uses) would not match the v7 branch; an arbitrary non-UUID string
+(any operator-supplied VERSION) fails `parse_str` and falls through. No false
+positives.
+
+### Patch walker
+
+No changes. The existing walker
+(`cbscore/builder/prepare.py:_get_patches_by_prio`, ported per design 002) calls
+`parse_version()` and skips subdirectories whose names don't match. For a UUIDv7
+input, `parse_version()` returns `MalformedVersionError`; the walker treats that
+as "no major/minor/patch known" and applies only the top-level `patches/*.patch`
+files — exactly the desired graceful degradation. The Rust port preserves this
+behaviour: each call site that needs major/minor/patch already handles the error
+case for malformed operator input today.
+
+### Cargo dep delta
+
+`cbscore/Cargo.toml`:
+
+```toml
+uuid = { version = "1", features = ["v4", "v7"] }
+```
+
+The `v4` feature is already listed (design 001 §Cargo Sketch); design 005 adds
+`v7`. No new crate is added; no other dependency changes.
 
 ## Migration
 
-(filled in after the Open Questions are resolved)
+### Code
+
+| Step | Where                            | What                                                                                                                                                                                                           |
+| ---- | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1    | `cbscore/Cargo.toml`             | Add `"v7"` to the `uuid` features list (existing `["v4"]` becomes `["v4", "v7"]`).                                                                                                                             |
+| 2    | `cbscore/src/versions/mod.rs`    | Add `resolve_version(cli: Option<&str>) -> String`. Add `uuid_v7_timestamp` helper (or inline at the single call site in the title generator).                                                                 |
+| 3    | `cbscore/src/versions/create.rs` | Branch `do_version_title` on UUIDv7 (parse + version-num check) and emit the created-at form. Keep the supplied-VERSION path unchanged.                                                                        |
+| 4    | `cbsbuild/src/cmds/versions.rs`  | Change the positional `version: String` to `version: Option<String>`. Call `resolve_version` and gate the regex `validate_version` call on `args.version.is_some()`. No flag, env-var, or output-line changes. |
+
+All four steps land in a single 1.x.0 release post-M1. They are tightly coupled
+(clap shape + resolver + title generator must change together) so splitting
+would create broken intermediate commits.
+
+### Operator-side
+
+| Operator scenario                                                            | Required action at upgrade                                                                                                                                                                       |
+| ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Operator who passes a VERSION on every `cbsbuild versions create` invocation | None. The supplied-VERSION path is unchanged: same regex, same title format, same descriptor contents.                                                                                           |
+| Operator who wants the new no-VERSION shortcut                               | Drop the positional from the command. The descriptor lands at `<root>/<type>/<UUIDv7>.json`; the printed `-> written to <path>` echo is the handle to feed to `cbsbuild build`.                  |
+| Operator who runs Python `cbc` / `crt` against descriptors created by Rust   | Do not mix UUIDv7 descriptors with Python tooling. Per design 002 §Python Coexistence, operators run one implementation per deployment; UUIDv7 descriptors are not portable to Python consumers. |
+| Operator with a CI pipeline that wraps `cbsbuild versions create`            | None unless the pipeline wants the new shortcut. Existing wrappers continue to pass an explicit VERSION as today.                                                                                |
+
+No file-format migration is needed (no schema change). No deployment migration
+is needed (cbsbuild is a CLI tool — no daemon, no API surface). The change is
+opt-in: operators who keep typing the VERSION see no difference at all.
