@@ -447,8 +447,12 @@ assumption. Callsite is
 
 `uuid_v7_timestamp()` extracts the leading 48 bits as milliseconds since the
 Unix epoch (per RFC 9562 §5.7) and converts to `chrono::DateTime<Utc>`. The
-`uuid` crate exposes this via `Uuid::get_timestamp()` returning a
-`uuid::Timestamp` for v6/v7/v1 inputs.
+`uuid` crate exposes the timestamp via `Uuid::get_timestamp()` returning a
+`uuid::Timestamp` for v6/v7/v1 inputs; convert with
+`Timestamp::to_unix_millis()` (returns `u64`) and feed the result to
+`chrono::DateTime::<Utc>::from_timestamp_millis()`. The alternative
+`Timestamp::to_unix()` returns `(seconds, nanoseconds)` and is also valid but
+requires more arithmetic.
 
 The `parse_str` + `get_version_num` check is robust: a UUIDv4 (which today's
 `gen_run_name` uses) would not match the v7 branch; an arbitrary non-UUID string
