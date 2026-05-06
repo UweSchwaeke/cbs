@@ -454,6 +454,11 @@ Unix epoch (per RFC 9562 §5.7) and converts to `chrono::DateTime<Utc>`. The
 `Timestamp::to_unix()` returns `(seconds, nanoseconds)` and is also valid but
 requires more arithmetic.
 
+A unit test for `uuid_v7_timestamp` constructs a UUIDv7 from a fixed
+`uuid::Timestamp` via `Uuid::new_v7(...)` and asserts the round-tripped
+`chrono::DateTime<Utc>` matches — cheap to write and pins the title format
+against future regressions.
+
 The `parse_str` + `get_version_num` check is robust: a UUIDv4 (which today's
 `gen_run_name` uses) would not match the v7 branch; an arbitrary non-UUID string
 (any operator-supplied VERSION) fails `parse_str` and falls through. No false
