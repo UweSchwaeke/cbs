@@ -341,6 +341,12 @@ is preserved here.
 Operators who prefer human-readable VERSIONs continue to pass an explicit
 positional VERSION as today.
 
+A practical side benefit: `ls -1 <root>/<type>/` returns descriptors in
+chronological creation order without needing `-t` (mtime) or any custom sort,
+because UUIDv7 strings sort lexicographically by their leading 48-bit timestamp
+(per §Sortability). Operators accumulating multiple auto-derived descriptors can
+pick the most recent one with a plain `ls | tail -1`.
+
 ### Schema / wire format: no bump
 
 Design 002 §Wire-Format Versioning's post-M1 rule is that the first schema
