@@ -407,22 +407,34 @@ construction.
 is a UUIDv7:
 
 ```rust
-pub fn do_version_title(version: &str, version_type: VersionType) -> String {
+pub fn do_version_title(
+    version: &str,
+    version_type: VersionType,
+) -> Result<String, VersionError> {
     let type_desc = version_type.get_desc();   // "Development" / "General Availability" / ...
     if let Ok(uuid) = uuid::Uuid::parse_str(version) {
         if uuid.get_version_num() == 7 {
             let ts = uuid_v7_timestamp(&uuid);     // chrono::DateTime<Utc>
-            return format!(
+            return Ok(format!(
                 "Release {type_desc} version created at {}",
                 ts.format("%Y-%m-%dT%H:%M:%SZ"),
-            );
+            ));
         }
     }
     // Supplied-VERSION path: existing parse_version + format.
-    let parsed = parse_version(version)?;        // -> "Release {type_desc} {parsed.title}"
-    format!("Release {type_desc} {}", parsed.title())
+    let parsed = parse_version(version)?;        // -> MalformedVersion on regex miss
+    Ok(format!("Release {type_desc} {}", parsed.title()))
 }
 ```
+
+The return type is `Result<String, VersionError>` because the supplied- VERSION
+branch's `parse_version()` is fallible. In practice the error is unreachable:
+`cbsbuild versions create` calls `validate_version` (the same regex) earlier in
+the handler, so a malformed VERSION fails before `do_version_title` runs. The
+`?` therefore never fires on the live path — but the type signature stays honest
+about the failure mode rather than relying on a structural "this can't happen"
+assumption. Callsite is
+`let title = do_version_title(&version, version_type)?;`.
 
 `uuid_v7_timestamp()` extracts the leading 48 bits as milliseconds since the
 Unix epoch (per RFC 9562 §5.7) and converts to `chrono::DateTime<Utc>`. The
