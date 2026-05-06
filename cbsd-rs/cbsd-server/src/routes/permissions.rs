@@ -17,6 +17,7 @@ use axum::http::StatusCode;
 use axum::routing::{delete, get, post, put};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 use crate::app::AppState;
 use crate::auth::extractors::{AuthUser, ErrorDetail, auth_error};
@@ -62,7 +63,7 @@ pub fn router() -> Router<AppState> {
 // Request / response types
 // ---------------------------------------------------------------------------
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 struct CreateRoleBody {
     name: String,
     description: Option<String>,
@@ -71,7 +72,7 @@ struct CreateRoleBody {
     scopes: Vec<ScopeBody>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 struct RoleResponse {
     name: String,
     description: String,
@@ -81,7 +82,7 @@ struct RoleResponse {
     created_at: i64,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 struct RoleListItem {
     name: String,
     description: String,
@@ -89,7 +90,7 @@ struct RoleListItem {
     created_at: i64,
 }
 
-#[derive(Deserialize, Serialize, Clone)]
+#[derive(Deserialize, Serialize, Clone, ToSchema)]
 pub(crate) struct ScopeBody {
     #[serde(rename = "type")]
     scope_type: String,

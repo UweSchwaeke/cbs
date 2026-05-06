@@ -17,6 +17,7 @@ use axum::http::StatusCode;
 use axum::routing::{delete, get, post, put};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 use crate::app::AppState;
 use crate::auth::extractors::{AuthUser, ErrorDetail, auth_error};
@@ -41,14 +42,14 @@ pub fn router() -> Router<AppState> {
 // Request / response types
 // ---------------------------------------------------------------------------
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 struct CreateChannelBody {
     name: String,
     #[serde(default)]
     description: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 struct UpdateChannelBody {
     #[serde(default)]
     name: Option<String>,
@@ -56,7 +57,7 @@ struct UpdateChannelBody {
     description: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 struct AddTypeBody {
     type_name: String,
     project: String,
@@ -64,7 +65,7 @@ struct AddTypeBody {
     prefix_template: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 struct UpdateTypeBody {
     #[serde(default)]
     project: Option<String>,
@@ -72,12 +73,12 @@ struct UpdateTypeBody {
     prefix_template: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 struct SetDefaultTypeBody {
     type_id: i64,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 struct ChannelResponse {
     id: i64,
     name: String,
@@ -88,7 +89,7 @@ struct ChannelResponse {
     updated_at: i64,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 struct TypeResponse {
     id: i64,
     type_name: String,

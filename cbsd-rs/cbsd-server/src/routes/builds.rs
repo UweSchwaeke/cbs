@@ -21,6 +21,7 @@ use axum::{Json, Router};
 use cbsd_proto::{BuildDescriptor, BuildId, Priority};
 use serde::{Deserialize, Serialize};
 use tokio_util::io::ReaderStream;
+use utoipa::{IntoParams, ToSchema};
 
 use crate::app::AppState;
 use crate::auth::extractors::{AuthUser, ErrorDetail, ScopeType, auth_error};
@@ -45,14 +46,14 @@ pub fn router() -> Router<AppState> {
 // Request / response types
 // ---------------------------------------------------------------------------
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 struct SubmitBuildBody {
     descriptor: BuildDescriptor,
     #[serde(default)]
     priority: Priority,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 struct SubmitBuildResponse {
     id: i64,
     state: String,
@@ -63,7 +64,7 @@ struct SubmitBuildResponse {
     warning: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema, IntoParams)]
 struct ListBuildsQuery {
     user: Option<String>,
     state: Option<String>,
@@ -423,9 +424,10 @@ async fn revoke_build(
 // GET /api/builds/{id}/logs/tail?n=30
 // ---------------------------------------------------------------------------
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 struct LogsTailQuery {
     #[serde(default = "default_tail_n")]
+    #[schema(default = 30, maximum = 10_000)]
     n: u32,
 }
 

@@ -19,6 +19,7 @@ use axum::http::StatusCode;
 use axum::routing::{delete, get, post, put};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 use crate::app::AppState;
 use crate::auth::extractors::{AuthUser, ErrorDetail, ScopeType, auth_error};
@@ -30,11 +31,12 @@ use crate::scheduler::tag_format;
 // Response types
 // ---------------------------------------------------------------------------
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 struct PeriodicTaskResponse {
     id: String,
     cron_expr: String,
     tag_format: String,
+    #[schema(value_type = Object)]
     descriptor: serde_json::Value,
     priority: String,
     summary: Option<String>,
@@ -94,10 +96,11 @@ fn task_to_response(row: PeriodicTaskRow) -> PeriodicTaskResponse {
 // Request types
 // ---------------------------------------------------------------------------
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 struct CreateTaskBody {
     cron_expr: String,
     tag_format: String,
+    #[schema(value_type = Object)]
     descriptor: serde_json::Value,
     #[serde(default = "default_priority")]
     priority: String,
@@ -108,10 +111,11 @@ fn default_priority() -> String {
     "normal".to_string()
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 struct UpdateTaskBody {
     cron_expr: Option<String>,
     tag_format: Option<String>,
+    #[schema(value_type = Option<Object>)]
     descriptor: Option<serde_json::Value>,
     priority: Option<String>,
     summary: Option<String>,

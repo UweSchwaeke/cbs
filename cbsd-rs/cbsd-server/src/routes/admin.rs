@@ -19,6 +19,7 @@ use axum::{Json, Router};
 use base64::Engine;
 use serde::Deserialize;
 use serde::Serialize;
+use utoipa::ToSchema;
 
 use crate::app::AppState;
 use crate::auth::extractors::{AuthUser, ErrorDetail, auth_error, first_robot_forbidden_cap};
@@ -286,13 +287,13 @@ fn is_valid_worker_name(name: &str) -> bool {
     chars.all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 struct RegisterWorkerBody {
     name: String,
     arch: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 struct RegisterWorkerResponse {
     worker_id: String,
     name: String,
@@ -668,7 +669,7 @@ async fn force_disconnect_worker(state: &AppState, registered_worker_id: &str) {
 // PUT /api/admin/entity/{email}/default-channel
 // ---------------------------------------------------------------------------
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 struct SetDefaultChannelBody {
     #[serde(default)]
     channel_id: Option<i64>,
@@ -789,13 +790,13 @@ async fn last_admin_guard(pool: &sqlx::SqlitePool) -> Result<(), (StatusCode, Js
 // Entity role management types
 // ---------------------------------------------------------------------------
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 struct EntityRoleItem {
     role: String,
     scopes: Vec<ScopeBody>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 struct EntityWithRolesItem {
     email: String,
     name: String,
@@ -804,12 +805,12 @@ struct EntityWithRolesItem {
     roles: Vec<EntityRoleItem>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 struct ReplaceEntityRolesBody {
     roles: Vec<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 struct AddEntityRoleBody {
     role: String,
 }
@@ -818,7 +819,7 @@ struct AddEntityRoleBody {
 // GET /api/admin/entities
 // ---------------------------------------------------------------------------
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 struct ListEntitiesQuery {
     #[serde(rename = "type")]
     entity_type: Option<String>,

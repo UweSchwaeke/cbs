@@ -23,6 +23,7 @@ use tower_governor::GovernorLayer;
 use tower_governor::errors::GovernorError;
 use tower_governor::governor::GovernorConfigBuilder;
 use tower_sessions::Session;
+use utoipa::ToSchema;
 
 use crate::app::AppState;
 use crate::auth::extractors::{AuthUser, ErrorDetail, auth_error};
@@ -106,7 +107,7 @@ pub struct CallbackQuery {
     dev_email: Option<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 struct WhoamiResponse {
     email: String,
     name: String,
@@ -115,24 +116,24 @@ struct WhoamiResponse {
     effective_caps: Vec<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 struct RevokeAllBody {
     user_email: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 struct CreateApiKeyBody {
     name: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 struct CreateApiKeyResponse {
     key: String,
     prefix: String,
     name: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 struct ApiKeyItem {
     prefix: String,
     name: String,

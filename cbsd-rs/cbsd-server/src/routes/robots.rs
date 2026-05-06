@@ -17,6 +17,7 @@ use axum::http::StatusCode;
 use axum::routing::{delete, get, post, put};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 use crate::app::AppState;
 use crate::auth::extractors::{
@@ -40,7 +41,7 @@ pub fn router() -> Router<AppState> {
 // Request / response types
 // ---------------------------------------------------------------------------
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 struct CreateRobotBody {
     name: String,
     #[serde(default)]
@@ -49,12 +50,13 @@ struct CreateRobotBody {
     /// token valid through the end of that day) or `null` (no expiry).
     /// The field must be present; an omitted `expires` returns 400 so the
     /// "never-expiring token" path stays an explicit caller opt-in.
+    #[schema(value_type = Object, nullable = true)]
     expires: serde_json::Value,
     #[serde(default)]
     roles: Vec<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 struct CreateRobotResponse {
     name: String,
     display_name: String,
@@ -69,23 +71,24 @@ struct CreateRobotResponse {
     revived: bool,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 struct RotateTokenBody {
     /// Required per design v4. `"YYYY-MM-DD"` or `null`; absent → 400.
+    #[schema(value_type = Object, nullable = true)]
     expires: serde_json::Value,
     /// Must be true to replace an existing non-revoked token.
     #[serde(default)]
     renew: bool,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 struct RotateTokenResponse {
     token: String,
     token_prefix: String,
     expires_at: Option<i64>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 struct SetDescriptionBody {
     #[serde(default)]
     description: Option<String>,
@@ -93,7 +96,7 @@ struct SetDescriptionBody {
 
 /// List item for `GET /api/admin/robots` — design v4 § REST API "List
 /// Robots" shape.
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 struct RobotListItem {
     name: String,
     display_name: String,
@@ -111,7 +114,7 @@ struct RobotListItem {
 
 /// Detail view for `GET /api/admin/robots/{name}` — design v4 § REST API
 /// "Get Robot" shape.
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 struct RobotDetail {
     name: String,
     display_name: String,
@@ -124,7 +127,7 @@ struct RobotDetail {
     effective_caps: Vec<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 struct TokenStatusBody {
     state: String,
     #[serde(skip_serializing_if = "Option::is_none")]

@@ -19,6 +19,7 @@ use axum::http::StatusCode;
 use axum::routing::get;
 use axum::{Json, Router};
 use serde::Serialize;
+use utoipa::ToSchema;
 
 use cbsd_proto::Arch;
 
@@ -33,7 +34,7 @@ pub fn router() -> Router<AppState> {
 }
 
 /// Response item for the merged worker listing.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 struct WorkerInfoResponse {
     worker_id: String,
     name: String,
