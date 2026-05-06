@@ -725,14 +725,18 @@ field or pass the new flag. See design 004 for the full context, the seven Open
 Questions and their resolutions, the Design Sketch, and the Migration plan.
 
 A second **follow-up design** covers an orthogonal CLI-UX question: making the
-VERSION positional argument optional on `cbsbuild versions create` and deriving
-it automatically from some source (latest-in-store, env var, git describe,
-etc.). M1 ships with VERSION required, matching Python parity. The design
-discussion lives in
-[design 005 — Optional VERSION on `cbsbuild versions create`](005-20260504T1145-optional-version-on-versions-create.md)
-and is intentionally post-M1: the source-of-truth question (table of options in
-design 005's OQ1) is contentious enough that resolving it inside M1's scope adds
-risk for limited gain. Once M1 is stable, design 005 lands as a 1.x.0 minor add.
+VERSION positional argument optional on `cbsbuild versions create`. M1 ships
+with VERSION required, matching Python parity. The complete design lives in
+[design 005 — Optional VERSION on `cbsbuild versions create`](005-20260504T1145-optional-version-on-versions-create.md);
+its resolved shape is: when the positional VERSION is omitted, the command
+generates a UUIDv7 string and uses it as the descriptor identifier. Operators
+who continue to pass an explicit VERSION see no behaviour change. Design 005 is
+intentionally post-M1 — its UUIDv7 path requires per-callsite graceful
+degradation in the title generator and patch walker (a UUIDv7 does not match
+`[prefix-]vM.m.p[-suffix]`), and bundling that work into M1 adds risk for
+limited gain. Once M1 is stable, design 005 lands as a 1.x.0 minor add. No
+`schema_version` bump is required — `desc.version` stays a string field and only
+its values change.
 
 ## Runner Subsystem
 

@@ -2,18 +2,17 @@
 
 ## Status
 
-**Draft — discussion phase.** This design refines the CLI surface of
+**Complete — ready for review.** This design refines the CLI surface of
 `cbsbuild versions create`: making the VERSION positional argument optional and
-providing some way to derive it automatically. It exists as a follow-up to
-design 002 (which preserves Python parity — VERSION required) and design 004
-(which made the descriptor-store location configurable and is the right
-neighbour for any auto-derivation logic that has to read the store).
+generating a UUIDv7 string when the operator omits it. It exists as a follow-up
+to design 002 (which preserves Python parity — VERSION required) and design 004
+(which made the descriptor-store location configurable).
 
 This design is intentionally **out of M1 scope**. M1 ships with VERSION
 required, matching Python parity. Once M1 is stable, 005's implementation lands
-as a 1.x.0 minor add. Sections below are populated as the design discussion
-progresses with the user. The Open Questions block enumerates the decision
-points.
+as a 1.x.0 minor add. All eight Open Questions are resolved (see § Resolved
+Decisions); the per-affected-area analysis lives under § Effects of UUIDv7
+VERSIONs; the §Design Sketch and §Migration sections are populated.
 
 ## Context
 
