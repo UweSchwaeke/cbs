@@ -453,11 +453,11 @@ assumption. Callsite is
 `uuid_v7_timestamp()` extracts the leading 48 bits as milliseconds since the
 Unix epoch (per RFC 9562 §5.7) and converts to `chrono::DateTime<Utc>`. The
 `uuid` crate exposes the timestamp via `Uuid::get_timestamp()` returning a
-`uuid::Timestamp` for v6/v7/v1 inputs; convert with
-`Timestamp::to_unix_millis()` (returns `u64`) and feed the result to
-`chrono::DateTime::<Utc>::from_timestamp_millis()`. The alternative
-`Timestamp::to_unix()` returns `(seconds, nanoseconds)` and is also valid but
-requires more arithmetic.
+`uuid::Timestamp` for v6/v7/v1 inputs. In uuid 1.22, `Timestamp::to_unix()`
+returns `(u64 seconds, u32 subsec_nanos)`; construct the `chrono::DateTime<Utc>`
+via `chrono::DateTime::<Utc>::from_timestamp(secs as i64, nanos)`. If a millis
+form is preferred, derive it as `secs * 1_000 + u64::from(nanos) / 1_000_000`
+and pass it to `chrono::DateTime::<Utc>::from_timestamp_millis()`.
 
 A unit test for `uuid_v7_timestamp` constructs a UUIDv7 from a fixed
 `uuid::Timestamp` via `Uuid::new_v7(...)` and asserts the round-tripped
