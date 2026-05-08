@@ -484,7 +484,7 @@ match get_minor_version(filter_version) {
 // get_major_version returns Result<String, MalformedVersion>.
 match get_major_version(filter_version) {
     Ok(mv) if path.file_name() == Some(mv.as_str()) => { /* descend */ }
-    Err(MalformedVersion) => { /* skip this subdirectory */ }
+    Ok(_) | Err(MalformedVersion) => { /* skip this subdirectory */ }
 }
 ```
 
