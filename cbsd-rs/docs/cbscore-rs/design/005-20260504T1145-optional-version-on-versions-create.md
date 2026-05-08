@@ -366,9 +366,8 @@ Other wire formats (`ReleaseDescriptor`, `ContainerDescriptor`,
 ## Design Sketch
 
 The change consists of one CLI-shape edit, one resolver helper, one branch in
-the title generator, and one Cargo-feature add. No new config field, no new
-flag, no schema change, no patch-walker code (item 1 is graceful degradation of
-the existing walker).
+the title generator, one patch-walker guard, and one Cargo-feature add. No new
+config field, no new flag, no schema change.
 
 ### CLI shape
 
@@ -477,11 +476,16 @@ around the major/minor extractors so that a UUIDv7 input does not propagate a
 `MalformedVersion` error. Schematically:
 
 ```rust
+// get_minor_version returns Result<Option<String>, MalformedVersion>.
 match get_minor_version(filter_version) {
-    Ok(mv) if path.file_name() == Some(mv.as_str()) => { /* match: descend */ }
+    Ok(Some(mv)) if path.file_name() == Some(mv.as_str()) => { /* descend */ }
     Ok(_) | Err(MalformedVersion) => { /* skip this subdirectory */ }
 }
-// same shape for get_major_version
+// get_major_version returns Result<String, MalformedVersion>.
+match get_major_version(filter_version) {
+    Ok(mv) if path.file_name() == Some(mv.as_str()) => { /* descend */ }
+    Err(MalformedVersion) => { /* skip this subdirectory */ }
+}
 ```
 
 For a UUIDv7, both `get_minor_version` and `get_major_version` return
