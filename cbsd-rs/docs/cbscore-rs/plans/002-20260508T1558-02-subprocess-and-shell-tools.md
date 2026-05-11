@@ -279,7 +279,22 @@ functions live in `cbscore::versions::utils`, not
 - The Phase 1 §Out of scope drift (parse_version family in `cbscore` not
   `cbscore-types`) is closed by Commit 5.
 - **Lift-out invariants (design 001):** `utils::subprocess` and `utils::git`
-  depend only on `cbscore-types::errors` + `cbscore::logger` + (for
-  `utils::git`) `cbscore::utils::subprocess`. Verified by
-  `cargo tree -p cbscore --depth 3` listing — no deps from these modules into
-  `cbscore::{config, runner, builder, releases, images::{sign, sync}}`.
+  depend only on `cbscore-types::errors` + `cbscore::logger`
+  - (for `utils::git`) `cbscore::utils::subprocess`. Verified by a module-level
+    import check, NOT by `cargo tree`. `cargo tree` reports crate-level
+    transitive deps and would produce false positives from Phase 3 onward (once
+    `cbscore` itself depends on `aws-sdk-s3`, `vaultrs`, etc. for other
+    modules). The enforcing check is:
+
+  ```bash
+  grep -nE 'use crate::(config|runner|builder|releases|images)' \
+      cbsd-rs/cbscore/src/utils/subprocess.rs \
+      cbsd-rs/cbscore/src/utils/git.rs \
+      cbsd-rs/cbscore/src/utils/git/errors.rs
+  ```
+
+  Expected: zero matches. Any match means the lift-out invariant is broken and a
+  future move to `cbscommon-rs` would require a non-trivial edit. The grep
+  targets the precise constraint the invariant expresses (no cross-module `use`
+  statements into the named subtrees) and is cheap to run as a pre-commit or CI
+  check.
