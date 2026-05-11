@@ -165,6 +165,12 @@ the Python `hvac` driver.
 - `kv_read(mount, path) -> Result<HashMap<String, String>, VaultError>` is the
   primary read operation. Returns a flat map for KV v1; for KV v2, reads the
   latest version's data sub-tree and returns the same shape.
+- `transit_sign(config: &VaultConfig, key_name: &str, input: &str) -> Result<String, VaultError>`
+  is the Vault Transit signing operation, parallel HTTP API to `kv_read`. Used
+  by Phase 5 Commit 3 (`builder::signing` + `images::signing`) for the
+  transit-backed signing path per design 002 §Image Sign & Sync lines 1085–1096.
+  Returns the Vault-formatted signature (e.g., `vault:v1:<base64>`). Per-call
+  auth applies (no token caching) — same security posture as `kv_read`.
 - All vault traffic uses `rustls` (no native TLS). HTTP timeouts as for S3
   (30s).
 
