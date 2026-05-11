@@ -58,6 +58,15 @@ lands in Phase 6).
   candidates (design 001 §Lift-out invariants names only `utils::subprocess` and
   `utils::git`). Phase 3 modules can freely depend on cbscore-internal types
   without breaking any lift-out contract.
+- **Runner-side mount of the dumped secrets file** is a Phase 4 responsibility.
+  Phase 3's `dump_to_runner(path: &Utf8Path)` takes the host-side tempfile path
+  as an argument and writes the merged-and- resolved Secrets YAML to it. The
+  Phase 4 runner is responsible for (a) creating the host tempfile via
+  `camino-tempfile` with mode 0600, (b) calling `SecretsMgr::dump_to_runner`
+  with the resulting path, and (c) passing the path to
+  `podman run --volume <path>:/runner/cbs-build.secrets.yaml`. Phase 3 does not
+  enforce this contract — flagging it here so the Phase 4 plan author wires the
+  steps together explicitly.
 
 ## Commit 1 — `utils::s3` wrapper
 
@@ -116,7 +125,8 @@ replacing the Python `aioboto3` driver.
   endpoint: round-trip a known body via `release_desc_upload` + GET, list with
   prefix and verify the count. Document the env vars (`AWS_ENDPOINT_URL`,
   `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`) that the test reads to find the
-  local endpoint.
+  local endpoint. Un-ignore in CI via `cargo test -- --include-ignored` once the
+  MinIO / LocalStack sidecar is available.
 
 ## Commit 2 — `utils::vault` wrapper
 
@@ -142,14 +152,30 @@ the Python `hvac` driver.
   wrapper takes a `VaultConfig` (from `cbscore-types::config`) and picks the
   first auth method whose fields are populated. Design 002 line 636 is the
   source.
-- Token caching with renewal: when the issued token has a TTL, schedule a
-  renewal at TTL/2 via a background task. Drop the cache when
-  `VaultError::TokenRenewalFailed` surfaces; force a re-login.
+- **No token caching across calls.** The wrapper re-authenticates per Vault
+  call, matching the Python `utils/vault.py` behaviour. This keeps the security
+  posture identical across the Python → Rust cutover: minimal token-in-memory
+  window (one call duration), full Vault audit signal (every operation logged),
+  and zero blast radius from a stolen-token attack on a long-lived `cbsd-worker`
+  (Phase 7 context). The cost is extra Vault RTTs per secrets-resolution pass —
+  negligible for a build tool. Caching can be revisited as a separate design if
+  RTTs become observable in benchmarks; the addition would require introducing a
+  struct shape (`VaultClient { … }`) and a cancellation/ownership story for any
+  background renewal task, neither of which is in scope here.
 - `kv_read(mount, path) -> Result<HashMap<String, String>, VaultError>` is the
   primary read operation. Returns a flat map for KV v1; for KV v2, reads the
   latest version's data sub-tree and returns the same shape.
 - All vault traffic uses `rustls` (no native TLS). HTTP timeouts as for S3
   (30s).
+
+**Commit-size rationale:** ~300 LOC sits below the 400-line sweet spot named in
+`cbsd-rs/CLAUDE.md` §Commit Granularity. Kept as a standalone commit because
+`utils::vault` is a self-contained SDK facade (KV reads, auth-method selection,
+the per-call auth contract) that is independently testable against a local
+`vault server -dev` instance. Bundling with Commit 3 (`secrets::mgr`, async
+Vault calls, file IO) would tie the HTTP wrapper to the secrets-orchestration
+layer in a single blast radius — two separable concerns that benefit from
+independent review.
 
 **Testable:**
 
@@ -158,7 +184,9 @@ the Python `hvac` driver.
   multiple — token wins) and assert the selected method.
 - Integration tests (`#[ignore]`-able) against `vault server -dev` (a local
   dev-mode Vault binary): round-trip a KV write + read, verify AppRole login
-  produces a usable token, verify token renewal extends the lease.
+  produces a usable token, verify per-call auth produces a fresh token on each
+  `kv_read`. Un-ignore in CI via `cargo test -- --include-ignored` once the
+  dev-Vault sidecar is configured.
 - Negative test: KV read on a missing path returns
   `Err(VaultError::PathNotFound)` (not a generic `RequestFailed`).
 
@@ -176,16 +204,24 @@ registry + signing + storage) to Rust. The Python tree split mirrored in design
   `Secrets { git: Vec<GitCreds>, signing: Vec<SigningCreds>, registry: Vec<RegistryCreds> }`
   that owns the typed Vecs. The serde-derived leaf types (`GitCreds`,
   `SigningCreds`, `RegistryCreds`) come from `cbscore-types::utils::secrets`
-  (Phase 1 Commit 3); this file does NOT redefine them.
+  (Phase 1 Commit 3); this file does NOT redefine them. Also hosts a private
+  helper `fn Secrets::load(path: &Utf8Path) -> Result<Secrets, SecretsError>`
+  that performs the single-file YAML parse via `serde_saphyr` +
+  `VersionedSecrets::into_latest()` (Phase 1 Commit 5). Not a public parallel to
+  `Config::load` — it's called only by `SecretsMgr::load_files` (below) and is
+  scoped accordingly.
 - `cbsd-rs/cbscore/src/secrets/mgr.rs` — `SecretsMgr` struct with:
-  - `pub fn load_files(paths: &[Utf8Path]) -> Result<SecretsMgr, SecretsError>`
-    — load each file via `Secrets::load` (`cbscore::config`-style YAML reader),
-    call `merge()` per design 002 line 628–629.
+  - `pub async fn load_files(paths: &[Utf8Path]) -> Result<SecretsMgr, SecretsError>`
+    — load each file via `Secrets::load` (the private helper in `models.rs`),
+    call `merge()` per design 002 line 628–629. Async because file reads go via
+    `tokio::fs`.
   - `pub fn merge(&mut self, other: Secrets)` — append the per-family Vecs.
-  - `pub async fn resolve_vault_refs(&mut self, vault: &VaultClient) -> Result<(), SecretsError>`
+  - `pub async fn resolve_vault_refs(&mut self, config: &VaultConfig) -> Result<(), SecretsError>`
     — walks each `GitVaultCreds` / `RegistryCreds::Vault` entry, calls
-    `utils::vault::kv_read` to fetch the secret, replaces the vault-ref variant
-    with the plain variant in-place.
+    `utils::vault::kv_read(config, mount, path)` (per-call auth per Commit 2's
+    design constraints) to fetch the secret, replaces the vault-ref variant with
+    the plain variant in-place. Takes `&VaultConfig` (not a `&VaultClient`
+    struct) because the Vault wrapper is free async functions per Commit 2.
   - `pub async fn dump_to_runner(&self, path: &Utf8Path) -> Result<(), SecretsError>`
     — serialise the merged + resolved set to YAML, write to a tempfile that the
     runner (Phase 4) mounts at `/runner/cbs-build.secrets.yaml` (design 002
@@ -217,9 +253,9 @@ registry + signing + storage) to Rust. The Python tree split mirrored in design
 - Vault-ref resolution is async because each ref triggers a Vault HTTP read.
   Operations are sequential (no concurrent fan-out) to match Python's behaviour;
   can be revisited later if performance demands.
-- `Secrets::load` itself is YAML parsing through `serde_saphyr` +
-  `VersionedSecrets::into_latest()` (Phase 1 Commit 5). Phase 3 wires the file
-  IO; Phase 1 owns the wire-format dispatch.
+- `Secrets::load` (the private helper in `models.rs`) is YAML parsing through
+  `serde_saphyr` + `VersionedSecrets::into_latest()` (Phase 1 Commit 5). Phase 3
+  wires the file IO; Phase 1 owns the wire-format dispatch.
 
 **Testable:**
 
@@ -228,9 +264,10 @@ registry + signing + storage) to Rust. The Python tree split mirrored in design
 - Unit test on `merge` with overlapping entries: two `GitCreds` with the same
   domain name → both retained (Python doesn't dedupe; the Rust port preserves
   that).
-- Unit test on `resolve_vault_refs` with a stub `VaultClient` that returns a
-  fixed `HashMap`: assert each `*Vault*` variant is replaced with the
-  corresponding `*Plain*` variant.
+- Unit test on `resolve_vault_refs` with a stub `kv_read` (substituting the
+  `utils::vault::kv_read` call via dependency injection or a feature-gated test
+  double) that returns a fixed `HashMap`: assert each `*Vault*` variant is
+  replaced with the corresponding `*Plain*` variant.
 - Integration test (`#[ignore]`-able): write a real `secrets.yaml` to tempfile,
   load via `load_files`, dump via `dump_to_runner`, parse the dumped file and
   assert structural equality (round-trip on a realistic shape).
@@ -245,16 +282,20 @@ Land the file IO for the config types defined in Phase 1. Per design 002
 
 - `cbsd-rs/cbscore/src/config.rs` — single-file module per design 001 §Workspace
   Layout line 127. Contains:
-  - `pub fn Config::load(path: &Utf8Path) -> Result<Config, ConfigError>` — read
-    the file, choose YAML vs JSON by extension (`.yaml` / `.yml` → YAML,
-    anything else → JSON), parse via `VersionedConfig::into_latest()` (Phase 1
-    Commit 5).
-  - `pub fn Config::store(&self, path: &Utf8Path) -> Result<(), ConfigError>` —
-    serialise via `serde_saphyr::to_string` (two-space indent, flow-style off),
-    wrap as `VersionedConfig::V1`, write to disk. Per design 002 line 498–507:
-    creates the parent dir if it does not exist (`tokio::fs::create_dir_all`),
-    mirroring Python's `mkdir(exist_ok=True, parents=True)` in
-    `cmds/config.py:302`.
+  - `pub async fn Config::load(path: &Utf8Path) -> Result<Config, ConfigError>`
+    — read the file via `tokio::fs::read_to_string`, choose YAML vs JSON by
+    extension (`.yaml` / `.yml` → YAML, anything else → JSON), parse via
+    `VersionedConfig::into_latest()` (Phase 1 Commit 5).
+  - `pub async fn Config::store(&self, path: &Utf8Path) -> Result<(), ConfigError>`
+    — serialise via `serde_saphyr::to_string` (two-space indent, flow-style
+    off), wrap as `VersionedConfig::V1`, write to disk via `tokio::fs::write`.
+    Per design 002 line 498–507: creates the parent dir if it does not exist
+    (`tokio::fs::create_dir_all`), mirroring Python's
+    `mkdir(exist_ok=True, parents=True)` in `cmds/config.py:302`. **Both
+    functions are `async fn`** because they do filesystem IO via `tokio::fs`.
+    (Design 002's sketch lines 506–507 uses `pub fn` matching the Python
+    signature; the Rust port is fully async, so the IO operations become
+    `async fn` to avoid blocking the tokio runtime.)
 - `cbsd-rs/cbscore/src/lib.rs` — `pub mod config;`.
 
 **Design constraints:**
