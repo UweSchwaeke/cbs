@@ -14,7 +14,7 @@ separate `cbscore-rs/` workspace.
 | ------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | ------- | ------- |
 | [Phase 1](002-20260508T1558-01-types.md)                      | M0 — workspace scaffold + `cbscore-types` (zero-IO descriptor / config / error surface)   | 4–5     | Pending |
 | [Phase 2](002-20260508T1558-02-subprocess-and-shell-tools.md) | M1.1 — subprocess + secret redaction + podman/buildah/skopeo + git wrappers               | 4–5     | Pending |
-| [Phase 3](002-20260508T1558-03-storage-and-secrets.md)        | M1.2 — S3, Vault, config IO, secrets manager                                              | 3–4     | Pending |
+| [Phase 3](002-20260508T1558-03-storage-and-secrets.md)        | M1.2 — S3, Vault, secrets manager, config IO                                              | 3–4     | Pending |
 | [Phase 4](002-20260508T1558-04-runner.md)                     | M1.3 — runner subsystem (state machine, mount layout, podman invocation, signal handling) | 2–3     | Pending |
 | [Phase 5](002-20260508T1558-05-builder-and-releases.md)       | M1.4 — builder pipeline stages + `run_build` orchestrator + releases + image sign/sync    | 5–6     | Pending |
 | [Phase 6](002-20260508T1558-06-cbsbuild-cli.md)               | M1.5 — `cbsbuild` clap CLI + logging + exit codes + end-to-end Ceph build acceptance      | 4–5     | Pending |
@@ -26,7 +26,7 @@ separate `cbscore-rs/` workspace.
 
 ```
 Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5 → Phase 6 → Phase 7
-                                              (M1 cut)    (M2 cut)
+                                                        (M1 cut)    (M2 cut)
 ```
 
 Strict linear ordering. Each phase's outputs are inputs to the next. Design 002
