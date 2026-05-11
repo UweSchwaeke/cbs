@@ -8,9 +8,9 @@
 | 2   | `cbscore: add utils::podman + utils::buildah wrappers`       | ~400 | Pending |
 | 3   | `cbscore: add images::skopeo driver`                         | ~150 | Pending |
 | 4   | `cbscore: add utils::git wrapper`                            | ~500 | Pending |
-| 5   | `cbscore: add versions::utils parse_version family`          | ~200 | Pending |
+| 5   | `cbscore: add versions::utils parse_version family`          | ~230 | Pending |
 
-**Estimate:** ~1750 LOC, 5 commits.
+**Estimate:** ~1780 LOC, 5 commits.
 
 ## Goal
 
@@ -218,19 +218,28 @@ functions live in `cbscore::versions::utils`, not
 - `cbsd-rs/cbscore/src/versions/mod.rs` — new module file declaring
   `pub mod utils`.
 - `cbsd-rs/cbscore/src/versions/utils.rs` — `ParsedVersion` struct (prefix /
-  major / minor / patch / suffix fields), `parse_version`, `get_major_version`,
-  `get_minor_version`, `normalize_version`, `parse_component_refs`. Function
-  signatures match design 002 lines 684–695 exactly.
+  major / minor / patch / suffix fields), `parse_version`, `get_version_type`,
+  `get_major_version`, `get_minor_version`, `normalize_version`,
+  `parse_component_refs`. All six function signatures match design 002 lines
+  672–696 exactly.
 - `cbsd-rs/cbscore/src/lib.rs` — `pub mod versions;`.
 
 **Design constraints:**
 
 - Function signatures match design 002 exactly:
   - `parse_version(s: &str) -> Result<ParsedVersion, MalformedVersion>`
+  - `get_version_type(name: &str) -> Result<VersionType, VersionError>`
   - `get_major_version(v: &str) -> Result<String, MalformedVersion>`
   - `get_minor_version(v: &str) -> Result<Option<String>, MalformedVersion>`
   - `normalize_version(v: &str) -> Result<String, MalformedVersion>`
   - `parse_component_refs(components: &[String]) -> Result<HashMap<String, String>, VersionError>`
+- `get_version_type` is the sixth function on this list. Design 001 §Downstream
+  Consumers line 65 names it as one of the `cbscore-types` symbols imported by
+  external `cbc`; since its implementation calls `parse_version` (and therefore
+  requires `regex`), it travels with the parse family into
+  `cbscore::versions::utils` rather than staying in `cbscore-types`. This is
+  part of the same Phase 1 §Out of scope drift; the design-002 follow-up edit
+  covers all six functions uniformly.
 - Regex pattern is the Python verbatim per design 002 lines 698–700.
   `parse_component_refs` matches `^([\w_-]+)@([\d\w_./-]+)$` per design 002
   line 700.
@@ -250,6 +259,9 @@ functions live in `cbscore::versions::utils`, not
   `parse_version("ces-v19.2.3-dev.1")` ditto with suffix; `parse_version("99")`
   → `Err(MalformedVersion)`; `parse_version("0193e1a8-7c2e-7000-…")` →
   `Err(MalformedVersion)` (UUIDv7 reject; see design 005).
+- `get_version_type("ces-v19.2.3-dev.1")` → `Ok(VersionType::Dev)`;
+  `get_version_type("ces-v19.2.3")` → `Ok(VersionType::Release)` (no suffix);
+  `get_version_type("ces-v19.2.3-test.1")` → `Ok(VersionType::Test)`.
 - `get_major_version("ces-v19.2.3-dev.1")` → `"19"`.
 - `get_minor_version("ces-v19.2.3-dev.1")` → `Some("19.2.3")`;
   `get_minor_version("ces-v19.2")` → `Ok(None)` (patch missing).
