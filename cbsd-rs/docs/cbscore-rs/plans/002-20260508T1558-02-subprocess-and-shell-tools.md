@@ -51,6 +51,12 @@ binary still prints its placeholder string (CLI tree lands in Phase 6).
   lift-out invariants (no cross-module deps beyond `cbscore-types::errors` + the
   logger), but the modules stay inside `cbscore` until a separate lift-out
   commit lands.
+- Component-ref resolution via `git_ls_remote`. Phase 2 lands the raw wrapper
+  (Commit 4) but does NOT land the resolution logic that `version_create_helper`
+  calls (design 002 §Version creation lines 706–711, which composes
+  `git_ls_remote` over a component list to resolve each ref to a SHA). That
+  orchestrator lives in `cbscore::versions::create` alongside the
+  `cbsbuild versions create` CLI surface, both of which land in Phase 6.
 
 ## Commit 1 — `utils::subprocess` (SecureArg + async_run_cmd)
 
@@ -101,6 +107,13 @@ The foundation. Every other wrapper in this phase invokes `async_run_cmd`.
   that interleaves both pipes).
 - `async_run_cmd` calls the `out_cb` per line when supplied, otherwise
   accumulates into `RunOutcome.stdout` / `.stderr`.
+- **RAII drop-guard smoke test (optional, `#[ignore]` if flaky in CI):** spawn
+  `sleep 60` via `async_run_cmd` inside a `tokio::select!` with a 50ms timer;
+  let the timer branch win and cancel the subprocess branch; capture the child
+  PID from `RunOpts` or a test hook and verify
+  `nix::sys::signal::kill(pid, None)` returns `Err(Errno::ESRCH)` (process
+  gone). Verifies the outer-cancellation kill path the runner relies on for
+  SIGTERM propagation (Phase 4).
 
 ## Commit 2 — `utils::podman` + `utils::buildah` wrappers
 
@@ -155,15 +168,42 @@ The foundation. Every other wrapper in this phase invokes `async_run_cmd`.
 
 - Subprocess via `utils::subprocess::async_run_cmd`.
 - Errors return `ImageDescriptorError` from `cbscore-types::images::errors`.
-- TLS / auth flags from `SkopeoOpts` (a small struct in this same module):
-  `tls_verify: bool`, `creds: Option<RegistryCreds>`. The `RegistryCreds` type
-  comes from Phase 1's secrets module.
+- TLS / auth flags from `SkopeoOpts` (a small struct in this same module) use
+  **per-side fields** because the underlying `skopeo copy` CLI distinguishes
+  source-side and destination-side credentials and TLS-verify behaviour:
+
+  ```rust
+  pub struct SkopeoOpts {
+      pub src_tls_verify: bool,
+      pub dst_tls_verify: bool,
+      pub src_creds:      Option<RegistryCreds>,
+      pub dst_creds:      Option<RegistryCreds>,
+  }
+  ```
+
+  The `RegistryCreds` type comes from Phase 1's secrets module. The implementer
+  should cross-check `cbscore/images/skopeo.py` at commit time and confirm the
+  Python wrapper exposes the same per-side semantics — if Python collapses them
+  into a single boolean, decide whether to widen the API or match Python
+  literally.
+
+- Subprocess via `utils::subprocess::async_run_cmd`.
+- Errors return `ImageDescriptorError` from `cbscore-types::images::errors`.
+
+**Commit-size rationale:** ~150 LOC is below the 400-line sweet spot named in
+`cbsd-rs/CLAUDE.md` §Commit Granularity. Kept as a standalone commit because it
+introduces the `images/` module tree that Phase 5 will extend with
+`images::sign` and `images::sync`; bundling skopeo into a different commit
+(e.g., with `utils::buildah`) would conflate unrelated subsystem namespaces and
+complicate review.
 
 **Testable:**
 
 - Command construction: `skopeo_copy` produces
-  `skopeo copy --src-tls-verify=… --dest-tls-verify=… <src> <dst>` with the
-  right flag set.
+  `skopeo copy --src-tls-verify=<bool> --dest-tls-verify=<bool> <src> <dst>`
+  with each per-side flag mapped from the matching `SkopeoOpts` field; when
+  `src_creds` / `dst_creds` are `Some`, the matching `--src-creds` /
+  `--dest-creds` flags appear.
 - `skopeo_image_exists` distinguishes a 0-exit (exists) from a
   non-zero-exit-with-known-stderr (does not exist) — the latter must return
   `Ok(false)`, not `Err`.
@@ -212,6 +252,15 @@ Closes the drift acknowledged in Phase 1 §Out of scope: the parse-family
 functions live in `cbscore::versions::utils`, not
 `cbscore-types::versions::utils`, because their implementations depend on the
 `regex` crate (allowed in `cbscore`, deliberately absent from `cbscore-types`).
+
+**Commit-size rationale:** ~230 LOC sits at the lower end of the 400–800 sweet
+spot. Kept as a standalone commit because the parse family is semantically
+distinct from the subprocess wrappers in the preceding commits (pure string
+parsing vs subprocess IO), introduces a new top-level `versions::` module under
+`cbscore`, and lands behind the clean tag "closes the Phase 1 §Out of scope
+drift" in `git log` — a review boundary that benefits from being explicit rather
+than buried at the end of a larger commit. Bundling with Commit 4 (`utils::git`,
+~500 LOC) would total ~730 LOC but conflate two unrelated subsystems.
 
 **Files:**
 
