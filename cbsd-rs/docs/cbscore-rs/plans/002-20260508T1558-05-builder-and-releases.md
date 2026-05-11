@@ -243,6 +243,11 @@ GPG + Vault transit primitives.
   test keyring, verify the signature via `rpm --checksig`.
 - Vault transit signing: round-trip a known manifest digest against a
   `vault server -dev` instance with a transit key configured.
+- `images::sync` sign-before-push order test: with `config.signing.is_some()`,
+  stub `sign_manifest` and `skopeo_copy`, drive `sync_image`, capture the call
+  order, assert `sign_manifest` fires before `skopeo_copy`. This is the test
+  that was deferred from Commit 3 §Testable per the sign-before-push invariant
+  taking effect when this commit lands.
 
 ## Commit 5 — `builder::upload` + `releases` module (S3 publish)
 
@@ -407,11 +412,17 @@ lines 1098–1104.
   - **file**: a local `.repo` file mounted into the build context
   - **url**: a URL that the Containerfile's `dnf config-manager --add-repo` line
     consumes
-- `images::sync` orchestrates per design 002 line 1098–1104: **sign before push,
-  not after** — the order is enforced by chaining
-  `images::signing::sign_manifest` before `skopeo_copy` rather than after. This
-  matches the Python implementation and is a tested precondition of the
-  downstream registry tooling.
+- `images::sync` orchestrates per design 002 line 1098–1104. The
+  **sign-before-push invariant** ("sign before push, not after" — matches the
+  Python implementation and is a tested precondition of the downstream registry
+  tooling) takes effect when Commit 4 lands `images::signing::sign_manifest`. In
+  Commit 3, `sync_image` uses the optional-signing skip path (no `sign_manifest`
+  call at all, whether `config.signing` is set or not — the function doesn't
+  exist yet). Once Commit 4 lands, `sync_image` chains `sign_manifest` before
+  `skopeo_copy` when `config.signing.is_some()` and continues to skip the sign
+  step when it is `None`. The order test that asserts `sign_manifest` fires
+  before `skopeo_copy` belongs in Commit 4's §Testable (after `sign_manifest`
+  exists), not here.
 
 **Commit-size rationale:** ~550 LOC sits in the sweet spot. Bundles containers +
 images::sync because both produce container images: `containers::build` builds
@@ -439,8 +450,11 @@ module assembled in one logical bundle (skopeo from Phase 2, signing in Commit
 - `containers::repos` resolution tests for each repo variant.
 - Integration test (`#[ignore]`-able) against a real podman daemon: build a tiny
   test image, verify the image exists locally via `podman image inspect`.
-- `images::sync` order test: assert `sign_manifest` is called before
-  `skopeo_copy` (stub both, capture call order).
+- `images::sync` no-sign path test: with `config.signing` either set or unset,
+  `sync_image` does not attempt to call any signing function (no symbol exists
+  yet in this commit) and the call is observably a plain `skopeo_copy`. The
+  actual sign-before-push order assertion lives in Commit 4 §Testable after
+  `sign_manifest` lands.
 
 ## End-of-phase acceptance
 
