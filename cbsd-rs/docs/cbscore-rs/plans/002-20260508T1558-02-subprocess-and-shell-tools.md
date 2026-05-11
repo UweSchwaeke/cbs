@@ -187,9 +187,6 @@ The foundation. Every other wrapper in this phase invokes `async_run_cmd`.
   into a single boolean, decide whether to widen the API or match Python
   literally.
 
-- Subprocess via `utils::subprocess::async_run_cmd`.
-- Errors return `ImageDescriptorError` from `cbscore-types::images::errors`.
-
 **Commit-size rationale:** ~150 LOC is below the 400-line sweet spot named in
 `cbsd-rs/CLAUDE.md` §Commit Granularity. Kept as a standalone commit because it
 introduces the `images/` module tree that Phase 5 will extend with
