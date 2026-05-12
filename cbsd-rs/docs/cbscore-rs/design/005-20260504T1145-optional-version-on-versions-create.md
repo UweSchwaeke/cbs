@@ -225,12 +225,17 @@ Python walker would propagate that exception through `_apply_patches` and fail
 the build, not at `versions create` time but at build time.
 
 The Rust port therefore **adds a guard**: it treats `Err(MalformedVersion)` from
-the major/minor extractors as "no major/minor/patch known" and skips the
-subdirectory rather than propagating. The result is the desired graceful
-degradation — only top-level `patches/*.patch` apply when VERSION is a UUIDv7,
-per-major and per-minor-patch subdirectories are unreachable for UUIDv7 builds.
-See §Design Sketch › §Patch walker for the precise change. Operators who need
-version-specific patches for a UUIDv7 build place them at the top level.
+the major/minor extractors as "no major/minor/patch known", emits a
+`tracing::warn!` once per skipped version-keyed subdirectory on that walk, and
+falls through rather than propagating. The warn message names the skipped path
+explicitly, so an operator who expected a version-keyed patch to apply sees one
+log line per omission rather than a silent drop. The format is
+`"skipping version-keyed patch subdir '<name>' — VERSION is a UUIDv7, no version match possible"`.
+The result is the desired graceful degradation — only top-level
+`patches/*.patch` apply when VERSION is a UUIDv7, per-major and per-minor-patch
+subdirectories are unreachable for UUIDv7 builds. See §Design Sketch › §Patch
+walker for the precise change. Operators who need version-specific patches for a
+UUIDv7 build place them at the top level.
 
 ### Consumer parsing: covered by items 1 + 2
 
@@ -254,8 +259,8 @@ major / minor / patch must handle the `MalformedVersion` error case. The
 supplied-VERSION path validates upfront via `validate_version`, so the error
 never reaches downstream sites in practice today; the UUIDv7 path skips that
 upfront validation, so each downstream site (currently just the patch walker,
-item 1) gains a guard that treats the malformed case as "skip" rather than
-propagating.
+item 1) gains a guard that treats the malformed case as "warn-and-skip" rather
+than propagating.
 
 ### Sortability: no change needed
 
@@ -473,34 +478,59 @@ positives.
 
 The Rust port of `cbscore/builder/prepare.py:_get_patches_by_prio` adds a guard
 around the major/minor extractors so that a UUIDv7 input does not propagate a
-`MalformedVersion` error. Schematically:
+`MalformedVersion` error, and emits a `tracing::warn!` per skipped version-keyed
+subdirectory so the omission is visible in the build log. Schematically:
 
 ```rust
-// get_minor_version returns Result<Option<String>, MalformedVersion>.
-match get_minor_version(filter_version) {
-    Ok(Some(mv)) if path.file_name() == Some(mv.as_str()) => { /* descend */ }
-    Ok(_) | Err(MalformedVersion) => { /* skip this subdirectory */ }
-}
-// get_major_version returns Result<String, MalformedVersion>.
-match get_major_version(filter_version) {
-    Ok(mv) if path.file_name() == Some(mv.as_str()) => { /* descend */ }
-    Ok(_) | Err(MalformedVersion) => { /* skip this subdirectory */ }
+// Cache the malformed-version signal once per walk; both extractors fail
+// uniformly on the same input, so this avoids duplicate warns from the
+// per-subdir matching below.
+let minor = get_minor_version(filter_version); // Result<Option<String>, MalformedVersion>
+let major = get_major_version(filter_version); // Result<String,         MalformedVersion>
+let version_is_malformed = minor.is_err() && major.is_err();
+
+for subdir in version_keyed_subdirs(patches_dir)? {
+    let name = subdir.file_name();
+    let matches_minor = matches!(&minor, Ok(Some(mv)) if name == mv.as_str());
+    let matches_major = matches!(&major, Ok(mv)       if name == mv.as_str());
+
+    if matches_minor || matches_major {
+        // descend into the matched subdir (priority logic per Python source)
+    } else if version_is_malformed {
+        // UUIDv7 case — surface the skip so an expected patch that does not
+        // apply is not a silent omission. One warn per skipped subdir per walk.
+        tracing::warn!(
+            target: TARGET_BUILDER_PATCHES,
+            subdir = %name,
+            "skipping version-keyed patch subdir '{}' — VERSION is a UUIDv7, \
+             no version match possible",
+            name,
+        );
+        // skip this subdirectory
+    } else {
+        // parseable VERSION + name mismatch — silently skip (existing behaviour)
+    }
 }
 ```
 
 For a UUIDv7, both `get_minor_version` and `get_major_version` return
-`Err(MalformedVersion)`; the walker skips the subdirectory and falls through to
-the top-level `patches/*.patch` apply path, producing the desired graceful
-degradation (item 1 under §Effects of UUIDv7 VERSIONs).
+`Err(MalformedVersion)`; the walker emits one `tracing::warn!` per version-keyed
+subdirectory it skips and falls through to the top-level `patches/*.patch` apply
+path, producing the desired graceful degradation (item 1 under §Effects of
+UUIDv7 VERSIONs). The `TARGET_BUILDER_PATCHES` constant comes from
+`cbscore-types::logger` (Phase 1 of the cbscore-rs port); the warn line carries
+the existing target hierarchy so `CBS_DEBUG` filtering keeps working unchanged.
 
 This is a behavioural divergence from the Python source, which propagates
 `MalformedVersionError` uncaught through `_apply_patches`. The Rust port treats
-the malformed-version case as "skip" rather than "fail" so that the new UUIDv7
-path does not reach `_apply_patches` with an exception in flight. For a supplied
-VERSION that fails the regex, the same guard applies — but
-`cbsbuild versions create` already validates supplied VERSION upfront via
-`validate_version`, so a malformed-supplied-VERSION descriptor is not written in
-the first place; the guard's only live trigger is UUIDv7 builds.
+the malformed-version case as **warn-and-skip** rather than "fail" so that the
+new UUIDv7 path does not reach `_apply_patches` with an exception in flight, and
+so the operator sees the skip in the log rather than being silently denied a
+patch they put on disk. For a supplied VERSION that fails the regex, the same
+guard applies — but `cbsbuild versions create` already validates supplied
+VERSION upfront via `validate_version`, so a malformed-supplied-VERSION
+descriptor is not written in the first place; the guard's only live trigger is
+UUIDv7 builds.
 
 ### Cargo dep delta
 
