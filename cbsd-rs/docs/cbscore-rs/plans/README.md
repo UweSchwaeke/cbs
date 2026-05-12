@@ -20,7 +20,7 @@ separate `cbscore-rs/` workspace.
 | [Phase 6](002-20260508T1558-06-cbsbuild-cli.md)               | M1.5 — `cbsbuild` clap CLI + logging + exit codes + end-to-end Ceph build acceptance                | 4–5     | Pending |
 | [Phase 7](002-20260508T1558-07-worker-cutover.md)             | M2 — `cbsd-worker` switches from `cbscore-wrapper.py` to direct Cargo dep on `cbscore`              | 2–3     | Pending |
 
-**Total estimate:** ~25–30 commits across 7 phases.
+**Total estimate:** ~25–31 commits across 7 phases.
 
 ## Dependency Graph
 
