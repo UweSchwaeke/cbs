@@ -1,5 +1,13 @@
 # Phase 3 — M1.2: S3, Vault, secrets manager, config IO
 
+## Status
+
+**Approved — finalized and ready for implementation.** Last audited at the v18
+corpus pass (`reviews/002-20260513T0940-plan-cbscore-rust-port-design-v18.md`,
+verdict commit `a806158`); zero findings across CRITICAL / MAJOR / MINOR /
+SUGGESTION / OPEN QUESTION on the seq-002 phase plans. See `README.md` for the
+dependency graph and the M0 / M1 / M2 milestone cuts.
+
 ## Progress
 
 | #   | Commit                                                  | ~LOC | Status  |
