@@ -212,7 +212,9 @@ complicate review.
 - `cbsd-rs/cbscore/src/utils/git.rs` — port of `cbscore/utils/git.py` (~401 LoC
   of subprocess wrappers in Python). Free async functions: `git_ls_remote`,
   `git_clone`, `git_fetch`, `git_describe`, `git_switch`,
-  `git_branch_show_current`, `git_rev_parse`, etc. Match the Python signatures.
+  `git_branch_show_current`, `git_rev_parse`, `repo_root` (Rust name for
+  Python's `get_git_repo_root`; seq-004 Commit 2's `resolve_root` depends on
+  this exact name), etc. Match the Python signatures.
 - `cbsd-rs/cbscore/src/utils/git/errors.rs` — `GitError` enum (NOT in
   `cbscore-types`; design 001 §Lift-out invariants names `utils::git` as a
   future `cbscommon-rs` candidate, so its error type stays module-internal). The

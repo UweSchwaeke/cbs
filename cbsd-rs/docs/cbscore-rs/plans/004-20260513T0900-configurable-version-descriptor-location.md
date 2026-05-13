@@ -145,25 +145,30 @@ cleanly from Commit 1.
 
 **Files:**
 
-- `cbsd-rs/cbscore/src/versions/mod.rs` (or wherever `cbscore::versions` is
-  rooted after Phase 4) — add
+- `cbsd-rs/cbscore/src/versions/resolve.rs` — new sub-module carrying the
+  resolver. `cbsd-rs/cbscore/src/versions/mod.rs` gains `pub mod resolve;` plus
+  `pub use resolve::resolve_root;` so callers reach it as
+  `cbscore::versions::resolve_root`. This file-per-IO-function layout matches
+  `versions/desc.rs` (Phase 4 Commit 1's `read_descriptor`) and
+  `versions/create.rs` (Phase 6 Commit 2's `version_create_helper`). Add:
   `pub async fn resolve_root(cli: Option<&Utf8Path>, config: &Config) -> Result<Utf8PathBuf, VersionError>`
   implementing the precedence:
   1. If `cli.is_some()` → return that path.
   2. Else if `config.paths.versions.is_some()` → return that path.
-  3. Else → call `cbscore::utils::git::repo_root().await`, return
-     `repo_root.join("_versions")`. On `Err` from `repo_root`, capture cwd
-     best-effort
+  3. Else → call `cbscore::utils::git::repo_root().await` (Phase 2 Commit 4),
+     return `repo_root.join("_versions")`. On `Err` from `repo_root`, capture
+     cwd best-effort
      (`std::env::current_dir().ok().and_then(|p| Utf8PathBuf::try_from(p).ok()).unwrap_or_else(|| Utf8PathBuf::from("<unknown>"))`)
      and return `Err(VersionError::NoDescriptorRoot { cwd })`. Never propagate
      the raw `std::io::Error` from `current_dir`; that would bypass the OQ5
      friendly text.
-- `cbsd-rs/cbscore/src/versions/errors.rs` (or wherever `VersionError` lives —
-  likely `cbscore-types/src/versions/errors.rs` per the error-taxonomy split,
-  but the variant text needs the cwd context; pick the placement that lets the
-  cwd field render in `Display` without a layering violation) — add
-  `NoDescriptorRoot { cwd: Utf8PathBuf }` variant. Implement `Display` per the
-  OQ5 text:
+- `cbsd-rs/cbscore-types/src/versions/errors.rs` — add
+  `NoDescriptorRoot { cwd: Utf8PathBuf }` variant to `VersionError` (which
+  already lives in `cbscore-types` per Phase 1 Commit 2's error taxonomy) and
+  implement its `Display` arm in the same file. `Utf8PathBuf` is already a dep
+  of `cbscore-types` via `camino` (Phase 1 Commit 1); rendering `cwd` is pure
+  string formatting that does **not** call any `cbscore` IO function, so no
+  layering violation occurs. The `Display` arm produces the OQ5 four-line text:
   ```text
   cannot resolve descriptor store location.
     no --versions-dir flag was supplied,
@@ -203,9 +208,14 @@ cleanly from Commit 1.
   `Err(VersionError::NoDescriptorRoot { cwd })` and that `cwd == <tempdir>`.
 - Unit test: `Display` impl produces the OQ5 four-line message with the cwd
   substituted. Snapshot-compare against the expected string.
-- Unit test: when `current_dir()` itself fails (simulate by deleting the cwd in
-  the test thread, if portable, or by passing a sentinel through a test-only
-  hook), the cwd renders as `<unknown>` rather than panicking.
+- Unit test (`#[cfg(target_os = "linux")]`): when `current_dir()` itself fails,
+  the cwd renders as `<unknown>` rather than panicking. Simulate the failure by
+  creating a temp directory, `cd`-ing into it, `rmdir`-ing it, then calling
+  `resolve_root` — on Linux, `getcwd(2)` returns `ENOENT` against a deleted cwd
+  and Rust's `std::env::current_dir()` propagates that as `Err`. Non-Linux
+  platforms behave differently here; the test is gated on Linux rather than
+  coded for portability. The `<unknown>` rendering path is otherwise trivially
+  correct by inspection of the `unwrap_or_else` chain.
 
 ## Commit 3 — `cbsbuild versions create`: `--versions-dir` flag + write-path cutover
 
