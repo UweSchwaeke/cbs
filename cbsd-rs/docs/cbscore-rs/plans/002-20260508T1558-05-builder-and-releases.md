@@ -192,11 +192,12 @@ primary consumer; Phase 6 imports it through the public surface.
   box.
 - Parse failures on individual files do **not** cascade: log the per-file error
   at `tracing::warn!` (target `"cbscore::core::component"`) and continue. The
-  function returns `Err(ComponentError::Parse)` only if **no** components were
-  successfully loaded; mixed partial success is reported as
-  `Ok(<the loaded subset>)` with the parse errors as warnings on the log. This
-  matches Python's `cbscore/core/component.py` which `try / except continue`s on
-  per-file parse failure.
+  function returns the **last** per-file error variant encountered
+  (`ComponentError::Yaml`, `MissingSchemaVersion`, or `UnknownSchemaVersion`)
+  only if **no** components were successfully loaded; mixed partial success is
+  reported as `Ok(<the loaded subset>)` with the per-file errors as warnings on
+  the log. This matches Python's `cbscore/core/component.py` which
+  `try / except continue`s on per-file parse failure.
 - Duplicate `name:` field across two component files **is** an error
   (`DuplicateComponentName`) — the in-memory map can only carry one value per
   key. Python raises at the same point.
