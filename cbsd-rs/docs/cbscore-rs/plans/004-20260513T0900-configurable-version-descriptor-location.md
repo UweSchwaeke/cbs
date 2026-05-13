@@ -1,5 +1,23 @@
 # seq-004 — Configurable `VersionDescriptor` Location
 
+## Status
+
+**Approved — finalized and ready for M1 implementation.** Audited at v2
+(`reviews/004-20260513T1003-plan-configurable-version-descriptor-location-v2.md`,
+verdict `49d6f78`); zero findings across CRITICAL / MAJOR / MINOR / SUGGESTION /
+OPEN QUESTION. Implements design 004 Migration table steps 1–4 (step 5 is
+post-M1, deferred to seq-003). Interleaves between seq-002 Phase 6 Commit 4 and
+Commit 5.
+
+**Review trail:**
+
+- Plan drafted `1144458` (2026-05-13).
+- Corpus pass v17 `4f27d2f` — 5 findings (N1, N2, S1, S2, Q1 across seq-002 +
+  seq-004) → closed in `e3cb122` → v18 `a806158` confirmation, clean.
+- Focused v1 `c197927` — 2 MINORs (N1 §Depends on misattribution, N2 surviving
+  hedges in Commit 3 §Files) → closed in `b595554` → v2 `49d6f78` confirmation,
+  clean.
+
 ## Progress
 
 | #   | Commit                                                                                | ~LOC | Status  |
