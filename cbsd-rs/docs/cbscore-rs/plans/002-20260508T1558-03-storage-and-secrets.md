@@ -157,15 +157,19 @@ the Python `hvac` driver.
   - `PathNotFound { mount: String, path: String }` — `kv_read` got a 404 or
     `errors: [...]` response indicating the secret does not exist at the
     requested path. Operator-actionable; the test in §Testable asserts this
-    variant specifically.
+    variant specifically. Display text pinned:
+    `"vault path '{mount}/{path}' not found"`.
   - `AuthFailed { method: &'static str, source: vaultrs::error::ClientError }` —
     token / AppRole / userpass login failed. `method` is one of `"token"`,
-    `"approle"`, `"userpass"` for the operator-visible message.
+    `"approle"`, `"userpass"` for the operator-visible message. Display text
+    pinned: `"vault {method} auth failed: {source}"`.
   - `RequestFailed { source: vaultrs::error::ClientError }` — generic transport
     / 5xx / unexpected-response error; `#[from]` for the boxed
-    `vaultrs::error::ClientError`.
+    `vaultrs::error::ClientError`. Display text pinned:
+    `"vault request failed: {source}"`.
   - `BadResponse { message: String }` — Vault returned a 200 with a body shape
     the wrapper didn't expect (e.g., missing `data` key in a KV v2 response).
+    Display text pinned: `"vault returned an unexpected response: {message}"`.
 - `cbsd-rs/cbscore/Cargo.toml` — add `vaultrs = "0.8"` per design 002 Capability
   Mapping line 197.
 
@@ -314,6 +318,10 @@ registry + signing + storage) to Rust. The Python tree split mirrored in design
   load via `load_files`, dump via `dump_to_runner`, parse the dumped file and
   assert structural equality (round-trip on a realistic shape).
 - Mode-0600 assertion on the dumped tempfile: the file is not world-readable.
+- Mode-0600 assertion on the SSH key tempfile written by `secrets/git.rs` when
+  extracting a `GitVaultCreds::Ssh` payload: the file is not world-readable
+  (parallel to the `dump_to_runner` mode test). Per CLAUDE.md Correctness
+  Invariant 5 — secrets on disk are owner-only.
 
 ## Commit 4 — `config` IO (`Config::load` + `Config::store`)
 

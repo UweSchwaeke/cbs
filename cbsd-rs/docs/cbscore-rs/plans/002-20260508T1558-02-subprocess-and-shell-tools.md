@@ -95,8 +95,14 @@ The foundation. Every other wrapper in this phase invokes `async_run_cmd`.
   then `Child::wait().await` to reap, then return
   `CommandError::Timeout { after }` with whatever stdout / stderr was captured.
 - **RAII drop guard** for child-process kill on outer cancellation (a
-  `tokio::select!` branch losing, an awaited future being dropped). Reaping
-  happens in the guard's `Drop`, best-effort.
+  `tokio::select!` branch losing, an awaited future being dropped). The guard's
+  `Drop` impl calls **`Child::start_kill()` only** — `Drop` is sync and cannot
+  `.await`, so true reaping via `Child::wait().await` is **not** performed by
+  the guard. The zombie child is left for the OS to reap when the parent process
+  exits (or for an explicit caller to reap via the explicit `async fn cleanup`
+  path on normal exit). The sync-only kill is intentional: it stops the process
+  group fire-and-forget without blocking the executor and without re-entering
+  the tokio runtime from `Drop` (which would panic).
 - **Tracing emits redacted forms, never plaintext.** `CmdArg`'s `Debug` impl
   calls `SecureArg::redacted()` for the `Secure` variant (design 002 lines
   973–981). CLAUDE.md §Correctness Invariants item 5 is the hard rule.
@@ -200,6 +206,17 @@ The foundation. Every other wrapper in this phase invokes `async_run_cmd`.
   `--dest-tls-verify`, `--src-creds`, `--dest-creds`); the Rust API mirrors the
   CLI surface directly rather than the Python wrapper's abstraction.
 
+- **Secret redaction for `--src-creds` / `--dest-creds`** (per CLAUDE.md
+  Correctness Invariant 5). When `src_creds` / `dst_creds` are `Some`, the
+  credential argument (which expands to `user:password` on the skopeo command
+  line) is passed via `CmdArg::Secure(Box::new(SecureSkopeoCreds { ... }))`
+  using Phase 2 Commit 1's secret-redaction trait — **never** as
+  `CmdArg::Plain(format!("user:{password}"))`. `SecureSkopeoCreds`'s
+  `SecureArg::redacted()` impl produces `"<user>:****"`, preserving the username
+  for operator-visible debugging while hiding the password. `SecureArg::value()`
+  produces the real `"user:password"` form passed to `skopeo copy` via the
+  underlying `Command`.
+
 **Commit-size rationale:** ~150 LOC is below the 400-line sweet spot named in
 `cbsd-rs/CLAUDE.md` §Commit Granularity. Kept as a standalone commit because it
 introduces the `images/` module tree that Phase 5 will extend with
@@ -214,6 +231,10 @@ complicate review.
   with each per-side flag mapped from the matching `SkopeoOpts` field; when
   `src_creds` / `dst_creds` are `Some`, the matching `--src-creds` /
   `--dest-creds` flags appear.
+- **Credential redaction:** call `skopeo_copy` with `src_creds = Some(...)`
+  carrying a known password; capture the traced command line; assert the
+  password appears as `****` and the username appears in plain text (matches the
+  `<user>:****` redaction shape from `SecureSkopeoCreds::redacted()`).
 - `skopeo_image_exists` distinguishes a 0-exit (exists) from a
   non-zero-exit-with-known-stderr (does not exist) — the latter must return
   `Ok(false)`, not `Err`.

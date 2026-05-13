@@ -127,7 +127,16 @@ write per-component `BuildComponentInfo` records.
   state; cancellation = future drop.
 - Sources are fetched into `config.paths.scratch/<component>/` per design 002
   §Build Pipeline diagram. Existing scratch contents are reused when
-  `opts.force` is false; cleared when true.
+  `opts.force` is false; cleared when true. **Clear-then-fetch ordering**
+  (pinned): when `opts.force = true`, `prepare::run` calls
+  `tokio::fs::remove_dir_all(scratch/<component>)` first, then
+  `tokio::fs::create_dir_all(scratch/<component>)`, then proceeds with source
+  fetch. If SIGTERM lands between `remove_dir_all` and `create_dir_all` (or
+  between `create_dir_all` and the first git fetch), the scratch dir is left
+  absent — the next build with the same VERSION rebuilds from scratch. This is
+  the accepted recovery semantic for `force = true`: the operator explicitly
+  asked for a fresh build, so a partial-clear that leaves nothing behind is
+  correct behaviour.
 - The patch walker handles both regex-parseable VERSIONs and malformed inputs
   per design 005 (the Rust port adds an explicit guard catching
   `Err(MalformedVersion)` from `get_major_version` / `get_minor_version`,
