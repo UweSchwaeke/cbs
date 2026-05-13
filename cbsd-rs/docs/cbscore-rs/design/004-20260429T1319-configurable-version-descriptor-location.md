@@ -171,21 +171,22 @@ error: cannot resolve descriptor store location.
 
 ### OQ6 — Schema-version implications
 
-**Resolved: no bump.** `Config.schema_version` stays at 1 when this design
-lands. Design 004 is a pre-M1 change; cbscore-rs is in its 0.x development
-phase, where the schema is still being defined and accumulates additions into
-`schema_version: 1` until M1 1.0.0 ships. Design 002 § Wire-Format Versioning
-has been updated to make this qualifier explicit ("every change bumps" applies
-from M1 onward; pre-M1 the schema is mutable).
+**Resolved: no bump.** The `Config`'s schema-version marker stays at 1 when this
+design lands. Design 004 is a pre-M1 change; cbscore-rs is in its 0.x
+development phase, where the schema is still being defined and accumulates
+additions into `schema-version: 1` (kebab key — `Config` is a kebab-case struct
+per design 002 §Wire-Format Versioning) until M1 1.0.0 ships. Design 002
+§Wire-Format Versioning makes this qualifier explicit ("every change bumps"
+applies from M1 onward; pre-M1 the schema is mutable).
 
 Concrete consequences:
 
 - The `Config` struct grows a `paths.versions: Option<Utf8PathBuf>` field in the
-  M1 1.0.0 release. Files written by cbscore-rs M1 carry `schema_version: 1` as
-  today; the field is just there in the schema.
+  M1 1.0.0 release. Files written by cbscore-rs M1 carry `schema-version: 1`
+  (kebab) as today; the field is just there in the schema.
 - No transform code, no deprecation warning, no operator manual edit.
-- The first post-1.0 change to `Config` (whatever it is) bumps to
-  `schema_version: 2` per the standing rule.
+- The first post-1.0 change to `Config` (whatever it is) bumps the kebab
+  `schema-version` to `2` per the standing rule.
 
 This decision applies the same way to any other wire-format file extended during
 M0–M1 development: extensions accumulate into v1 and the first bump comes after
@@ -385,5 +386,5 @@ Steps 1–4 land in M1. Step 5 lands when design 003 is implemented post-M1.
 | Operator using `--for-systemd-install` / `--for-containerized-run`      | Re-run `cbsbuild config init --for-systemd-install` (or equivalent) on the bypass-pre-fill side; the regenerated `cbscore.config.yaml` will include `paths.versions: /cbs/_versions`. Alternatively, manually add the field to the existing config. |
 | Operator on a worker host without a git checkout (today: blocked)       | Set `paths.versions` in config or pass `--versions-dir`. The blocking constraint is removed.                                                                                                                                                        |
 
-No Python-side patches; no schema_version bump (per OQ6, design 004 is a pre-M1
+No Python-side patches; no schema-version bump (per OQ6, design 004 is a pre-M1
 change, the rule applies post-1.0).

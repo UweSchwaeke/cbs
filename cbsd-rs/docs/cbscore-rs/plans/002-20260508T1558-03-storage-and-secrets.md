@@ -37,9 +37,10 @@ lands in Phase 6).
 ## Depends on
 
 - Phase 1 — `cbscore-types` provides all wire-format types (`Config`, `Secrets`,
-  `VaultConfig`, the three credential families, `VersionedX` wrappers), the
-  matching `ConfigError`, `SecretsError`, `MissingSchemaVersion`,
-  `UnknownSchemaVersion` variants, and the `logger` module.
+  `VaultConfig`, the four credential families — `GitCreds`, `StorageCreds`,
+  `SigningCreds`, `RegistryCreds`), the `VersionedX` wrappers, the matching
+  `ConfigError`, `SecretsError`, `MissingSchemaVersion`, `UnknownSchemaVersion`
+  variants, and the `logger` module.
 - Phase 2 — Phase 3 does **not** strictly require any Phase 2 module (S3 uses
   aws-sdk-s3 directly; Vault uses vaultrs over HTTP; secrets manager dumps via
   `tokio::fs`; config IO uses `serde_saphyr` / `serde_json`). The linear
@@ -215,12 +216,14 @@ registry + signing + storage) to Rust. The Python tree split mirrored in design
 - `cbsd-rs/cbscore/src/secrets/mod.rs` — module entry; re-exports `SecretsMgr`
   and the leaf submodule functions.
 - `cbsd-rs/cbscore/src/secrets/models.rs` — Rust-side wrapper struct
-  `Secrets { git: Vec<GitCreds>, signing: Vec<SigningCreds>, registry: Vec<RegistryCreds> }`
-  that owns the typed Vecs. The serde-derived leaf types (`GitCreds`,
-  `SigningCreds`, `RegistryCreds`) come from `cbscore-types::utils::secrets`
-  (Phase 1 Commit 3); this file does NOT redefine them. Also hosts a private
-  helper `fn Secrets::load(path: &Utf8Path) -> Result<Secrets, SecretsError>`
-  that performs the single-file YAML parse via `serde_saphyr` +
+  `Secrets { git: Vec<GitCreds>, storage: Vec<StorageCreds>, signing: Vec<SigningCreds>, registry: Vec<RegistryCreds> }`
+  that owns the typed Vecs (four families, mirroring the Python `Secrets`
+  container per design 002 §Secrets). The serde-derived leaf types (`GitCreds`,
+  `StorageCreds`, `SigningCreds`, `RegistryCreds`) come from
+  `cbscore-types::utils::secrets` (Phase 1 Commit 3); this file does NOT
+  redefine them. Also hosts a private helper
+  `fn Secrets::load(path: &Utf8Path) -> Result<Secrets, SecretsError>` that
+  performs the single-file YAML parse via `serde_saphyr` +
   `VersionedSecrets::into_latest()` (Phase 1 Commit 5). Not a public parallel to
   `Config::load` — it's called only by `SecretsMgr::load_files` (below) and is
   scoped accordingly.
@@ -231,7 +234,8 @@ registry + signing + storage) to Rust. The Python tree split mirrored in design
     `tokio::fs`.
   - `pub fn merge(&mut self, other: Secrets)` — append the per-family Vecs.
   - `pub async fn resolve_vault_refs(&mut self, config: &VaultConfig) -> Result<(), SecretsError>`
-    — walks each `GitVaultCreds` / `RegistryCreds::Vault` entry, calls
+    — walks each Vault-side entry across all four families (`GitVaultCreds`,
+    `StorageVaultCreds`, `SigningVaultCreds`, `RegistryCreds::Vault`), calls
     `utils::vault::kv_read(config, mount, path)` (per-call auth per Commit 2's
     design constraints) to fetch the secret, replaces the vault-ref variant with
     the plain variant in-place. Takes `&VaultConfig` (not a `&VaultClient`
@@ -249,8 +253,8 @@ registry + signing + storage) to Rust. The Python tree split mirrored in design
 - `cbsd-rs/cbscore/src/secrets/signing.rs` — signing-secret-specific helpers
   (gpg keyring import, transit-key reference resolution).
 - `cbsd-rs/cbscore/src/secrets/storage.rs` — storage-credential resolution (S3
-  access key / secret key resolved from `RegistryCreds::Vault` references at
-  runtime).
+  access-id / secret-id resolved from `StorageVaultCreds::S3` references at
+  runtime). Mirrors the role of `git.rs` for the storage family.
 - `cbsd-rs/cbscore/src/secrets/utils.rs` — small shared utilities
   (tempfile-with-permissions, vault-ref-to-plain transform).
 - `cbsd-rs/cbscore/src/lib.rs` — `pub mod secrets;`.
