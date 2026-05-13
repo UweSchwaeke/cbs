@@ -46,8 +46,10 @@ The following are tracked under their own design seq, not folded into this plan:
 - **seq-003** — interactive `cbsbuild config init` (post-M1, lands as a 1.x.0
   minor add after Phase 6).
 - **seq-004** — configurable `VersionDescriptor` location
-  (`Config.paths.versions` + `--versions-dir`). M1-scope; lands alongside or
-  interleaved with this plan's Phase 6. Tracked under its own seq.
+  (`Config.paths.versions` + `--versions-dir`). M1-scope; interleaves between
+  seq-002 Phase 6 Commit 4 and Commit 5. Plan:
+  [`004-20260513T0900-configurable-version-descriptor-location.md`](004-20260513T0900-configurable-version-descriptor-location.md)
+  (3 commits, ~500 LOC).
 - **seq-005** — optional positional VERSION on `cbsbuild versions create`
   (post-M1, lands as a 1.x.0 minor add).
 
