@@ -320,9 +320,10 @@ than buried at the end of a larger commit. Bundling with Commit 4 (`utils::git`,
 - `get_version_type("ces-v19.2.3-dev.1")` → `Ok(VersionType::Dev)`;
   `get_version_type("ces-v19.2.3")` → `Ok(VersionType::Release)` (no suffix);
   `get_version_type("ces-v19.2.3-test.1")` → `Ok(VersionType::Test)`.
-- `get_major_version("ces-v19.2.3-dev.1")` → `"19"`.
-- `get_minor_version("ces-v19.2.3-dev.1")` → `Some("19.2.3")`;
-  `get_minor_version("ces-v19.2")` → `Ok(None)` (patch missing).
+- `get_major_version("ces-v19.2.3-dev.1")` → `Ok("19".to_string())`.
+- `get_minor_version("ces-v19.2.3-dev.1")` → `Ok(Some("19.2.3".to_string()))`;
+  `get_minor_version("ces-v19.2")` → `Ok(None)` (patch missing — well-formed
+  major.minor but no patch component to return).
 - `normalize_version` canonicalises a parsed shape back to
   `<prefix>-v<major>.<minor>[.<patch>][-<suffix>]`.
 - `parse_component_refs(&["ceph@master", "el9@v1.0"])` →

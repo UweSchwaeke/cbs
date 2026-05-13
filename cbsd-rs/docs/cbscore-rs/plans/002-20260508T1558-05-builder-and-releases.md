@@ -167,12 +167,13 @@ primary consumer; Phase 6 imports it through the public surface.
     go via `tokio::fs`. The `CoreComponent` and `CoreComponentLoc` types come
     from `cbscore-types::core::component` (Phase 1 Commit 4); this file only
     adds IO around them.
-  - `ComponentError` — new error enum (or reuse of an existing
-    `cbscore-types::core::component::ComponentError` if Phase 1 lands one; add
-    here if not). Variants: `Walk { source: io::Error }`,
-    `Parse { path: Utf8PathBuf, source: SecretsError }` (or similar with the
-    `VersionedX::into_latest()` error type),
+  - `ComponentError` is **declared in Phase 1 Commit 2** at
+    `cbsd-rs/cbscore-types/src/core/component/errors.rs` with variants
+    `Walk { source: io::Error }`,
+    `Parse { path: Utf8PathBuf, source: SchemaVersionError }`,
     `DuplicateComponentName { name: String, first: Utf8PathBuf, second: Utf8PathBuf }`.
+    Phase 5 Commit 2 imports it from `cbscore-types`; this commit does not
+    redefine it.
 - `cbsd-rs/cbscore/src/lib.rs` — `pub mod core;`.
 
 **Design constraints:**
@@ -313,12 +314,12 @@ GPG + Vault transit primitives.
     invoking `rpm --addsign` or the GPG subprocess.
   - `images::signing::sign_manifest` is simply not called by `images::sync` when
     `config.signing` is `None` (the sync orchestrator skips the sign step).
-- `signing::run`'s signature adds `secrets: &SecretsMgr` to the design 002
-  sketch (line 925: `signing::run(desc, config, &rpms)`). The plan deliberately
-  diverges from the design here because the GPG passphrase and Vault transit key
-  name come from `SecretsMgr`; without it in scope, the stage cannot drive its
-  subprocess. The design sketch's omission is incomplete; the plan supplies the
-  needed parameter.
+- `signing::run`'s signature carries `secrets: &SecretsMgr` per design 002
+  §Build Pipeline (the orchestrator sketch shows
+  `signing::run(desc, config, secrets, &rpms).await?`). The GPG passphrase and
+  Vault transit key name come from `SecretsMgr`; without it in scope, the stage
+  cannot drive its subprocess. Aligned with design 002 as of the audit-pass-3
+  closure (signature pinned in design 002 §Build Pipeline orchestrator sketch).
 - Per-RPM signing in `builder::signing` invokes `rpm --addsign` which itself
   shells out to `gpg2` — the cbscore wrapper supplies the passphrase via Phase 2
   Commit 1's `SecureArg::PasswordArg` (per CLAUDE.md §Correctness Invariants

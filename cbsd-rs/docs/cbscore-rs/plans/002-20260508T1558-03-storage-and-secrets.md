@@ -44,7 +44,7 @@ lands in Phase 6).
 - Phase 2 — Phase 3 does **not** strictly require any Phase 2 module (S3 uses
   aws-sdk-s3 directly; Vault uses vaultrs over HTTP; secrets manager dumps via
   `tokio::fs`; config IO uses `serde_saphyr` / `serde_json`). The linear
-  ordering in the README reflects design 002 §Migration Strategy line 1272
+  ordering in the README reflects design 002 §Migration Strategy
   (`subprocess → … → s3 → vault → secrets → config IO → …`), not a hard
   dependency.
 - Design 002 — §Capability Mapping (lines 197–203, 199), §Configuration &

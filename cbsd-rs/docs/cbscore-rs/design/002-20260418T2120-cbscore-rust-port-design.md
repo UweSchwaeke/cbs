@@ -412,13 +412,13 @@ pub type Config = ConfigV1;
 /// no `schema-version` key (kebab, per §Wire-Format Versioning), and
 /// [`ConfigError::UnknownSchemaVersion { found, max_supported }`]
 /// if the integer is above the compiled-in max.
-pub fn load(path: &Path) -> Result<Config, ConfigError> { /* ... */ }
+pub async fn load(path: &Path) -> Result<Config, ConfigError> { /* ... */ }
 
 /// Write `cbs-build.config.yaml` / `.json`.
 ///
 /// Always emits `schema-version: 1` as the first key (kebab on the
 /// `Config` side; descriptor stores emit `schema_version: 1`).
-pub fn store(cfg: &Config, path: &Path) -> Result<(), ConfigError> {
+pub async fn store(cfg: &Config, path: &Path) -> Result<(), ConfigError> {
     /* serialise VersionedConfig::V1(cfg.clone()) */
 }
 ````
@@ -539,18 +539,20 @@ use camino::Utf8Path;
 impl Config {
     /// Load config from `path`. YAML if extension is `.yaml`/`.yml`;
     /// JSON otherwise. Matches the Python implementation exactly.
-    pub fn load(path: &Utf8Path) -> Result<Config, ConfigError> { /* ... */ }
+    /// Async because file IO goes via `tokio::fs`.
+    pub async fn load(path: &Utf8Path) -> Result<Config, ConfigError> { /* ... */ }
 
     /// Store config to `path` as YAML.
     ///
     /// Creates the parent directory if it does not exist
-    /// (`std::fs::create_dir_all` semantics — equivalent to `mkdir -p`).
+    /// (`tokio::fs::create_dir_all` semantics — equivalent to `mkdir -p`).
     /// Mirrors Python `config_path.parent.mkdir(exist_ok=True,
     /// parents=True)` in `cmds/config.py:302`. Callers (notably
     /// `cbsbuild config init` writing to
     /// `~/.config/cbsd/${deployment}/worker/cbscore.config.yaml` on a fresh
     /// workstation) rely on this — they do not pre-create the parent.
-    pub fn store(&self, path: &Utf8Path) -> Result<(), ConfigError> { /* ... */ }
+    /// Async because file IO goes via `tokio::fs`.
+    pub async fn store(&self, path: &Utf8Path) -> Result<(), ConfigError> { /* ... */ }
 }
 ```
 
@@ -1065,17 +1067,24 @@ composes them:
 
 ```rust
 pub async fn run_build(
-    desc: &VersionDescriptor,
-    config: &Config,
-    opts: &BuildOptions,
+    desc:    &VersionDescriptor,
+    config:  &Config,
+    secrets: &SecretsMgr,
+    opts:    &BuildOptions,
 ) -> Result<BuildArtifactReport, BuilderError> {
-    let prep      = prepare::run(desc, config, opts).await?;
-    let rpms      = rpmbuild::run(desc, config, &prep).await?;
-    let signed    = signing::run(desc, config, &rpms).await?;
-    let uploaded  = upload::run(desc, config, &signed).await?;
+    let prep     = prepare::run(desc, config, secrets, opts).await?;
+    let rpms     = rpmbuild::run(desc, config, &prep).await?;
+    let signed   = signing::run(desc, config, secrets, &rpms).await?;
+    let uploaded = upload::run(desc, config, secrets, &signed).await?;
     Ok(BuildArtifactReport::new(prep, rpms, signed, uploaded))
 }
 ```
+
+`secrets: &SecretsMgr` threads through `run_build`, `signing::run`, and
+`upload::run` because each stage needs resolved GPG passphrases, Vault transit
+key names, or registry credentials at subprocess time. The earlier sketch drafts
+omitted it; the canonical signatures live in seq-002 Phase 5 Commits 1+5+6+7's
+`§Files` blocks.
 
 `skip_build` and `force` (Python `Builder.__init__` kwargs) become fields on
 `BuildOptions`.
