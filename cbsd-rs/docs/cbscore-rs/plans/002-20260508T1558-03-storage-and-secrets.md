@@ -216,9 +216,10 @@ registry + signing + storage) to Rust. The Python tree split mirrored in design
 - `cbsd-rs/cbscore/src/secrets/mod.rs` — module entry; re-exports `SecretsMgr`
   and the leaf submodule functions.
 - `cbsd-rs/cbscore/src/secrets/models.rs` — Rust-side wrapper struct
-  `Secrets { git: Vec<GitCreds>, storage: Vec<StorageCreds>, signing: Vec<SigningCreds>, registry: Vec<RegistryCreds> }`
-  that owns the typed Vecs (four families, mirroring the Python `Secrets`
-  container per design 002 §Secrets). The serde-derived leaf types (`GitCreds`,
+  `Secrets { git: HashMap<String, GitCreds>, storage: HashMap<String, StorageCreds>, signing: HashMap<String, SigningCreds>, registry: HashMap<String, RegistryCreds> }`
+  that owns the typed HashMaps (four families keyed by operator-chosen name,
+  mirroring the Python `Secrets` container — `dict[str, FamilySecret]` per
+  family per design 002 §Secrets). The serde-derived leaf types (`GitCreds`,
   `StorageCreds`, `SigningCreds`, `RegistryCreds`) come from
   `cbscore-types::utils::secrets` (Phase 1 Commit 3); this file does NOT
   redefine them. Also hosts a private helper
@@ -277,11 +278,12 @@ registry + signing + storage) to Rust. The Python tree split mirrored in design
 
 **Testable:**
 
-- Unit test on `merge`: load two Secrets values with disjoint entries, merge,
-  assert the result Vec lengths add.
-- Unit test on `merge` with overlapping entries: two `GitCreds` with the same
-  domain name → both retained (Python doesn't dedupe; the Rust port preserves
-  that).
+- Unit test on `merge`: load two Secrets values with disjoint per-family keys,
+  merge, assert each family's HashMap length is the sum of the inputs.
+- Unit test on `merge` with overlapping keys: two `GitCreds` entries sharing the
+  same operator-chosen name → the value from `other` overwrites the receiver's
+  entry, matching Python's `dict.update()` semantics
+  (`cbscore/utils/secrets/models.py:Secrets.merge`).
 - Unit test on `resolve_vault_refs` with a stub `kv_read` (substituting the
   `utils::vault::kv_read` call via dependency injection or a feature-gated test
   double) that returns a fixed `HashMap`: assert each `*Vault*` variant is

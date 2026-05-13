@@ -325,7 +325,7 @@ Each versioned type has:
 
 Sketch for `Config`:
 
-```rust
+````rust
 use serde::{Deserialize, Serialize};
 
 /// Current shape of `cbs-build.config.yaml`, v1.
@@ -342,11 +342,40 @@ pub struct ConfigV1 {
 /// wire key is `schema-version` (kebab) per §Wire-Format Versioning
 /// §Interaction with other wire-format decisions. Descriptor wrappers
 /// (`VersionedVersionDescriptor`, etc.) use `schema_version` (snake).
-/// The exact attribute dance to match an integer-valued tag is an
-/// implementation detail (a hand-rolled `Deserialize` may be needed
-/// if serde's default string-matching for internal tags does not
-/// accept integer tags directly — the goal is `schema-version: 1`
-/// on disk for kebab YAML, not `"schema-version": "1"`).
+///
+/// **Integer-tag dispatch approach (pinned):** Phase 1 Commit 5 first
+/// tries serde's default internal-tag dispatch via `#[serde(tag =
+/// "schema-version")]` plus per-variant `#[serde(rename = "1")]`,
+/// relying on `serde_saphyr`'s and `serde_json`'s integer→string
+/// coercion at match time. The file-fidelity round-trip corpus in
+/// Phase 1 Commit 5 validates this end-to-end. If a serializer
+/// emits the marker as `schema-version: "1"` (quoted) rather than
+/// `schema-version: 1` (unquoted integer), Phase 1 Commit 5 falls
+/// back to a hand-rolled `Deserialize` impl with the shape:
+///
+/// ```rust,ignore
+/// impl<'de> Deserialize<'de> for VersionedConfig {
+///     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+///         // Read into a generic Value first, extract the integer
+///         // marker by key name, dispatch into the right variant's
+///         // own derived Deserialize.
+///         let value = serde_value::Value::deserialize(d)?;
+///         let marker = value.peek_marker("schema-version")?; // u64
+///         match marker {
+///             1 => ConfigV1::deserialize(value).map(VersionedConfig::V1),
+///             n => Err(D::Error::custom(
+///                 format!("unsupported schema-version {n}")
+///             )),
+///         }
+///     }
+/// }
+/// ```
+///
+/// And a paired hand-rolled `Serialize` that emits the marker first
+/// as an unquoted integer. Goal in both paths is `schema-version: 1`
+/// on disk (no quotes) for kebab YAML; the choice between the two
+/// approaches is settled by the round-trip corpus's verdict at Phase
+/// 1 Commit 5 time, not by the implementer's preference.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "schema-version")]
 pub enum VersionedConfig {
@@ -392,7 +421,7 @@ pub fn load(path: &Path) -> Result<Config, ConfigError> { /* ... */ }
 pub fn store(cfg: &Config, path: &Path) -> Result<(), ConfigError> {
     /* serialise VersionedConfig::V1(cfg.clone()) */
 }
-```
+````
 
 The same pattern applies to `Secrets`, `VaultConfig`, `CoreComponent`,
 `ContainerDescriptor`, `VersionDescriptor`, `ImageDescriptor`, `ReleaseDesc`,
@@ -1256,7 +1285,7 @@ pub struct BuildInfo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ReleaseComponentVersion {
+pub struct ReleaseComponent {
     // flattens ReleaseComponentHeader + BuildInfo, per Python
     pub name:       String,
     pub version:    String,
@@ -1270,8 +1299,10 @@ pub struct ReleaseComponentVersion {
 ```
 
 Python uses pydantic's multiple-inheritance to flatten
-`ReleaseComponentHeader + BuildInfo` into `ReleaseComponentVersion`. Rust
-flattens at the struct level.
+`ReleaseComponentHeader + BuildInfo` into a single class. Rust flattens at the
+struct level. The canonical Rust type name is `ReleaseComponent` (matches the
+§Versioning table at line 268 and the `VersionedX` wrapper list); the historical
+`ReleaseComponentVersion` name from earlier drafts is retired.
 
 ### S3 operations
 

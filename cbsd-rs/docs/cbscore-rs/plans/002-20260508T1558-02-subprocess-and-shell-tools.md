@@ -189,11 +189,13 @@ The foundation. Every other wrapper in this phase invokes `async_run_cmd`.
   }
   ```
 
-  The `RegistryCreds` type comes from Phase 1's secrets module. The implementer
-  should cross-check `cbscore/images/skopeo.py` at commit time and confirm the
-  Python wrapper exposes the same per-side semantics — if Python collapses them
-  into a single boolean, decide whether to widen the API or match Python
-  literally.
+  The `RegistryCreds` type comes from Phase 1's secrets module. The Rust port
+  uses the widened **per-side API** shown above (separate `src_tls_verify` /
+  `dst_tls_verify` booleans and `src_creds` / `dst_creds` optionals) regardless
+  of whether the Python wrapper collapses them into a single boolean. The
+  underlying `skopeo copy` CLI takes per-side flags (`--src-tls-verify`,
+  `--dest-tls-verify`, `--src-creds`, `--dest-creds`); the Rust API mirrors the
+  CLI surface directly rather than the Python wrapper's abstraction.
 
 **Commit-size rationale:** ~150 LOC is below the 400-line sweet spot named in
 `cbsd-rs/CLAUDE.md` §Commit Granularity. Kept as a standalone commit because it

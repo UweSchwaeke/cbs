@@ -13,13 +13,14 @@ dependency graph and the M0 / M1 / M2 milestone cuts.
 | #   | Commit                                                                 | ~LOC | Status  |
 | --- | ---------------------------------------------------------------------- | ---- | ------- |
 | 1   | `cbscore: add builder::prepare stage (sources + repo resolution)`      | ~550 | Pending |
-| 2   | `cbscore: add builder::rpmbuild stage (per-component RPM builds)`      | ~500 | Pending |
-| 3   | `cbscore: add containers module + images::sync (container production)` | ~550 | Pending |
-| 4   | `cbscore: add builder::signing + images::signing (GPG + transit)`      | ~500 | Pending |
-| 5   | `cbscore: add builder::upload + releases module (S3 publish)`          | ~600 | Pending |
-| 6   | `cbscore: add builder::run_build orchestrator + report assembly`       | ~400 | Pending |
+| 2   | `cbscore: add core::component module (load_components IO)`             | ~200 | Pending |
+| 3   | `cbscore: add builder::rpmbuild stage (per-component RPM builds)`      | ~500 | Pending |
+| 4   | `cbscore: add containers module + images::sync (container production)` | ~550 | Pending |
+| 5   | `cbscore: add builder::signing + images::signing (GPG + transit)`      | ~500 | Pending |
+| 6   | `cbscore: add builder::upload + releases module (S3 publish)`          | ~600 | Pending |
+| 7   | `cbscore: add builder::run_build orchestrator + report assembly`       | ~400 | Pending |
 
-**Estimate:** ~3100 LOC, 6 commits.
+**Estimate:** ~3300 LOC, 7 commits.
 
 ## Goal
 
@@ -143,7 +144,84 @@ write per-component `BuildComponentInfo` records.
   component with a real git clone, assert the resulting `BuildComponentInfo`
   carries the expected SHA + ref.
 
-## Commit 2 — `builder::rpmbuild` stage (per-component RPM builds)
+## Commit 2 — `core::component` module (`load_components` IO)
+
+Port `cbscore/core/component.py`'s on-disk component loader to Rust. The
+function walks a directory tree of `cbs.component.yaml` files and returns the
+typed component set that downstream consumers (`builder::prepare`'s caller,
+`cbsbuild build` in Phase 6, the M2 worker in Phase 7) hand to
+`builder::run_build`. Owned by this phase because the builder pipeline is the
+primary consumer; Phase 6 imports it through the public surface.
+
+**Files:**
+
+- `cbsd-rs/cbscore/src/core/mod.rs` — new module file declaring
+  `pub mod component;`. Phase 5 does not extend `core/` with other submodules;
+  the file exists so the public path `cbscore::core::component` resolves.
+- `cbsd-rs/cbscore/src/core/component.rs` — port of `cbscore/core/component.py`.
+  Public surface:
+  - `pub async fn load_components(root: &Utf8Path) -> Result<HashMap<String, CoreComponent>, ComponentError>`
+    — walks `root` recursively, finds every `cbs.component.yaml` file, parses
+    each via `serde_saphyr` + `VersionedCoreComponent::into_latest()` (Phase 1
+    Commit 5), keys the result by `CoreComponent.name`. Async because file reads
+    go via `tokio::fs`. The `CoreComponent` and `CoreComponentLoc` types come
+    from `cbscore-types::core::component` (Phase 1 Commit 4); this file only
+    adds IO around them.
+  - `ComponentError` — new error enum (or reuse of an existing
+    `cbscore-types::core::component::ComponentError` if Phase 1 lands one; add
+    here if not). Variants: `Walk { source: io::Error }`,
+    `Parse { path: Utf8PathBuf, source: SecretsError }` (or similar with the
+    `VersionedX::into_latest()` error type),
+    `DuplicateComponentName { name: String, first: Utf8PathBuf, second: Utf8PathBuf }`.
+- `cbsd-rs/cbscore/src/lib.rs` — `pub mod core;`.
+
+**Design constraints:**
+
+- Walk uses `walkdir` or `tokio::fs::read_dir` recursion; either is fine as long
+  as symlink-handling matches Python's `glob.glob` behaviour (follow symlinks,
+  but do not loop on cycles). Pick `walkdir` for cycle protection out of the
+  box.
+- Parse failures on individual files do **not** cascade: log the per-file error
+  at `tracing::warn!` (target `"cbscore::core::component"`) and continue. The
+  function returns `Err(ComponentError::Parse)` only if **no** components were
+  successfully loaded; mixed partial success is reported as
+  `Ok(<the loaded subset>)` with the parse errors as warnings on the log. This
+  matches Python's `cbscore/core/component.py` which `try / except continue`s on
+  per-file parse failure.
+- Duplicate `name:` field across two component files **is** an error
+  (`DuplicateComponentName`) — the in-memory map can only carry one value per
+  key. Python raises at the same point.
+- `load_components` is an IO function, lives in `cbscore` (not `cbscore-types`)
+  per design 001 §Lift-out invariants. The types it returns are pure (Phase 1
+  Commit 4); only the walker is here.
+- Phase 5 Commit 1 (`builder::prepare`) and Phase 6 (`cbsbuild build`) consume
+  this function. Phase 4 (runner) does **not** call it directly — the runner
+  takes the loaded `HashMap<String, CoreComponent>` as an input parameter,
+  marshalled in by whichever CLI handler invokes the runner.
+
+**Testable:**
+
+- Unit test on duplicate-name detection: two `cbs.component.yaml` fixtures with
+  the same `name:` field in different subdirs →
+  `Err(ComponentError::DuplicateComponentName)`.
+- Unit test on per-file parse failure: one bad fixture + two good →
+  `Ok(map_with_two_entries)` and the bad file's error is in the captured tracing
+  log at WARN level.
+- Unit test on the empty-tree case: a tree containing no `cbs.component.yaml`
+  files → `Ok(HashMap::new())`.
+- Integration test (`#[ignore]`-able): point at the real `components/` directory
+  in the cbs.git checkout, assert the expected component names appear in the
+  result and each carries the expected `loc.url` and `loc.ref`.
+
+**Commit-size rationale:** ~200 LOC sits at the lower end of the 400-line floor
+named in `cbsd-rs/CLAUDE.md` §Commit Granularity, but justified because the
+loader is independently testable, has a clean single-file scope
+(`cbscore/src/core/component.rs`), and is consumed by both Phase 5 (the builder
+pipeline) and Phase 6 (the CLI). Folding it into Commit 1 (prepare) would bundle
+two semantically distinct concerns; folding into Commit 3 (rpmbuild) would have
+it land after its first consumer.
+
+## Commit 3 — `builder::rpmbuild` stage (per-component RPM builds)
 
 Port `cbscore/builder/rpmbuild.py`. Second stage of the pipeline: spawns
 `rpmbuild` per component, collects RPMs into the artifact dir, writes
@@ -158,12 +236,12 @@ Port `cbscore/builder/rpmbuild.py`. Second stage of the pipeline: spawns
     — declared here alongside its producer. `ArchType` comes from
     `cbscore-types::releases::desc` (Phase 1 Commit 4). Per V11-S1 from
     plan-review v11, `RpmbuildReport` carries `Vec<RpmArtifact>` so downstream
-    stages (signing in Commit 4, upload in Commit 5) consume a self-describing
+    stages (signing in Commit 5, upload in Commit 6) consume a self-describing
     artifact list rather than bare paths plus post-hoc metadata reconstruction.
   - `pub struct RpmbuildReport { pub rpms: Vec<RpmArtifact>, pub component_builds: Vec<ComponentBuild> }`
     — the stage's output. `ComponentBuild` is a per-component build summary
     (start/end time, exit code, log path) for the eventual `BuildArtifactReport`
-    assembly in Commit 6.
+    assembly in Commit 7.
 - `cbsd-rs/cbscore/src/builder/mod.rs` — add `pub mod rpmbuild;`.
 
 **Design constraints:**
@@ -190,7 +268,7 @@ Port `cbscore/builder/rpmbuild.py`. Second stage of the pipeline: spawns
   (e.g., a hello-world RPM), assert the resulting `.rpm` artifact path is in the
   report.
 
-## Commit 4 — `builder::signing` + `images::signing` (GPG + transit)
+## Commit 5 — `builder::signing` + `images::signing` (GPG + transit)
 
 Two related but distinct signing operations: per-RPM GPG signing
 (builder::signing) and per-image manifest signing (images::signing). Both share
@@ -207,11 +285,14 @@ GPG + Vault transit primitives.
   - `pub async fn sign_manifest(digest: &str, config: &SigningConfig, secrets: &SecretsMgr) -> Result<Vec<u8>, ImageDescriptorError>`
 - `cbsd-rs/cbscore/src/images/mod.rs` — add `pub mod signing;` alongside the
   existing `pub mod skopeo;` (Phase 2 Commit 3).
-- `cbsd-rs/cbscore/src/builder/signing/gpg.rs` (or a shared
-  `cbscore/src/utils/gpg.rs` if the GPG primitives are shared with
-  `images::signing` — decide at implementation time, the plan does not
-  pre-commit) — `gpg2` subprocess invocation, GPG home dir setup,
-  `--pinentry-mode loopback` for passphrase passing.
+- `cbsd-rs/cbscore/src/builder/signing/gpg.rs` — `gpg2` subprocess invocation,
+  GPG home dir setup, `--pinentry-mode loopback` for passphrase passing. Pinned
+  under `builder/signing/` (not the shared `utils/gpg.rs` location) because GPG
+  is a builder-pipeline concern; `images::signing` (this same commit) re-imports
+  the helpers from `cbscore::builder::signing::gpg`. This keeps the design 001
+  §Lift-out invariants safe — `utils/` stays clean of cbscore-internal
+  dependencies (GPG handling pulls in `SecretsMgr` and the resolved-keys store),
+  so the future `cbscommon-rs` lift-out path for `utils/` is unaffected.
 
 **Design constraints:**
 
@@ -222,7 +303,7 @@ GPG + Vault transit primitives.
     `--pinentry-mode loopback`.
   - **Vault transit signing** via `utils::vault::transit_sign` — declared in
     Phase 3 Commit 2 (parallel HTTP API to `kv_read`, same per-call auth
-    security posture). Phase 5 Commit 4 consumes it; no Phase 5 changes to
+    security posture). Phase 5 Commit 5 consumes it; no Phase 5 changes to
     `utils/vault.rs`.
 - Signing is **optional**: when `config.signing` is `None`, both
   `builder::signing::run` and `images::signing::sign_manifest` become no-ops.
@@ -254,10 +335,10 @@ GPG + Vault transit primitives.
 - `images::sync` sign-before-push order test: with `config.signing.is_some()`,
   stub `sign_manifest` and `skopeo_copy`, drive `sync_image`, capture the call
   order, assert `sign_manifest` fires before `skopeo_copy`. This is the test
-  that was deferred from Commit 3 §Testable per the sign-before-push invariant
+  that was deferred from Commit 4 §Testable per the sign-before-push invariant
   taking effect when this commit lands.
 
-## Commit 5 — `builder::upload` + `releases` module (S3 publish)
+## Commit 6 — `builder::upload` + `releases` module (S3 publish)
 
 Final builder stage + the supporting releases module. Uploads signed RPMs to S3,
 pushes the built container image to the registry, writes the release descriptor.
@@ -307,7 +388,7 @@ pushes the built container image to the registry, writes the release descriptor.
 - Negative test: upload with `config.storage = None` returns an empty
   `UploadReport` and makes zero S3 calls.
 
-## Commit 6 — `builder::run_build` orchestrator + report assembly
+## Commit 7 — `builder::run_build` orchestrator + report assembly
 
 The orchestrator that chains the four stages, plus the `BuildArtifactReport`
 assembly that ties their outputs together.
@@ -346,9 +427,9 @@ assembly that ties their outputs together.
 **Commit-size rationale:** ~400 LOC sits at the lower end of the 400–800 sweet
 spot. Kept as a standalone commit because the orchestrator is the integration
 boundary between the four stage modules (prepare in Commit 1, rpmbuild in Commit
-2, signing in Commit 4, upload in Commit 5) plus the supporting containers
-module in Commit 3 — landing it here gives a clean
-"now-the-pipeline-runs-end-to-end" review boundary. Bundling with Commit 5
+3, signing in Commit 5, upload in Commit 6) plus the supporting containers
+module in Commit 4 — landing it here gives a clean
+"now-the-pipeline-runs-end-to-end" review boundary. Bundling with Commit 6
 (upload) would mix the final-stage implementation with the
 chain-everything-together orchestration, two different review concerns.
 
@@ -369,7 +450,7 @@ chain-everything-together orchestration, two different review concerns.
 - Cancellation test: drop the `run_build` future mid-rpmbuild, assert the
   rpmbuild child is killed (relies on Phase 2 Commit 1's drop guard).
 
-## Commit 3 — `containers` module + `images::sync` (container production)
+## Commit 4 — `containers` module + `images::sync` (container production)
 
 Container build orchestration + image sync. The containers module takes a
 VersionDescriptor and produces a container image; images:: sync orchestrates the
@@ -387,9 +468,9 @@ lines 1098–1104.
   - `pub async fn build_image(desc: &VersionDescriptor, config: &Config, rpms: &RpmbuildReport) -> Result<ContainerImageReport, ContainerError>`
   - `pub struct ContainerImageReport { pub local_tag: String, pub image_id: String, pub digest: Option<String> }`
     — declared here alongside `build_image`, its producer. The `local_tag` is
-    the buildah-side tag used to push to the registry (Commit 5's `upload::run`
+    the buildah-side tag used to push to the registry (Commit 6's `upload::run`
     consumes it); `image_id` and `digest` populate the eventual
-    `BuildArtifactReport` assembly in Commit 6.
+    `BuildArtifactReport` assembly in Commit 7.
 - `cbsd-rs/cbscore/src/containers/component.rs` — port of
   `cbscore/containers/component.py`. Per-container-component build driver (when
   a descriptor references multiple containers).
@@ -405,9 +486,9 @@ lines 1098–1104.
   - `pub async fn sync_image(src: &ImageRef, dst: &ImageRef, config: &Config, secrets: &SecretsMgr) -> Result<(), ImageDescriptorError>`
 - `cbsd-rs/cbscore/src/images/mod.rs` — add `pub mod sync;` alongside the
   existing `pub mod skopeo;` (Phase 2). `pub mod signing;` is added later in
-  this phase by Commit 4; `images::sync` (this commit) does not call into
-  `images::signing` until Commit 4 lands, so the optional-signing skip path is
-  the live behaviour between Commits 3 and 4.
+  this phase by Commit 5; `images::sync` (this commit) does not call into
+  `images::signing` until Commit 5 lands, so the optional-signing skip path is
+  the live behaviour between Commits 4 and 5.
 - `cbsd-rs/cbscore/src/lib.rs` — `pub mod containers;`.
 
 **Design constraints:**
@@ -423,33 +504,34 @@ lines 1098–1104.
 - `images::sync` orchestrates per design 002 line 1098–1104. The
   **sign-before-push invariant** ("sign before push, not after" — matches the
   Python implementation and is a tested precondition of the downstream registry
-  tooling) takes effect when Commit 4 lands `images::signing::sign_manifest`. In
-  Commit 3, `sync_image` uses the optional-signing skip path (no `sign_manifest`
+  tooling) takes effect when Commit 5 lands `images::signing::sign_manifest`. In
+  Commit 4, `sync_image` uses the optional-signing skip path (no `sign_manifest`
   call at all, whether `config.signing` is set or not — the function doesn't
-  exist yet). Once Commit 4 lands, `sync_image` chains `sign_manifest` before
+  exist yet). Once Commit 5 lands, `sync_image` chains `sign_manifest` before
   `skopeo_copy` when `config.signing.is_some()` and continues to skip the sign
   step when it is `None`. The order test that asserts `sign_manifest` fires
-  before `skopeo_copy` belongs in Commit 4's §Testable (after `sign_manifest`
+  before `skopeo_copy` belongs in Commit 5's §Testable (after `sign_manifest`
   exists), not here.
 
 **Commit-size rationale:** ~550 LOC sits in the sweet spot. Bundles containers +
 images::sync because both produce container images: `containers::build` builds
 the image locally, `images::sync` copies the built image to the destination
 registry. Splitting would create intermediate states where one half exists
-without the other. Positioning this commit at #3 (immediately after the two
-RPM-side stages) makes `containers::build_image` and `images::sync` available to
-Commit 5's `builder::upload`, which pushes the locally- built image to the
-destination registry — closes the V11-M1 forward-dependency concern from
-plan-review v11 by ensuring the containers module exists before any commit that
-calls into it. Note: `images::signing` lands in Commit 4 (after this commit),
-and `images::sync` in this commit consumes it via the `pub mod` already declared
-— so the `pub mod signing` lands in Commit 4 alongside the implementation, with
+without the other. Positioning this commit at #4 (immediately after the two
+RPM-side stages — Commit 3 rpmbuild — plus the load_components dependency in
+Commit 2) makes `containers::build_image` and `images::sync` available to Commit
+6's `builder::upload`, which pushes the locally-built image to the destination
+registry — closes the V11-M1 forward-dependency concern from plan-review v11 by
+ensuring the containers module exists before any commit that calls into it.
+Note: `images::signing` lands in Commit 5 (after this commit), and
+`images::sync` in this commit consumes it via the `pub mod` already declared —
+so the `pub mod signing` lands in Commit 5 alongside the implementation, with
 this commit's `pub mod sync` declared independently in `images/mod.rs`.
 `images::sync` itself does not invoke `images::signing` directly at
-function-call sites until Commit 4 lands — until then, `sync_image` skips the
+function-call sites until Commit 5 lands — until then, `sync_image` skips the
 sign step (as it does in the optional-signing path). Plus, keeping the images/
 module assembled in one logical bundle (skopeo from Phase 2, signing in Commit
-4, sync in Commit 3) reads cleanly in `git log`.
+5, sync in Commit 4) reads cleanly in `git log`.
 
 **Testable:**
 
@@ -461,7 +543,7 @@ module assembled in one logical bundle (skopeo from Phase 2, signing in Commit
 - `images::sync` no-sign path test: with `config.signing` either set or unset,
   `sync_image` does not attempt to call any signing function (no symbol exists
   yet in this commit) and the call is observably a plain `skopeo_copy`. The
-  actual sign-before-push order assertion lives in Commit 4 §Testable after
+  actual sign-before-push order assertion lives in Commit 5 §Testable after
   `sign_manifest` lands.
 
 ## End-of-phase acceptance
