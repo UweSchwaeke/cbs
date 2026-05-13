@@ -500,8 +500,7 @@ for subdir in version_keyed_subdirs(patches_dir)? {
         // UUIDv7 case — surface the skip so an expected patch that does not
         // apply is not a silent omission. One warn per skipped subdir per walk.
         tracing::warn!(
-            target: TARGET_BUILDER_PATCHES,
-            subdir = %name,
+            target: "cbscore::builder::prepare",
             "skipping version-keyed patch subdir '{}' — VERSION is a UUIDv7, \
              no version match possible",
             name,
@@ -517,9 +516,12 @@ For a UUIDv7, both `get_minor_version` and `get_major_version` return
 `Err(MalformedVersion)`; the walker emits one `tracing::warn!` per version-keyed
 subdirectory it skips and falls through to the top-level `patches/*.patch` apply
 path, producing the desired graceful degradation (item 1 under §Effects of
-UUIDv7 VERSIONs). The `TARGET_BUILDER_PATCHES` constant comes from
-`cbscore-types::logger` (Phase 1 of the cbscore-rs port); the warn line carries
-the existing target hierarchy so `CBS_DEBUG` filtering keeps working unchanged.
+UUIDv7 VERSIONs). The target string `"cbscore::builder::prepare"` matches the
+naming design 002 §Build Pipeline uses for this module; Phase 1 of the
+cbscore-rs port defines the matching `pub const TARGET_*: &str` in
+`cbscore-types::logger`. The schematic uses the string literal directly to stay
+decoupled from Phase 1's exact constant identifier; the warn line carries the
+existing target hierarchy so `CBS_DEBUG` filtering keeps working unchanged.
 
 This is a behavioural divergence from the Python source, which propagates
 `MalformedVersionError` uncaught through `_apply_patches`. The Rust port treats
@@ -547,13 +549,13 @@ The `v4` feature is already listed (design 001 §Cargo Sketch); design 005 adds
 
 ### Code
 
-| Step | Where                            | What                                                                                                                                                                                                                                                                                                                                                     |
-| ---- | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1    | `cbscore/Cargo.toml`             | Add `"v7"` to the `uuid` features list (existing `["v4"]` becomes `["v4", "v7"]`).                                                                                                                                                                                                                                                                       |
-| 2    | `cbscore/src/versions/mod.rs`    | Add `resolve_version(cli: Option<&str>) -> String`. Add `uuid_v7_timestamp` helper (or inline at the single call site in the title generator).                                                                                                                                                                                                           |
-| 3    | `cbscore/src/versions/create.rs` | Branch `do_version_title` on UUIDv7 (parse + version-num check) and emit the created-at form. Keep the supplied-VERSION path unchanged.                                                                                                                                                                                                                  |
-| 4    | `cbscore/src/builder/prepare.rs` | In the Rust port of `_get_patches_by_prio`, treat `Err(MalformedVersion)` from `get_minor_version` / `get_major_version` as "skip this subdirectory" rather than propagating. **New behaviour relative to the Python source**, which propagates the error through `_apply_patches`. Required for UUIDv7 builds to terminate in `_apply_patches` cleanly. |
-| 5    | `cbsbuild/src/cmds/versions.rs`  | Change the positional `version: String` to `version: Option<String>`. Call `resolve_version` and gate the regex `validate_version` call on `args.version.is_some()`. No flag, env-var, or output-line changes.                                                                                                                                           |
+| Step | Where                            | What                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ---- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1    | `cbscore/Cargo.toml`             | Add `"v7"` to the `uuid` features list (existing `["v4"]` becomes `["v4", "v7"]`).                                                                                                                                                                                                                                                                                                                                                                                  |
+| 2    | `cbscore/src/versions/mod.rs`    | Add `resolve_version(cli: Option<&str>) -> String`. Add `uuid_v7_timestamp` helper (or inline at the single call site in the title generator).                                                                                                                                                                                                                                                                                                                      |
+| 3    | `cbscore/src/versions/create.rs` | Branch `do_version_title` on UUIDv7 (parse + version-num check) and emit the created-at form. Keep the supplied-VERSION path unchanged.                                                                                                                                                                                                                                                                                                                             |
+| 4    | `cbscore/src/builder/prepare.rs` | In the Rust port of `_get_patches_by_prio`, treat `Err(MalformedVersion)` from `get_minor_version` / `get_major_version` as **warn-and-skip** rather than propagating — emit a `tracing::warn!` per skipped version-keyed subdir (see §Design Sketch › §Patch walker for the schematic). **New behaviour relative to the Python source**, which propagates the error through `_apply_patches`. Required for UUIDv7 builds to terminate in `_apply_patches` cleanly. |
+| 5    | `cbsbuild/src/cmds/versions.rs`  | Change the positional `version: String` to `version: Option<String>`. Call `resolve_version` and gate the regex `validate_version` call on `args.version.is_some()`. No flag, env-var, or output-line changes.                                                                                                                                                                                                                                                      |
 
 All five steps land in a single 1.x.0 release post-M1. They are tightly coupled
 (clap shape + resolver + title generator + patch-walker guard must change
