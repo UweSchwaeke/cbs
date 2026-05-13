@@ -62,8 +62,8 @@ Python package.
 
 | Consumer   | Imports                                                                                                                                                                                                                                                                                                |
 | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `cbc`      | `errors.CESError`, `logger.set_debug_logging`, `versions.errors.VersionError`, `versions.utils.{VersionType, get_version_type, parse_component_refs}`                                                                                                                                                  |
-| `crt`      | `versions.utils.parse_version`                                                                                                                                                                                                                                                                         |
+| `cbc`      | `errors.CESError`, `logger.set_debug_logging`, `versions.errors.VersionError`, `cbscore_types::versions::utils::VersionType`, `cbscore::versions::utils::{get_version_type, parse_component_refs}` (parse helpers live in `cbscore`, not `cbscore-types`)                                              |
+| `crt`      | `cbscore::versions::utils::parse_version` (lives in `cbscore`, not `cbscore-types` — needs `regex`)                                                                                                                                                                                                    |
 | `cbsdcore` | `errors.CESError`, `versions.utils.VersionType`                                                                                                                                                                                                                                                        |
 | `cbsd`     | `errors.{CESError, MalformedVersionError}`, `logger.logger` (module-level object), `config.{Config, ConfigError}`, `runner.{stop, gen_run_name, runner}`, `versions.create.version_create_helper`, `versions.desc.VersionDescriptor`, `versions.errors.VersionError`, `core.component.load_components` |
 | `cbsd-rs`  | **via subprocess bridge** `cbsd-rs/scripts/cbscore-wrapper.py`: `config.{Config, ConfigError}`, `versions.create.version_create_helper`, `versions.desc.VersionDescriptor`, `errors.MalformedVersionError`, `runner.{runner, RunnerError}`, `versions.errors.VersionError`                             |
@@ -107,7 +107,9 @@ cbsd-rs/
 │       │   ├── mod.rs
 │       │   ├── desc.rs         # VersionDescriptor, VersionComponent, ...
 │       │   ├── errors.rs       # VersionError, InvalidVersionDescriptor
-│       │   └── utils.rs        # VersionType, parse_version, parse_component_refs
+│       │   └── utils.rs        # VersionType enum only (parse helpers live
+│       │                       # in cbscore::versions::utils — they need
+│       │                       # the regex crate)
 │       ├── containers/
 │       │   └── desc.rs         # ContainerDescriptor, repo enum, ...
 │       ├── images/
@@ -210,11 +212,15 @@ library, the CLI, and — once the subprocess bridge is retired — directly by
   `cbscore/config.py`.
 - Descriptor types: `VersionDescriptor`, `VersionComponent`,
   `ContainerDescriptor`, `ReleaseDesc`, `ImageDescriptor`, `CoreComponent`.
-- `VersionType` enum + pure parse helpers (`parse_version`,
+- `VersionType` enum only. The six parse helpers (`parse_version`,
   `parse_component_refs`, `get_version_type`, `normalize_version`,
-  `get_major_version`, `get_minor_version`) — the first three are what `cbc` and
-  `crt` import today; the latter three are public in the Python API and included
-  for parity through the shim.
+  `get_major_version`, `get_minor_version`) live in
+  **`cbscore::versions::utils`** (the library crate), not here — each (directly
+  or transitively via `parse_version`) depends on the `regex` crate, which is
+  allowed in `cbscore` per §Cargo Sketch and deliberately absent from
+  `cbscore-types`. External Python-side consumers (`cbc`/`crt`) historically
+  imported the first three from the Python `cbscore` package; their Rust
+  counterparts will import from `cbscore::versions::utils`.
 - `tracing` target hierarchy (`cbscore`, `cbscore::runner`, `cbscore::builder`,
   ...) and `set_debug_logging()` equivalent.
 

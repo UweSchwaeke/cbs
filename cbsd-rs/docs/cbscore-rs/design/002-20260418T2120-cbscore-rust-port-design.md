@@ -354,17 +354,38 @@ pub struct ConfigV1 {
 /// back to a hand-rolled `Deserialize` impl with the shape:
 ///
 /// ```rust,ignore
+/// use serde::de::{Deserializer, Error as DeError, IntoDeserializer};
+/// use serde_value::Value;
+///
 /// impl<'de> Deserialize<'de> for VersionedConfig {
 ///     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-///         // Read into a generic Value first, extract the integer
-///         // marker by key name, dispatch into the right variant's
-///         // own derived Deserialize.
-///         let value = serde_value::Value::deserialize(d)?;
-///         let marker = value.peek_marker("schema-version")?; // u64
-///         match marker {
-///             1 => ConfigV1::deserialize(value).map(VersionedConfig::V1),
-///             n => Err(D::Error::custom(
-///                 format!("unsupported schema-version {n}")
+///         // Read into a generic Value first.
+///         let value = Value::deserialize(d)?;
+///         // Extract the integer marker from the map by key.
+///         let map = match &value {
+///             Value::Map(m) => m,
+///             _ => return Err(D::Error::custom("expected a map")),
+///         };
+///         let key = Value::String("schema-version".to_string());
+///         let marker = map.get(&key)
+///             .ok_or_else(|| D::Error::missing_field("schema-version"))?;
+///         let n: u64 = match marker {
+///             Value::U64(n) => *n,
+///             Value::I64(n) if *n >= 0 => *n as u64,
+///             _ => return Err(D::Error::custom(
+///                 "schema-version must be a non-negative integer"
+///             )),
+///         };
+///         // Dispatch into the variant's own derived Deserialize via
+///         // serde_value::Value's IntoDeserializer impl.
+///         match n {
+///             1 => ConfigV1::deserialize(value.into_deserializer())
+///                 .map(VersionedConfig::V1)
+///                 .map_err(|e: serde_value::DeserializerError| {
+///                     D::Error::custom(format!("{e}"))
+///                 }),
+///             other => Err(D::Error::custom(
+///                 format!("unsupported schema-version: {other}")
 ///             )),
 ///         }
 ///     }
@@ -820,13 +841,25 @@ snake_case keys (**no** `rename_all`). The split is a hard invariant — review
 every new struct for which side it falls on before adding a `rename_all`
 attribute.
 
-### `VersionType` and parsing (in `cbscore-types::versions::utils`)
+### `VersionType` (in `cbscore-types::versions::utils`)
 
 ```rust
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum VersionType { Release, Dev, Test, Ci }
+```
 
+The enum is pure (no `regex` dep) and lives in `cbscore-types` so external
+consumers (`cbc`, `crt`) can use it without pulling in the library crate.
+
+### Parsing (in `cbscore::versions::utils`)
+
+The six parse helpers live in the **`cbscore` library crate**, not in
+`cbscore-types`, because each (directly or transitively via `parse_version`)
+depends on the `regex` crate — allowed in `cbscore` per design 001 §Cargo
+Sketch, intentionally absent from `cbscore-types`:
+
+```rust
 pub fn parse_version(s: &str) -> Result<ParsedVersion, MalformedVersion>;
 pub fn get_version_type(name: &str) -> Result<VersionType, VersionError>;
 pub fn parse_component_refs(components: &[String])
@@ -852,7 +885,8 @@ pattern. `parse_component_refs` matches `^([\w_-]+)@([\d\w_./-]+)$`.
 
 `get_major_version` / `get_minor_version` / `normalize_version` are not imported
 by any in-tree consumer today, but they are part of cbscore's public API and are
-included for CLI / library parity.
+included for CLI / library parity. Rust `cbc` and `crt` (when ported) will
+import from `cbscore::versions::utils`.
 
 ### Version creation (in `cbscore::versions::create`)
 

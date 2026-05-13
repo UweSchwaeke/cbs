@@ -326,17 +326,21 @@ These are easy to get wrong. Document and test them:
    from `cbscore/utils/__init__.py`. Never log raw passwords, passphrases, or
    `--pass*` arguments. Sanitise subprocess command lines before tracing them.
 
-6. **Python-side compatibility.** `../cbscore/` and its downstream Python
-   consumers (`cbsd`, `cbsdcore`, `cbc`, `crt`) must not break during the
-   rewrite unless an explicit migration plan has been approved. Both
-   implementations may coexist in-tree until each consumer is migrated or
-   retired.
-
-7. **Runner container reproducibility.** The runner spins up a podman container
+6. **Runner container reproducibility.** The runner spins up a podman container
    that re-enters the same binary inside (`cbscore-entrypoint.sh` → `cbsbuild`).
    The in-container CLI surface, env vars (`CBS_DEBUG`), and mount paths must
    match the host-side expectations — the host marshals config/secrets into temp
    files that the container consumes at fixed paths.
+
+## Never touch Python code
+
+The cbscore-rs implementation lands as new Rust crates inside the existing
+`cbsd-rs/` Cargo workspace. It does **not** modify any Python source file in
+`../cbscore/`, `../cbsdcore/`, `../cbsd/`, `../cbc/`, or `../crt/`. Python and
+Rust coexist in-tree; cutover from Python to Rust happens at deployment time
+(per design 002 §Python Coexistence), not by editing the Python source. If a
+plan or design suggests editing Python, it has gone out of scope and the
+suggestion must be removed.
 
 ## When editing the Python package
 

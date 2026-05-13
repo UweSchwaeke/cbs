@@ -2,11 +2,14 @@
 
 ## Status
 
-**Approved — finalized and ready for implementation.** Last audited at the v18
-corpus pass (`reviews/002-20260513T0940-plan-cbscore-rust-port-design-v18.md`,
-verdict commit `a806158`); zero findings across CRITICAL / MAJOR / MINOR /
-SUGGESTION / OPEN QUESTION on the seq-002 phase plans. See `README.md` for the
-dependency graph and the M0 / M1 / M2 milestone cuts.
+**Approved — finalized and ready for implementation.** Last audited at the v23
+corpus pass (`reviews/002-20260513T1356-plan-cbscore-rust-port-design-v23.md`,
+verdict commit `cd22cb8`); zero findings across CRITICAL / MAJOR / MINOR /
+SUGGESTION / OPEN QUESTION on the seq-002 phase plans. Three pre-implementation
+audit passes (closed in `6cc553f`, `2d6062c`, `1a88722`) plus follow-up MN
+closures (`72852a8`) cleared 25 substantive findings across the design and plan
+corpus. See `README.md` for the dependency graph and the M0 / M1 / M2 milestone
+cuts.
 
 ## Progress
 
@@ -148,10 +151,21 @@ the Python `hvac` driver.
   KV reads, AppRole login, userpass login, token renewal. Supports KV v1 and v2
   mounts (auto-detect via mount metadata, matching Python). Per design 002
   §Vault lines 632–636.
-- `cbsd-rs/cbscore/src/utils/vault/errors.rs` — `VaultError` enum wrapping
-  `vaultrs::error::ClientError` via `#[from]`. Same rationale as `S3Error`:
-  cbscore-internal, callers in `secrets::mgr` (Commit 3) and `images::sign`
-  (Phase 5) wrap into domain errors.
+- `cbsd-rs/cbscore/src/utils/vault/errors.rs` — `VaultError` enum. Same
+  cbscore-internal rationale as `S3Error`: callers in `secrets::mgr` (Commit 3)
+  and `images::sign` (Phase 5) wrap into domain errors. Variants:
+  - `PathNotFound { mount: String, path: String }` — `kv_read` got a 404 or
+    `errors: [...]` response indicating the secret does not exist at the
+    requested path. Operator-actionable; the test in §Testable asserts this
+    variant specifically.
+  - `AuthFailed { method: &'static str, source: vaultrs::error::ClientError }` —
+    token / AppRole / userpass login failed. `method` is one of `"token"`,
+    `"approle"`, `"userpass"` for the operator-visible message.
+  - `RequestFailed { source: vaultrs::error::ClientError }` — generic transport
+    / 5xx / unexpected-response error; `#[from]` for the boxed
+    `vaultrs::error::ClientError`.
+  - `BadResponse { message: String }` — Vault returned a 200 with a body shape
+    the wrapper didn't expect (e.g., missing `data` key in a KV v2 response).
 - `cbsd-rs/cbscore/Cargo.toml` — add `vaultrs = "0.8"` per design 002 Capability
   Mapping line 197.
 
@@ -200,10 +214,18 @@ independent review.
 - Integration tests (`#[ignore]`-able) against `vault server -dev` (a local
   dev-mode Vault binary): round-trip a KV write + read, verify AppRole login
   produces a usable token, verify per-call auth produces a fresh token on each
-  `kv_read`. Un-ignore in CI via `cargo test -- --include-ignored` once the
-  dev-Vault sidecar is configured.
+  `kv_read`. Tests read `CBSCORE_TEST_VAULT_ADDR` (defaults to
+  `http://127.0.0.1:8200` when unset) and `CBSCORE_TEST_VAULT_TOKEN` (the root
+  token printed by `vault server -dev` at startup) to find the local endpoint;
+  tests are `#[ignore]`-skipped with a clear "set CBSCORE*TEST_VAULT_ADDR /
+  CBSCORE_TEST_VAULT_TOKEN to enable" message when either is missing. Un-ignore
+  in CI via `cargo test -- --include-ignored` once the dev-Vault sidecar is
+  configured. Matches the env-var contract pattern from Phase 3 Commit 1
+  (AWS*_), Phase 6 Commit 5 (CBSCORE*TEST*_), and Phase 7 Commit 3.
 - Negative test: KV read on a missing path returns
   `Err(VaultError::PathNotFound)` (not a generic `RequestFailed`).
+- Negative test: AppRole login with an invalid `role_id` returns
+  `Err(VaultError::AuthFailed { method: "approle", .. })`.
 
 ## Commit 3 — `secrets` module (SecretsMgr + merge / dump)
 

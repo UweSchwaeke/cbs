@@ -432,7 +432,7 @@ pub fn do_version_title(
 ) -> Result<String, VersionError> {
     let type_desc = version_type.get_desc();   // "Development" / "General Availability" / ...
     if let Ok(uuid) = uuid::Uuid::parse_str(version) {
-        if uuid.get_version_num() == 7 {
+        if uuid.get_version() == Some(uuid::Version::SortRand) {
             let ts = uuid_v7_timestamp(&uuid);     // chrono::DateTime<Utc>
             return Ok(format!(
                 "Release {type_desc} version created at {}",
@@ -469,9 +469,10 @@ A unit test for `uuid_v7_timestamp` constructs a UUIDv7 from a fixed
 `chrono::DateTime<Utc>` matches — cheap to write and pins the title format
 against future regressions.
 
-The `parse_str` + `get_version_num` check is robust: a UUIDv4 (which today's
-`gen_run_name` uses) would not match the v7 branch; an arbitrary non-UUID string
-(any operator-supplied VERSION) fails `parse_str` and falls through. No false
+The `parse_str` + `get_version() == Some(Version::SortRand)` check is robust: a
+UUIDv4 (which today's `gen_run_name` uses) returns `Some(Version::Random)` and
+does not match the v7 branch; an arbitrary non-UUID string (any
+operator-supplied VERSION) fails `parse_str` and falls through. No false
 positives.
 
 ### Patch walker

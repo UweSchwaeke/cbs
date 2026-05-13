@@ -2,11 +2,14 @@
 
 ## Status
 
-**Approved — finalized and ready for implementation.** Last audited at the v18
-corpus pass (`reviews/002-20260513T0940-plan-cbscore-rust-port-design-v18.md`,
-verdict commit `a806158`); zero findings across CRITICAL / MAJOR / MINOR /
-SUGGESTION / OPEN QUESTION on the seq-002 phase plans. See `README.md` for the
-dependency graph and the M0 / M1 / M2 milestone cuts.
+**Approved — finalized and ready for implementation.** Last audited at the v23
+corpus pass (`reviews/002-20260513T1356-plan-cbscore-rust-port-design-v23.md`,
+verdict commit `cd22cb8`); zero findings across CRITICAL / MAJOR / MINOR /
+SUGGESTION / OPEN QUESTION on the seq-002 phase plans. Three pre-implementation
+audit passes (closed in `6cc553f`, `2d6062c`, `1a88722`) plus follow-up MN
+closures (`72852a8`) cleared 25 substantive findings across the design and plan
+corpus. See `README.md` for the dependency graph and the M0 / M1 / M2 milestone
+cuts.
 
 ## Progress
 
