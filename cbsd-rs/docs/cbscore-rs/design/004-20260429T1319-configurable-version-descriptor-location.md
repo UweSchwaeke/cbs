@@ -340,14 +340,16 @@ if path.exists() {
     return Err(VersionError::AlreadyExists { path });
 }
 
-path.parent().expect("path has parent").create_dir_all_async().await?;
-desc.write(&path).await?;
+cbscore::versions::desc::write_descriptor(&desc, &path).await?;
 ```
 
-The `create_dir_all` already lives in `Config::store` per design 002 F3 — but
-`desc.write` (a `VersionDescriptor` method) needs the same behaviour, OR the
-call site does the `mkdir -p` explicitly. Decide at implementation time; either
-is correct.
+The `create_dir_all` lives **inside `write_descriptor`** — the helper creates
+the parent directory if missing (via `tokio::fs::create_dir_all`) before writing
+the JSON, matching the same `mkdir -p` semantic that `Config::store` already
+carries (design 002 F3). The call site does **not** repeat the `mkdir -p`;
+future callers (e.g., `cbsd-rs` after M2) inherit the same
+parent-create-on-write contract without having to know it. This is the pinned
+public API contract for `write_descriptor`.
 
 ### Bypass-mode pre-fill
 

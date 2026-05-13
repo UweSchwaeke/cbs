@@ -335,16 +335,20 @@ pub struct ConfigV1 {
     //                     secrets, vault, ...)
 }
 
-/// Wrapper that serde dispatches on `schema_version`.
+/// Wrapper that serde dispatches on the schema-version marker.
 ///
-/// `schema_version` is a `u64` integer on disk. The enum uses
-/// serde's internal tag; the exact attribute dance to match an
-/// integer-valued tag is an implementation detail (a hand-rolled
-/// `Deserialize` may be needed if serde's default string-matching
-/// for internal tags does not accept integer tags directly — the
-/// goal is `schema_version: 1` on disk, not `"schema_version": "1"`).
+/// The marker is a `u64` integer on disk. `Config` is a kebab-case
+/// struct (see `#[serde(rename_all = "kebab-case")]` above), so the
+/// wire key is `schema-version` (kebab) per §Wire-Format Versioning
+/// §Interaction with other wire-format decisions. Descriptor wrappers
+/// (`VersionedVersionDescriptor`, etc.) use `schema_version` (snake).
+/// The exact attribute dance to match an integer-valued tag is an
+/// implementation detail (a hand-rolled `Deserialize` may be needed
+/// if serde's default string-matching for internal tags does not
+/// accept integer tags directly — the goal is `schema-version: 1`
+/// on disk for kebab YAML, not `"schema-version": "1"`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "schema_version")]
+#[serde(tag = "schema-version")]
 pub enum VersionedConfig {
     #[serde(rename = "1")]
     V1(ConfigV1),
@@ -376,14 +380,15 @@ pub type Config = ConfigV1;
 /// # Errors
 ///
 /// Returns [`ConfigError::MissingSchemaVersion`] if the file has
-/// no `schema_version` key, and
+/// no `schema-version` key (kebab, per §Wire-Format Versioning), and
 /// [`ConfigError::UnknownSchemaVersion { found, max_supported }`]
 /// if the integer is above the compiled-in max.
 pub fn load(path: &Path) -> Result<Config, ConfigError> { /* ... */ }
 
 /// Write `cbs-build.config.yaml` / `.json`.
 ///
-/// Always emits `schema_version: 1` as the first key.
+/// Always emits `schema-version: 1` as the first key (kebab on the
+/// `Config` side; descriptor stores emit `schema_version: 1`).
 pub fn store(cfg: &Config, path: &Path) -> Result<(), ConfigError> {
     /* serialise VersionedConfig::V1(cfg.clone()) */
 }
@@ -392,29 +397,42 @@ pub fn store(cfg: &Config, path: &Path) -> Result<(), ConfigError> {
 The same pattern applies to `Secrets`, `VaultConfig`, `CoreComponent`,
 `ContainerDescriptor`, `VersionDescriptor`, `ImageDescriptor`, `ReleaseDesc`,
 `ReleaseComponent`, and `BuildArtifactReport`. Each gets its own `VersionedX`
-enum tagged on `schema_version` with independent integer namespaces.
+enum tagged on the schema-version marker — `schema-version` (kebab) for
+`Secrets`, `VaultConfig`, `CoreComponent`; `schema_version` (snake) for
+`ContainerDescriptor`, `VersionDescriptor`, `ImageDescriptor`, `ReleaseDesc`,
+`ReleaseComponent`, `BuildArtifactReport`. Each with its own independent integer
+namespace.
 
 ### Interaction with other wire-format decisions
 
-- **Git-secrets break** (§ Secrets). `schema_version: 1` lands on `secrets.yaml`
+- **Git-secrets break** (§ Secrets). `schema-version: 1` lands on `secrets.yaml`
   alongside the new `type:` tag on git entries. The v1 shape is "new git
-  discriminator + new `schema_version` tag"; no v0 ever ships from Rust.
+  discriminator + new `schema-version` tag"; no v0 ever ships from Rust. (Kebab
+  key per the type-specific rule above; `Secrets` is a kebab-case struct.)
 - **`BuildArtifactReport.report_version`.** Renamed to `schema_version` for
   uniformity. This is a breaking change to the `build-report.json` key name;
   since this file is produced by Rust and consumed by the runner (and by
   `cbsd`/`cbsd-rs`), all Rust-side callers must switch to reading
   `schema_version` in the same commit that introduces the rename.
-- **Descriptor snake_case.** `VersionDescriptor`, `ReleaseDesc`,
-  `ReleaseComponent`, `ImageDescriptor`, `BuildArtifactReport` continue to use
-  snake_case keys (no `rename_all`). The `schema_version` key is snake_case
-  regardless; no special treatment needed.
-- **Config/secrets/vault kebab-case.** Unchanged — the `schema_version` key is
-  the exception: it stays snake_case in YAML as well, because it is a
-  versioning-layer concept not a domain field. If literal consistency with
-  kebab-case is preferred, the name can be `schema-version` in the YAML while
-  staying `schema_version` in the Rust field via
-  `#[serde(rename = "schema-version")]`. Decide at implementation time; a single
-  choice applies to all formats.
+- **Type-specific wire-key casing for the marker.** The marker key's on-disk
+  spelling matches the host struct's casing rule. Two cases, no hedge:
+  - **Descriptor snake_case structs** — `VersionDescriptor`, `ReleaseDesc`,
+    `ReleaseComponent`, `ImageDescriptor`, `BuildArtifactReport` — use the wire
+    key `schema_version` (snake), matching their existing snake-case field
+    convention. `#[serde(tag = "schema_version")]` on the `VersionedX` wrapper
+    enums.
+  - **Kebab-case structs** — `Config`, `Secrets`, and any future kebab-case YAML
+    format — use the wire key `schema-version` (kebab), matching the
+    `#[serde(rename_all = "kebab-case")]` convention applied to every other
+    field in those structs. The Rust field stays `schema_version` (snake) for
+    ergonomic Rust code; the YAML key is forced to kebab via
+    `#[serde(rename = "schema-version")]` on the wrapper's discriminator and on
+    any direct `schema_version` field accessed by code that reads/writes the
+    marker explicitly.
+
+  The rule is: the marker is a normal field, not an exception. It follows the
+  host struct's casing rule. Every example in this design and in downstream
+  plans reflects this.
 
 ## Configuration & Secrets Subsystem
 
@@ -509,12 +527,17 @@ impl Config {
 
 ### Secrets
 
-`cbscore/utils/secrets/` models three distinct families — **git**, **signing**,
-and **registry** — each with its own discrimination scheme on the Python side.
-The Rust port does **not** apply a single uniform pattern across all three; each
-family's wire- format treatment is tailored to how the Python model actually
-discriminates its variants today. Only the git family requires a wire-format
-break; signing and registry ports are straight translations.
+`cbscore/utils/secrets/` models four distinct families — **git**, **storage**,
+**signing**, and **registry** — each with its own discrimination scheme on the
+Python side. The Rust port does **not** apply a single uniform pattern across
+all four; each family's wire-format treatment is tailored to how the Python
+model actually discriminates its variants today. Only the git family requires a
+wire-format break; storage, signing, and registry ports are straight
+translations.
+
+The container `Secrets` struct gets four `HashMap<String, FamilyCreds>` fields
+(one per family), mirroring the Python `Secrets` shape; `Default::default()`
+gives empty maps so a `secrets.yaml` that omits some families parses cleanly.
 
 #### Git secrets (wire-format break — explicit `type:` tag)
 
@@ -566,20 +589,114 @@ re-tag their `secrets.yaml` once at cutover (see Operator Transition below).
 **Rust reads only the tagged shape.** An entry without a `type:` tag is a serde
 error.
 
+#### Storage secrets (S3 access credentials — straight translation)
+
+`StoragePlainS3Secret` and `StorageVaultS3Secret` in
+`cbscore/utils/secrets/models.py` are the S3 access-key family. Python
+discriminates on the outer `creds` + inner `type` (currently only `s3`). The
+Rust port mirrors the same two-level shape as `GitCreds` for consistency and to
+leave room for future storage backends without a wire-format break:
+
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "creds")]
+enum StorageCreds {
+    #[serde(rename = "plain")]  Plain(StoragePlainCreds),
+    #[serde(rename = "vault")]  Vault(StorageVaultCreds),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+enum StoragePlainCreds {
+    /// S3 credentials stored in plain text (Python `StoragePlainS3Secret`).
+    #[serde(rename = "s3")]
+    S3 {
+        #[serde(rename = "access-id")] access_id: String,
+        #[serde(rename = "secret-id")] secret_id: String,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+enum StorageVaultCreds {
+    /// S3 credentials stored in Vault (Python `StorageVaultS3Secret`).
+    /// `key` is the Vault key from the `VaultSecret` base class.
+    #[serde(rename = "s3")]
+    S3 {
+        key: String,
+        #[serde(rename = "access-id")] access_id: String,
+        #[serde(rename = "secret-id")] secret_id: String,
+    },
+}
+```
+
+Storage entries port directly. Round-trip equivalence on the Rust side is the
+contract.
+
 #### Signing secrets (no change — `type:` already present)
 
 The Python signing-secret models already carry a `type:` field in deployed
 `secrets.yaml` (used by the Python discriminator to pick the leaf variant). The
-Rust port translates directly with `#[serde(tag = "type")]` — no new field,
-deployed files already conform:
+Rust port translates directly with two-level discrimination on `creds` then
+`type`, matching the Python compound discriminator — five leaf variants split
+across plain (one) and vault (four):
 
 ```rust
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type")]
+#[serde(tag = "creds")]
 enum SigningCreds {
-    // exact variant shapes mirror cbscore/utils/secrets/models.py;
-    // confirm field-for-field at implementation time.
-    // ...
+    #[serde(rename = "plain")]  Plain(SigningPlainCreds),
+    #[serde(rename = "vault")]  Vault(SigningVaultCreds),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+enum SigningPlainCreds {
+    /// GPG armor key in plain text (Python `GPGPlainSecret`).
+    #[serde(rename = "gpg-armor-key")]
+    GpgArmorKey {
+        #[serde(rename = "private-key")] private_key: String,
+        #[serde(rename = "public-key", default, skip_serializing_if = "Option::is_none")]
+        public_key: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        passphrase: Option<String>,
+        email: String,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+enum SigningVaultCreds {
+    /// Vault key holding the full GPG key pair (Python `GPGVaultSingleSecret`).
+    #[serde(rename = "gpg-single-key")]
+    GpgSingleKey {
+        key: String,
+        #[serde(rename = "private-key")] private_key: String,
+        #[serde(rename = "public-key", default, skip_serializing_if = "Option::is_none")]
+        public_key: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        passphrase: Option<String>,
+        email: String,
+    },
+    /// Vault key holding GPG private key only (Python `GPGVaultPrivateKeySecret`).
+    #[serde(rename = "gpg-pvt-key")]
+    GpgPvtKey {
+        key: String,
+        #[serde(rename = "private-key")] private_key: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        passphrase: Option<String>,
+        email: String,
+    },
+    /// Vault key holding GPG public key only (Python `GPGVaultPublicKeySecret`).
+    #[serde(rename = "gpg-pub-key")]
+    GpgPubKey {
+        key: String,
+        #[serde(rename = "public-key")] public_key: String,
+        email: String,
+    },
+    /// Vault Transit signing (Python `VaultTransitSecret`).
+    #[serde(rename = "transit")]
+    Transit { key: String, mount: String },
 }
 ```
 
@@ -589,18 +706,21 @@ changes; round-trip equivalence on the Rust side is the contract.
 #### Registry secrets (no change — single leaf per `creds`)
 
 The Python registry-secret models define one leaf shape per outer `creds` value
-— `plain` always means a username/password pair, `vault` always means a keyref.
-There is no inner ambiguity to discriminate, so a single-level tag on the outer
-`creds` field is sufficient:
+— `plain` always means a username/password/address triple, `vault` always means
+a keyref plus the same triple. There is no inner ambiguity to discriminate, so a
+single-level tag on the outer `creds` field is sufficient:
 
 ```rust
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "creds")]
 enum RegistryCreds {
-    // exact variant shapes mirror cbscore/utils/secrets/models.py;
-    // confirm field-for-field at implementation time.
-    // #[serde(rename = "plain")]  Plain { ... }
-    // #[serde(rename = "vault")]  Vault { ... }
+    /// Plain-text registry credentials (Python `RegistryPlainSecret`).
+    #[serde(rename = "plain")]
+    Plain { username: String, password: String, address: String },
+    /// Registry credentials stored in Vault (Python `RegistryVaultSecret`).
+    /// `key` is the Vault key from the `VaultSecret` base class.
+    #[serde(rename = "vault")]
+    Vault { key: String, username: String, password: String, address: String },
 }
 ```
 
@@ -615,12 +735,12 @@ Rust perform a one-time migration of their `secrets.yaml`:
 
 - No migration subcommand ships. Operators do two things by hand (or via any
   one-shot script they own):
-  1. Add `schema_version: 1` as the first key of the file (per § Wire-Format
-     Versioning).
+  1. Add `schema-version: 1` as the first key of the file (kebab key per §
+     Wire-Format Versioning — `Secrets` is a kebab-case struct).
   2. Add the `type:` tag to each git entry.
 - M1 release notes must include a worked example of the migrated YAML for each
   of the five git variants (plain ssh/token/https + vault ssh/https), with the
-  `schema_version` header included in the example.
+  `schema-version` header included in the example.
 - Python `cbscore/` is **not** patched and keeps writing its existing shape. A
   deployment that has switched to Rust does not write back to a Python-readable
   file; the Rust implementation owns its on-disk layout from the cutover onward.
@@ -1281,14 +1401,18 @@ as the Python equivalent. Cross-language byte-equality on the release descriptor
 is not required since Python and Rust cbscore do not share files.
 
 M1 is cbscore-rs **1.0.0**. Python `cbscore/` ships unmodified. Every
-wire-format file Rust reads or writes carries `schema_version: 1` (see §
-Wire-Format Versioning); files without the tag are rejected with a clear error.
-Additionally, git-secret entries require the new `type:` discriminator (see §
-Secrets). Operators moving a deployment from Python to Rust re-tag their
-`secrets.yaml`, `cbs-build.config.yaml`, `cbs.component.yaml`, and sibling files
-once by hand. Python can still read Rust- written files (pydantic ignores the
-unknown `schema_version` and `type:` fields), so compatibility is one-way. See
-design 001 § Versioning for the semver discipline.
+wire-format file Rust reads or writes carries the v1 schema marker — kebab
+`schema-version: 1` on kebab-case formats (`cbs-build.config.yaml`,
+`secrets.yaml`, vault) and snake `schema_version: 1` on snake-case descriptor
+formats (`VersionDescriptor`, `ReleaseDesc`, `ContainerDescriptor`,
+`BuildArtifactReport`, …) per § Wire-Format Versioning; files without the
+appropriate marker are rejected with a clear error. Additionally, git-secret
+entries require the new `type:` discriminator (see § Secrets). Operators moving
+a deployment from Python to Rust re-tag their `secrets.yaml`,
+`cbs-build.config.yaml`, `cbs.component.yaml`, and sibling files once by hand.
+Python can still read Rust-written files (pydantic ignores the unknown marker
+and `type:` fields), so compatibility is one-way. See design 001 § Versioning
+for the semver discipline.
 
 ### M2 — Direct crate dependency from `cbsd-rs`
 
@@ -1317,12 +1441,13 @@ upgrade where some workers are still on Python cbscore and some are on Rust
 cbscore:
 
 - Python workers continue reading and writing the existing un-tagged shape.
-- Rust workers reject any `secrets.yaml` lacking `schema_version: 1` or the
-  per-entry `type:` tag for git secrets (see § Wire-Format Versioning and §
-  Configuration & Secrets Subsystem).
+- Rust workers reject any `secrets.yaml` lacking `schema-version: 1` (kebab key
+  — `Secrets` is a kebab-case struct) or the per-entry `type:` tag for git
+  secrets (see § Wire-Format Versioning and § Configuration & Secrets
+  Subsystem).
 
 To avoid Rust workers hard-failing during rollout, **tag the source
-`secrets.yaml` first** — add `schema_version: 1` and the per-git-entry `type:`
+`secrets.yaml` first** — add `schema-version: 1` and the per-git-entry `type:`
 tags before deploying the first Rust worker. Pydantic's `extra = "ignore"`
 silently drops the extra keys on the Python side, so tagging the file early does
 not break workers still running Python cbscore. After every worker has been

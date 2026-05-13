@@ -321,9 +321,10 @@ Land the file IO for the config types defined in Phase 1. Per design 002
   to `~/.config/cbsd/${deployment}/worker/cbscore.config.yaml` on a fresh
   workstation (design 002 line 504–505), so the parent dir does not yet exist on
   first run.
-- `schema_version: 1` is emitted as the first key on write, per the
-  `VersionedConfig::V1` wrapper from Phase 1. Reads without `schema_version`
-  produce `ConfigError::MissingSchemaVersion`; reads with a
+- `schema-version: 1` is emitted as the first key on write (kebab per design 002
+  §Wire-Format Versioning — `Config` is a kebab-case struct), per the
+  `VersionedConfig::V1` wrapper from Phase 1. Reads without the kebab
+  `schema-version` key produce `ConfigError::MissingSchemaVersion`; reads with a
   higher-than-supported value produce
   `ConfigError::UnknownSchemaVersion { found, max_supported }`.
 
@@ -343,10 +344,10 @@ pure-types-plus-fs concern, secrets manager is an async-Vault-resolving concern.
   fixture files, assert equality.
 - Parent-dir create: store to a path whose parent dir does not exist, assert the
   dir is created and the file lands.
-- `schema_version: 1` is the first key in the YAML output (parse the raw bytes
-  and assert position).
-- Negative tests inherited from Phase 1 Commit 5: missing `schema_version` →
-  `MissingSchemaVersion`; future-version `schema_version: 99` →
+- `schema-version: 1` is the first key in the YAML output (kebab, parse the raw
+  bytes and assert position).
+- Negative tests inherited from Phase 1 Commit 5: missing `schema-version`
+  (kebab) → `MissingSchemaVersion`; future-version `schema-version: 99` →
   `UnknownSchemaVersion { found: 99, max_supported: 1 }`.
 
 ## End-of-phase acceptance
