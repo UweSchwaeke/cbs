@@ -38,8 +38,17 @@ change is fully backwards-compatible for the existing operator population.
 - **seq-002 Phase 3 Commit 4** — `cbscore::config::Config::load` exists and
   returns a `Config` carrying `paths` (including the new `paths.versions` field
   after Commit 1 lands).
-- **seq-002 Phase 4 Commit 1** — `cbscore::versions::desc` module exists. Commit
-  1 adds `descriptor_path` to the `cbscore-types` side of that module path.
+- **seq-002 Phase 1 Commit 3** — `cbscore-types/src/versions/desc.rs` exists.
+  seq-004 Commit 1 appends `descriptor_path` to this file (and adds
+  `VersionType::as_dir_name` to `versions/utils.rs`).
+- **seq-002 Phase 4 Commit 1** — `cbscore/src/versions/desc.rs` exists (IO side;
+  `read_descriptor` + `write_descriptor`). seq-004 Commit 2's
+  `cbscore/src/versions/resolve.rs` sits alongside this file under
+  `cbscore/src/versions/`, and seq-004 Commit 3 calls `write_descriptor` from
+  the refactored write path. Phase 4 Commit 1 §Files settles that
+  `write_descriptor` calls `tokio::fs::create_dir_all` internally (same
+  `mkdir -p` semantic as `Config::store`), so seq-004's write site does not
+  duplicate the parent-create.
 - **seq-002 Phase 6 Commit 2** — `cbsbuild versions create` exists and carries
   the hardcoded write path that Commit 3 of this plan refactors.
 
@@ -230,9 +239,11 @@ that Phase 6 Commit 2 landed.
     #[arg(long, value_name = "PATH")]
     versions_dir: Option<Utf8PathBuf>,
     ```
-  - In the `create` handler, replace the existing hardcoded chain
-    (`repo_root.join("_versions").join(type.as_str()).join(...)` or however
-    Phase 6 Commit 2 spelled it) with:
+  - In the `create` handler, replace the entire existing path-construction block
+    (the
+    `repo_root().await?.join("_versions").join(type.as_dir_name()).join(...)`
+    chain that Phase 6 Commit 2 lands; the exact spelling does not matter —
+    every line of it is replaced) with:
     ```rust
     let root = cbscore::versions::resolve_root(
         args.versions_dir.as_deref(),
@@ -244,15 +255,11 @@ that Phase 6 Commit 2 landed.
     if path.exists() {
         return Err(VersionError::AlreadyExists { path }.into());
     }
-    path.parent()
-        .expect("descriptor_path always has a parent")
-        .create_dir_all_async().await?;
-    desc.write(&path).await?;
+    cbscore::versions::desc::write_descriptor(&desc, &path).await?;
     ```
-    (Use whichever `mkdir -p` helper is already in `cbscore::utils::fs` or
-    equivalent; design 004 §Write site says either `desc.write` carrying the
-    create_dir_all or the call site doing it explicitly is correct — pick
-    whichever matches the existing convention from Phase 6 Commit 2.)
+    `write_descriptor` (Phase 4 Commit 1) calls `tokio::fs::create_dir_all` on
+    `path.parent()` internally before the JSON write; no separate `mkdir -p`
+    step is needed at this call site.
   - Remove any direct `git::repo_root` call from this command path; the resolver
     owns that fallback now.
 - `cbsd-rs/cbsbuild/src/cmds/versions.rs` `--help` strings — document
