@@ -124,13 +124,17 @@ The foundation. Every other wrapper in this phase invokes `async_run_cmd`.
   that interleaves both pipes).
 - `async_run_cmd` calls the `out_cb` per line when supplied, otherwise
   accumulates into `RunOutcome.stdout` / `.stderr`.
-- **RAII drop-guard smoke test (optional, `#[ignore]` if flaky in CI):** spawn
-  `sleep 60` via `async_run_cmd` inside a `tokio::select!` with a 50ms timer;
-  let the timer branch win and cancel the subprocess branch; capture the child
-  PID from `RunOpts` or a test hook and verify
-  `nix::sys::signal::kill(pid, None)` returns `Err(Errno::ESRCH)` (process
-  gone). Verifies the outer-cancellation kill path the runner relies on for
-  SIGTERM propagation (Phase 4).
+- **RAII drop-guard smoke test (`#[ignore]`-gated):** spawn `sleep 60` via
+  `async_run_cmd` inside a `tokio::select!` with a 50ms timer; let the timer
+  branch win and cancel the subprocess branch; capture the child PID from
+  `RunOpts` or a test hook and verify `nix::sys::signal::kill(pid, None)`
+  returns `Err(Errno::ESRCH)` (process gone). The `nix` dep lives under
+  `cbscore/Cargo.toml`'s `[dev-dependencies]` per Phase 1 Commit 1 (test-only,
+  not in production builds). Test is opted in via `CBSCORE_TEST_SIGNAL_PROBE=1`
+  env var; without it, the test is `#[ignore]`-skipped with a "set
+  CBSCORE_TEST_SIGNAL_PROBE=1 to enable" message. Verifies the
+  outer-cancellation kill path the runner relies on for SIGTERM propagation
+  (Phase 4).
 
 ## Commit 2 — `utils::podman` + `utils::buildah` wrappers
 
@@ -161,7 +165,9 @@ The foundation. Every other wrapper in this phase invokes `async_run_cmd`.
 
 - Command construction tests: assemble each function's command-line via a test
   helper that captures the `&[CmdArg]` slice, assert tokens match expected (e.g.
-  `podman_run` with `--cidfile /tmp/cid` and `--rm` and the supplied mounts).
+  `podman_run` with `--cidfile <tempdir>/cid` and `--rm` and the supplied
+  mounts). The cidfile path comes from a per-test `tempfile::TempDir` (never a
+  hard-coded `/tmp/cid` which would race between parallel test runs).
 - Error parsing: feed a known-bad podman stderr string into the error decoder,
   assert the right `PodmanError` variant is produced.
 - `buildah_unmount` of an unmounted container produces a recoverable error

@@ -154,7 +154,9 @@ write per-component `BuildComponentInfo` records.
   design 005).
 - Integration test (`#[ignore]`-able): full prepare run against a fixture `ceph`
   component with a real git clone, assert the resulting `BuildComponentInfo`
-  carries the expected SHA + ref.
+  carries the expected SHA + ref. Opted in via `CBSCORE_TEST_GIT_REMOTE=<url>`
+  (defaults to skipping when unset); `#[ignore]`-skipped with a "set
+  CBSCORE_TEST_GIT_REMOTE to enable" message.
 
 ## Commit 2 — `core::component` module (`load_components` IO)
 
@@ -230,7 +232,10 @@ primary consumer; Phase 6 imports it through the public surface.
   files → `Ok(HashMap::new())`.
 - Integration test (`#[ignore]`-able): point at the real `components/` directory
   in the cbs.git checkout, assert the expected component names appear in the
-  result and each carries the expected `loc.url` and `loc.ref`.
+  result and each carries the expected `loc.url` and `loc.ref`. Opted in via
+  `CBSCORE_TEST_COMPONENTS_DIR=<path>` (typically the operator's local
+  `components/` tree); `#[ignore]`-skipped with a "set
+  CBSCORE_TEST_COMPONENTS_DIR to enable" message when unset.
 
 **Commit-size rationale:** ~200 LOC sits at the lower end of the 400-line floor
 named in `cbsd-rs/CLAUDE.md` §Commit Granularity, but justified because the
@@ -285,7 +290,9 @@ Port `cbscore/builder/rpmbuild.py`. Second stage of the pipeline: spawns
   pointing at the scratch path.
 - Integration test (`#[ignore]`-able): run rpmbuild on a tiny test SPEC file
   (e.g., a hello-world RPM), assert the resulting `.rpm` artifact path is in the
-  report.
+  report. Opted in via `CBSCORE_TEST_RPMBUILD=1` (the host must have a working
+  `rpmbuild` binary on PATH); `#[ignore]`-skipped with a "set
+  CBSCORE_TEST_RPMBUILD=1 to enable" message when unset.
 
 ## Commit 5 — `builder::signing` + `images::signing` (GPG + transit)
 
@@ -348,9 +355,15 @@ GPG + Vault transit primitives.
 - Command construction: `rpm --addsign` per-RPM with the right passphrase-arg
   redaction (assert traced lines emit `****`, not the raw passphrase).
 - Integration test (`#[ignore]`-able): GPG-sign a tiny fixture RPM against a
-  test keyring, verify the signature via `rpm --checksig`.
+  test keyring, verify the signature via `rpm --checksig`. Opted in via
+  `CBSCORE_TEST_GPG_KEYRING=<path>` (path to a test GPG keyring with
+  `--pinentry-mode loopback` compatible setup); `#[ignore]`-skipped with a "set
+  CBSCORE_TEST_GPG_KEYRING to enable" message when unset.
 - Vault transit signing: round-trip a known manifest digest against a
-  `vault server -dev` instance with a transit key configured.
+  `vault server -dev` instance with a transit key configured. Reuses the
+  `CBSCORE_TEST_VAULT_ADDR` / `CBSCORE_TEST_VAULT_TOKEN` env-var contract from
+  Phase 3 Commit 2; `#[ignore]`-skipped with the same message pattern when
+  unset.
 - `images::sync` sign-before-push order test: with `config.signing.is_some()`,
   stub `sign_manifest` and `skopeo_copy`, drive `sync_image`, capture the call
   order, assert `sign_manifest` fires before `skopeo_copy`. This is the test
@@ -404,6 +417,11 @@ pushes the built container image to the registry, writes the release descriptor.
   expected `<bucket>/<loc>/<version>/…` form.
 - Integration test (`#[ignore]`-able) against local MinIO: upload a release with
   two RPMs + a manifest, verify all three objects exist with the right keys.
+  Reuses the `AWS_ENDPOINT_URL` / `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`
+  env-var contract from Phase 3 Commit 1; additionally requires
+  `CBSCORE_TEST_S3_BUCKET=<bucket>` to name the test bucket; `#[ignore]`-skipped
+  with a "set AWS_ENDPOINT_URL + CBSCORE_TEST_S3_BUCKET to enable" message when
+  either is unset.
 - Negative test: upload with `config.storage = None` returns an empty
   `UploadReport` and makes zero S3 calls.
 
@@ -433,6 +451,17 @@ assembly that ties their outputs together.
   threads forward into `upload::run`'s `image: &ContainerImageReport` argument
   so the push step has the image tag / digest without a forward-dependency on
   later commits.
+- **Scratch dir left in place on stage failure.** When any stage returns
+  `Err(BuilderError)`, `run_build` short-circuits and returns the error without
+  clearing `config.paths.scratch/<component>/`. The scratch contents (downloaded
+  sources, build artefacts, partial RPMs, stage logs) remain on disk for the
+  operator to inspect and debug. To re-run with a clean slate, the operator
+  passes `opts.force=true`, which Phase 5 Commit 1 (`prepare`) clears via
+  `remove_dir_all` + `create_dir_all`. This matches Python `cbsbuild`'s
+  behaviour: build failures leave the scratch state for inspection rather than
+  auto-cleaning. Each stage's RAII guards (Phase 2 Commit 1 subprocess kill;
+  Phase 5 Commit 4 `BuildahWorkingContainer`) handle their own child-process /
+  container cleanup; the scratch directory itself is operator-owned state.
 - `opts.skip_build` (per design 002 line 930) propagates from `BuildOptions`
   through each stage's `run` call; stages decide how to interpret it (rpmbuild
   becomes a no-op; signing + upload see an empty RpmbuildReport and become
@@ -515,6 +544,18 @@ lines 1098–1104.
 - Containers are built via `utils::buildah::buildah_from` + `buildah_commit`
   (Phase 2 Commit 2). The build context is a scratch tempdir populated with the
   Containerfile + the RPMs from `RpmbuildReport`.
+- **`BuildahWorkingContainer` RAII guard for cleanup on failure.**
+  `containers::build::build_image` wraps the working container in a
+  `BuildahWorkingContainer` struct whose `Drop` impl calls
+  `buildah unmount <container-id>` + `buildah rm <container-id>` synchronously
+  (fire-and-forget, errors swallowed — mirrors the Phase 2 Commit 1 RAII
+  drop-guard pattern). On `buildah_commit` failure (or any `?`-early-return in
+  `build_image`), the guard's `Drop` ensures the live buildah working container
+  is unmounted and removed; without it, a failed build leaves an orphan
+  container that future `buildah` invocations may collide with. The success path
+  consumes the guard explicitly via a `commit` method that destructures it
+  before tagging the committed image — same destructure-on- consume pattern as
+  the Phase 4 runner cleanup guard.
 - `containers::repos` resolves the descriptor's repo refs to:
   - **copr**: `dnf copr enable <user>/<project>`
   - **file**: a local `.repo` file mounted into the build context
@@ -558,7 +599,10 @@ module assembled in one logical bundle (skopeo from Phase 2, signing in Commit
   right base image + Containerfile.
 - `containers::repos` resolution tests for each repo variant.
 - Integration test (`#[ignore]`-able) against a real podman daemon: build a tiny
-  test image, verify the image exists locally via `podman image inspect`.
+  test image, verify the image exists locally via `podman image inspect`. Opted
+  in via `CBSCORE_TEST_PODMAN=1` (host must have a working `podman` binary on
+  PATH); `#[ignore]`-skipped with a "set CBSCORE_TEST_PODMAN=1 to enable"
+  message when unset.
 - `images::sync` no-sign path test: with `config.signing` either set or unset,
   `sync_image` does not attempt to call any signing function (no symbol exists
   yet in this commit) and the call is observably a plain `skopeo_copy`. The

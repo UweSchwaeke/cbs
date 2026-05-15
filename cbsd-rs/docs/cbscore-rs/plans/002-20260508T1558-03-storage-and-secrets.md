@@ -126,6 +126,16 @@ replacing the Python `aioboto3` driver.
 - Content-type detection in `release_upload_components` is a simple match on
   extension; RPMs → `application/x-rpm`, JSON → `application/json`, anything
   else → `application/octet-stream`.
+- **S3 uploads are idempotent by key.** `release_upload_components` and
+  `s3_upload_rpms` perform per-file PUT operations sequentially. If files 1..N
+  succeed and file N+1 fails (network error, permission denied, S3 service
+  error), files 1..N are left on S3. There is no rollback or cleanup step.
+  Recovery semantic: the operator re-runs the build, which re-uploads files 1..N
+  (overwriting the existing objects silently — PUT to the same key replaces) and
+  retries N+1. Long-term orphan cleanup (e.g. if the operator never re-runs) is
+  operator policy: configure S3 lifecycle rules on the bucket. This matches
+  Python's existing behaviour and avoids the complexity of a partial-failure
+  cleanup path that would itself be subject to failures.
 
 **Testable:**
 
@@ -298,6 +308,17 @@ registry + signing + storage) to Rust. The Python tree split mirrored in design
 - Vault-ref resolution is async because each ref triggers a Vault HTTP read.
   Operations are sequential (no concurrent fan-out) to match Python's behaviour;
   can be revisited later if performance demands.
+- **`resolve_vault_refs` is retry-safe.** The `&mut self` in-place mutation
+  replaces `*Vault*` variants with the corresponding `*Plain*` variants in the
+  per-family HashMaps. On `Err` mid-resolution (e.g. the 4th of 5 vault refs
+  errors), the first 3 entries are already in their `*Plain*` form; the 4th and
+  5th remain as `*Vault*` variants. The caller may call `resolve_vault_refs`
+  again — already-resolved plain entries are idempotent no-ops (the match arm
+  finds `*Plain*` and skips), and the remaining vault-ref entries are retried.
+  The caller contract on `Err`: do not call `dump_to_runner` until a subsequent
+  `resolve_vault_refs` returns `Ok` (otherwise the dumped YAML carries
+  unresolved vault refs that the in-container build cannot dereference).
+  Retry-safety eliminates the need for atomic rollback.
 - `Secrets::load` (the private helper in `models.rs`) is YAML parsing through
   `serde_saphyr` + `VersionedSecrets::into_latest()` (Phase 1 Commit 5). Phase 3
   wires the file IO; Phase 1 owns the wire-format dispatch.

@@ -60,13 +60,13 @@ Every in-repo Python consumer imports a small, well-defined slice of `cbscore`.
 The Rust port must cover this slice before any consumer can stop importing the
 Python package.
 
-| Consumer   | Imports                                                                                                                                                                                                                                                                                                |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `cbc`      | `errors.CESError`, `logger.set_debug_logging`, `versions.errors.VersionError`, `cbscore_types::versions::utils::VersionType`, `cbscore::versions::utils::{get_version_type, parse_component_refs}` (parse helpers live in `cbscore`, not `cbscore-types`)                                              |
-| `crt`      | `cbscore::versions::utils::parse_version` (lives in `cbscore`, not `cbscore-types` — needs `regex`)                                                                                                                                                                                                    |
-| `cbsdcore` | `errors.CESError`, `versions.utils.VersionType`                                                                                                                                                                                                                                                        |
-| `cbsd`     | `errors.{CESError, MalformedVersionError}`, `logger.logger` (module-level object), `config.{Config, ConfigError}`, `runner.{stop, gen_run_name, runner}`, `versions.create.version_create_helper`, `versions.desc.VersionDescriptor`, `versions.errors.VersionError`, `core.component.load_components` |
-| `cbsd-rs`  | **via subprocess bridge** `cbsd-rs/scripts/cbscore-wrapper.py`: `config.{Config, ConfigError}`, `versions.create.version_create_helper`, `versions.desc.VersionDescriptor`, `errors.MalformedVersionError`, `runner.{runner, RunnerError}`, `versions.errors.VersionError`                             |
+| Consumer   | Imports                                                                                                                                                                                                                                                                                                                                                                     |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cbc`      | `errors.CESError`, `cbscore_types::logger::debug_filter` (the Rust counterpart of Python's `logger.set_debug_logging`; returns an `EnvFilter`, caller installs), `versions.errors.VersionError`, `cbscore_types::versions::utils::VersionType`, `cbscore::versions::utils::{get_version_type, parse_component_refs}` (parse helpers live in `cbscore`, not `cbscore-types`) |
+| `crt`      | `cbscore::versions::utils::parse_version` (lives in `cbscore`, not `cbscore-types` — needs `regex`)                                                                                                                                                                                                                                                                         |
+| `cbsdcore` | `errors.CESError`, `versions.utils.VersionType`                                                                                                                                                                                                                                                                                                                             |
+| `cbsd`     | `errors.{CESError, MalformedVersionError}`, `logger.logger` (module-level object), `config.{Config, ConfigError}`, `runner.{stop, gen_run_name, runner}`, `versions.create.version_create_helper`, `versions.desc.VersionDescriptor`, `versions.errors.VersionError`, `core.component.load_components`                                                                      |
+| `cbsd-rs`  | **via subprocess bridge** `cbsd-rs/scripts/cbscore-wrapper.py`: `config.{Config, ConfigError}`, `versions.create.version_create_helper`, `versions.desc.VersionDescriptor`, `errors.MalformedVersionError`, `runner.{runner, RunnerError}`, `versions.errors.VersionError`                                                                                                  |
 
 Two observations drive the crate split:
 
@@ -222,7 +222,8 @@ library, the CLI, and — once the subprocess bridge is retired — directly by
   imported the first three from the Python `cbscore` package; their Rust
   counterparts will import from `cbscore::versions::utils`.
 - `tracing` target hierarchy (`cbscore`, `cbscore::runner`, `cbscore::builder`,
-  ...) and `set_debug_logging()` equivalent.
+  ...) and `debug_filter()` (returns an `EnvFilter`; binary boundary installs;
+  no global-state mutation in `cbscore-types`).
 
 **What does NOT go here:**
 
