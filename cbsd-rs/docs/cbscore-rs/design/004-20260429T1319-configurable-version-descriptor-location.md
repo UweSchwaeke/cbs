@@ -272,12 +272,13 @@ pub async fn resolve_root(
     config: &Config,
 ) -> Result<Utf8PathBuf, VersionError> {
     if let Some(p) = cli {
-        return Ok(p.to_owned());
+        return canonicalize_root(p).await;
     }
     if let Some(p) = config.paths.versions.as_deref() {
-        return Ok(p.to_owned());
+        return canonicalize_root(p).await;
     }
-    // Fallback: <git-rev-parse --show-toplevel>/_versions.
+    // Fallback: <git-rev-parse --show-toplevel>/_versions. The git root
+    // is already absolute, so no further canonicalization is needed.
     match cbscore::utils::git::repo_root().await {
         Ok(root) => Ok(root.join("_versions")),
         Err(_) => {
@@ -291,6 +292,29 @@ pub async fn resolve_root(
         }
     }
 }
+
+/// Resolve an operator-supplied root path to an absolute, symlink-
+/// resolved `Utf8PathBuf`. Requires the directory to exist on disk —
+/// operators must create it (`mkdir -p`) before passing `--versions-dir`
+/// or setting `paths.versions` in config. Without canonicalization,
+/// downstream consumers (`descriptor_path`, the patch walker, the runner
+/// mount line) would each have to defensively re-resolve a possibly-
+/// relative path against an unknown cwd.
+async fn canonicalize_root(
+    p: &Utf8Path,
+) -> Result<Utf8PathBuf, VersionError> {
+    let abs = tokio::fs::canonicalize(p.as_std_path())
+        .await
+        .map_err(|source| VersionError::DescriptorRootResolve {
+            path: p.to_owned(),
+            source,
+        })?;
+    Utf8PathBuf::try_from(abs).map_err(|err| {
+        VersionError::DescriptorRootNotUtf8 {
+            path: err.into_path_buf().to_string_lossy().into_owned(),
+        }
+    })
+}
 ```
 
 `VersionError::NoDescriptorRoot` carries enough context that its `Display` impl
@@ -301,20 +325,64 @@ deleted under the process) or the path is not UTF-8, the error renders with
 `<unknown>` rather than propagating a `std::io::Error` that would mask the
 intended message.
 
+Two additional error variants surface from the canonicalize step:
+
+- `VersionError::DescriptorRootResolve { path, source: std::io::Error }` —
+  `tokio::fs::canonicalize` failed (most commonly `ENOENT` because the
+  operator-supplied directory does not exist yet). The `Display` impl names the
+  path and includes the underlying error, with hint text pointing the operator
+  at `mkdir -p`.
+- `VersionError::DescriptorRootNotUtf8 { path: String }` — the resolved absolute
+  path contains non-UTF-8 bytes (a symlink resolved into a filesystem location
+  with exotic encoding). The `String` form is `path.to_string_lossy()`, lossy by
+  design — the error path's only job here is to tell the operator which path was
+  rejected.
+
 ### Path builder
 
 `cbscore_types::versions::desc::descriptor_path` in
 `cbscore-types/src/versions/desc.rs`:
 
-```rust
+````rust
+/// Build the on-disk path for a version descriptor.
+///
+/// `root` MUST be absolute. `resolve_root` canonicalizes operator
+/// input before returning, so any caller routing through the standard
+/// resolver satisfies this contract. The `debug_assert!` flags
+/// violations in tests; release builds still return a path, but
+/// downstream code that depends on absolute paths (the runner mount
+/// line, the descriptor-write site) may misbehave.
+///
+/// # Examples
+///
+/// ```
+/// use camino::Utf8Path;
+/// use cbscore_types::versions::{VersionType, desc::descriptor_path};
+///
+/// let p = descriptor_path(
+///     Utf8Path::new("/var/cbs/_versions"),
+///     VersionType::Dev,
+///     "19.2.3",
+/// );
+/// assert_eq!(
+///     p.as_str(),
+///     "/var/cbs/_versions/dev/19.2.3.json",
+/// );
+/// ```
 pub fn descriptor_path(
     root: &Utf8Path,
     ty: VersionType,
     version: &str,
 ) -> Utf8PathBuf {
+    debug_assert!(
+        root.is_absolute(),
+        "descriptor_path: root must be absolute (got {root}); \
+         resolve_root canonicalizes operator input — bypass that path \
+         only with great care",
+    );
     root.join(ty.as_dir_name()).join(format!("{version}.json"))
 }
-```
+````
 
 `VersionType::as_dir_name(&self) -> &str` returns `"release"`, `"dev"`,
 `"test"`, `"ci"` — the existing pydantic enum value strings, locked in by
@@ -367,24 +435,24 @@ Listed in design 003 §Bypass Behaviour for completeness.
 
 ### Code
 
-| Step | Where                                                    | What                                                                                                                                                        |
-| ---- | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1    | `cbscore-types/src/config/paths.rs`                      | Add `versions: Option<Utf8PathBuf>` field with `#[serde(default)]`.                                                                                         |
-| 2    | `cbscore-types/src/versions/desc.rs`                     | Add `descriptor_path()` helper. Add `VersionType::as_dir_name()` if not already present.                                                                    |
-| 3    | `cbscore/src/versions/mod.rs`                            | Add `resolve_root()`. Add `VersionError::NoDescriptorRoot` variant with the OQ5 error text.                                                                 |
-| 4    | `cbsbuild/src/cmds/versions.rs`                          | Add `--versions-dir` flag. Call `resolve_root()` then `descriptor_path()`. Drop the old hardcoded `repo_root.join("_versions").join(type).join(...)` chain. |
-| 5    | `cbsbuild/src/cmds/config/init.rs` (post-M1, design 003) | Add the optional "Versions path" prompt. Add `versions = "/cbs/_versions"` to the bypass-mode pre-fill set.                                                 |
+| Step | Where                                                    | What                                                                                                                                                                                                                                 |
+| ---- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1    | `cbscore-types/src/config/paths.rs`                      | Add `versions: Option<Utf8PathBuf>` field with `#[serde(default)]`.                                                                                                                                                                  |
+| 2    | `cbscore-types/src/versions/desc.rs`                     | Add `descriptor_path()` helper with absolute-root doc contract and a `debug_assert!(root.is_absolute())` guard. Add `VersionType::as_dir_name()` if not already present.                                                             |
+| 3    | `cbscore/src/versions/mod.rs`                            | Add `resolve_root()` and its `canonicalize_root()` helper. Add three `VersionError` variants: `NoDescriptorRoot` (OQ5 text), `DescriptorRootResolve { path, source: std::io::Error }`, and `DescriptorRootNotUtf8 { path: String }`. |
+| 4    | `cbsbuild/src/cmds/versions.rs`                          | Add `--versions-dir` flag. Call `resolve_root()` then `descriptor_path()`. Drop the old hardcoded `repo_root.join("_versions").join(type).join(...)` chain.                                                                          |
+| 5    | `cbsbuild/src/cmds/config/init.rs` (post-M1, design 003) | Add the optional "Versions path" prompt. Add `versions = "/cbs/_versions"` to the bypass-mode pre-fill set.                                                                                                                          |
 
 Steps 1–4 land in M1. Step 5 lands when design 003 is implemented post-M1.
 
 ### Operator-side
 
-| Operator scenario                                                       | Required action at upgrade                                                                                                                                                                                                                          |
-| ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Existing operator with `<git-root>/_versions/` populated, doing nothing | None. Default fallback resolves to `<git-root>/_versions`. Bit-identical behaviour.                                                                                                                                                                 |
-| Operator who wants to relocate the descriptor store                     | Set `paths.versions: /new/path` in `cbs-build.config.yaml`, or pass `--versions-dir /new/path` per invocation. Move existing files via shell: `cp -r <git-root>/_versions/* /new/path/`.                                                            |
-| Operator using `--for-systemd-install` / `--for-containerized-run`      | Re-run `cbsbuild config init --for-systemd-install` (or equivalent) on the bypass-pre-fill side; the regenerated `cbscore.config.yaml` will include `paths.versions: /cbs/_versions`. Alternatively, manually add the field to the existing config. |
-| Operator on a worker host without a git checkout (today: blocked)       | Set `paths.versions` in config or pass `--versions-dir`. The blocking constraint is removed.                                                                                                                                                        |
+| Operator scenario                                                       | Required action at upgrade                                                                                                                                                                                                                                                                                                  |
+| ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Existing operator with `<git-root>/_versions/` populated, doing nothing | None. Default fallback resolves to `<git-root>/_versions`. Bit-identical behaviour.                                                                                                                                                                                                                                         |
+| Operator who wants to relocate the descriptor store                     | Set `paths.versions: /new/path` in `cbs-build.config.yaml`, or pass `--versions-dir /new/path` per invocation. The directory must exist (`mkdir -p /new/path` first) — `resolve_root` canonicalizes the path and errors out if it does not exist. Move existing files via shell: `cp -r <git-root>/_versions/* /new/path/`. |
+| Operator using `--for-systemd-install` / `--for-containerized-run`      | Re-run `cbsbuild config init --for-systemd-install` (or equivalent) on the bypass-pre-fill side; the regenerated `cbscore.config.yaml` will include `paths.versions: /cbs/_versions`. Alternatively, manually add the field to the existing config.                                                                         |
+| Operator on a worker host without a git checkout (today: blocked)       | Set `paths.versions` in config or pass `--versions-dir`. The blocking constraint is removed.                                                                                                                                                                                                                                |
 
 No Python-side patches; no schema-version bump (per OQ6, design 004 is a pre-M1
 change, the rule applies post-1.0).

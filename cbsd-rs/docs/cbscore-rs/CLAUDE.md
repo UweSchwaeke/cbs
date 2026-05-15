@@ -205,6 +205,26 @@ modules encode the same rule, constant, format, or SQL/YAML key, they will
 drift; extract the shared piece into one place. (Copying three lines is
 sometimes cheaper than a premature abstraction; copying an invariant never is.)
 
+### No panic on operator input
+
+`unwrap()` and `expect()` are **prohibited** on any value that originates from
+operator input — CLI arguments, config file fields, environment variables,
+descriptor contents, secrets contents, on-disk component files, network
+responses (S3, Vault), subprocess outputs. Use `?` to propagate or an explicit
+error variant for these paths.
+
+Panics are permitted **only** where a documented invariant guarantees the value
+is internally well-formed (e.g., `descriptor_path()` returning a path whose
+`parent()` is always `Some` because the function constructs the path
+internally). Document the invariant on every `expect("…")` message so a future
+reader can verify it.
+
+Workspace-internal items consumed only by other crates in the `cbsd-rs/`
+workspace **MUST** be declared `pub(crate)`, not `pub`. `pub` is reserved for
+items intended for consumption by out-of-tree crates. Phase 6 includes a
+dedicated visibility-audit commit before the M1 cut that demotes
+workspace-internal items found at `pub`.
+
 ### KISS — Keep It Simple
 
 The simplest solution that satisfies the requirement wins. Reject cleverness

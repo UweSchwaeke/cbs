@@ -17,10 +17,10 @@ separate `cbscore-rs/` workspace.
 | [Phase 3](002-20260508T1558-03-storage-and-secrets.md)        | M1.2 — S3, Vault, secrets manager, config IO                                                                                   | 3–4     | Pending |
 | [Phase 4](002-20260508T1558-04-runner.md)                     | M1.3 — runner subsystem (state machine, mount layout, podman invocation, signal handling)                                      | 2–3     | Pending |
 | [Phase 5](002-20260508T1558-05-builder-and-releases.md)       | M1.4 — builder pipeline stages + `run_build` orchestrator + releases + containers + image sign/sync + `core::component` loader | 7       | Pending |
-| [Phase 6](002-20260508T1558-06-cbsbuild-cli.md)               | M1.5 — `cbsbuild` clap CLI + logging + exit codes + end-to-end Ceph build acceptance                                           | 4–5     | Pending |
+| [Phase 6](002-20260508T1558-06-cbsbuild-cli.md)               | M1.5 — `cbsbuild` clap CLI + logging + exit codes + visibility audit + end-to-end Rust-only smoke build (M1 cut gate)          | 6       | Pending |
 | [Phase 7](002-20260508T1558-07-worker-cutover.md)             | M2 — `cbsd-worker` switches from `cbscore-wrapper.py` to direct Cargo dep on `cbscore`                                         | 2–3     | Pending |
 
-**Total estimate:** ~26–32 commits across 7 phases.
+**Total estimate:** ~27–33 commits across 7 phases.
 
 ## Dependency Graph
 
@@ -47,7 +47,9 @@ The following are tracked under their own design seq, not folded into this plan:
   minor add after Phase 6).
 - **seq-004** — configurable `VersionDescriptor` location
   (`Config.paths.versions` + `--versions-dir`). M1-scope; interleaves between
-  seq-002 Phase 6 Commit 4 and Commit 5. Plan:
+  seq-002 Phase 6 Commit 4 and Commit 5 (the visibility audit), so the
+  visibility audit covers seq-004's items too and the M1 smoke gate (Phase 6
+  Commit 6) exercises the final M1 CLI surface. Plan:
   [`004-20260513T0900-configurable-version-descriptor-location.md`](004-20260513T0900-configurable-version-descriptor-location.md)
   (3 commits, ~500 LOC).
 - **seq-005** — optional positional VERSION on `cbsbuild versions create`

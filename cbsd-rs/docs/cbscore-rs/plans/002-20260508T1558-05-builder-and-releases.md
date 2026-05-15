@@ -156,9 +156,21 @@ write per-component `BuildComponentInfo` records.
 
 **Testable:**
 
-- Unit tests on the patch walker against fixture directory trees: given a
-  `components/ceph/patches/` with `19/`, `19.2/`, `19.2.3/`, and top-level
-  patches, assert the right subset is selected for `ces-v19.2.3-dev.1`,
+- Unit tests on the patch walker against fixture directory trees built
+  programmatically at test runtime via `tempfile::TempDir` (NOT stored on-disk
+  under `tests/fixtures/`). The test constructs the `components/ceph/patches/`
+  tree with `19/`, `19.2/`, `19.2.3/`, and top-level patch files via
+  `std::fs::create_dir_all` + `std::fs::write` (each `.patch` is a one-line stub
+  since the walker only inspects the tree shape, not patch content). The tempdir
+  is cleaned up automatically when the test exits. Programmatic fixture
+  authoring is preferred here because (a) the test's intent — "the walker
+  selects the right subset for each VERSION shape" — is far clearer when the
+  tree is built inline in the test body than when a reader has to
+  cross-reference an out-of-band fixture directory; (b) the walker's behaviour
+  depends on directory names exact-matching parsed VERSION components, and
+  exercising this with hand-built trees keeps the test self-contained; (c)
+  `tempfile::TempDir` is already a dev-dependency for the round-trip tests in
+  Phase 1. Assert the right subset is selected for `ces-v19.2.3-dev.1`,
   `ces-v19.2`, and `0193e1a8-7c2e-7000-…` (UUIDv7 — only top-level applies, per
   design 005).
 - Integration test (`#[ignore]`-able): full prepare run against a fixture `ceph`
@@ -206,10 +218,50 @@ primary consumer; Phase 6 imports it through the public surface.
 
 **Design constraints:**
 
-- Walk uses `walkdir` or `tokio::fs::read_dir` recursion; either is fine as long
-  as symlink-handling matches Python's `glob.glob` behaviour (follow symlinks,
-  but do not loop on cycles). Pick `walkdir` for cycle protection out of the
-  box.
+- Walk uses `walkdir` (chosen for cycle protection out of the box). Configure
+  `WalkDir::new(root).follow_links(true)` so symlinks resolve to their targets,
+  matching Python `glob.glob` behaviour. walkdir detects symlink cycles
+  internally and surfaces them as `walkdir::Error` with
+  `loop_ancestor: Some(...)` populated; the loader **warns-and-continues** on
+  cycle detection rather than aborting the walk:
+
+  ```rust
+  for entry in WalkDir::new(root).follow_links(true) {
+      let entry = match entry {
+          Ok(e) => e,
+          Err(err) if err.loop_ancestor().is_some() => {
+              tracing::warn!(
+                  target: TARGET_CORE_COMPONENT,
+                  path = %err.path().unwrap_or(root).display(),
+                  loop_ancestor = %err.loop_ancestor().unwrap().display(),
+                  "skipping symlink cycle during component walk",
+              );
+              continue;
+          }
+          Err(err) => return Err(ComponentError::Walk { source: err.into() }),
+      };
+      // … process entry …
+  }
+  ```
+
+  This guarantees that an operator deployment with a stray symlink cycle in
+  `components/` does not block component loading — the cycle is logged once with
+  a structured `path` + `loop_ancestor` field so operators can find and fix it,
+  and the rest of the tree loads normally. Other walk errors (permission denied,
+  IO failure) still propagate via `ComponentError::Walk`.
+
+- **Component-name comparison is case-sensitive.** Two component files declaring
+  `name: ceph` and `name: Ceph` are **distinct** components, not duplicates —
+  the `HashMap<String, CoreComponent>` keys them apart, and the
+  `DuplicateComponentName` detection only triggers on exact string equality
+  (Rust `String` equality is byte-equality, not Unicode-normalised). This
+  matches Python's `dict` keying semantics. Operators with case-folding
+  filesystems (HFS+ default, NTFS) who rely on case to disambiguate component
+  names should be aware that the on-disk filename layout is independent of the
+  in-descriptor `name:` field — two files at `Ceph/cbs.component.yaml` and
+  `ceph/cbs.component.yaml` may collide at the filesystem layer on case-folding
+  mounts, but cbscore-rs only sees the `name:` field inside each file's YAML, so
+  the case-sensitivity guarantee is load-bearing.
 - Parse failures on individual files do **not** cascade: log the per-file error
   at `tracing::warn!` with structured fields:
   ```rust

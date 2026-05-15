@@ -140,7 +140,31 @@ replacing the Python `aioboto3` driver.
   Captures the operation duration and arg shape in the trace timeline so
   operators can see slow S3 ops without adding manual span scaffolding.
 - HTTP timeouts go via `aws_sdk_s3::Config::builder().timeout_config(…)`;
-  default to 30s read / 30s connect.
+  default to 30s read / 30s connect. **The 30s default is appropriate for the
+  small-object operations cbscore-rs uses (HEAD, ListObjectsV2,
+  release-descriptor PUT, sub-MB JSON / YAML PUT), but it is NOT sufficient for
+  large RPM uploads on slow links.** A 500 MB RPM at 20 MB/s takes 25 s — close
+  to the limit; the same upload over a 5 MB/s link blows it. Operators on slow
+  links should set `CBSCORE_S3_READ_TIMEOUT_SECS` (read by `utils::s3` at module
+  init, overrides the 30s default; falls back to 30s when unset or invalid). The
+  env var is read once at module init via `OnceCell`, so the per-call timeout
+  cost is zero. M1 keeps the default at 30s; raising the default would mask
+  transient hangs on healthy links. Future work could swap in multipart upload
+  for objects above a threshold, but that is post-M1 scope.
+- **Retry-behaviour asymmetry across subsystems.** `aws-sdk-s3` ships with a
+  built-in retry policy: up to **3 attempts** per operation with exponential
+  backoff, applied transparently inside the SDK for retryable errors
+  (`Throttling*`, `RequestTimeout`, 5xx). `utils::vault` (Commit 2) has **no
+  built-in retry** — every `vaultrs` call goes through once and surfaces
+  transient errors immediately. This is intentional asymmetry matching upstream
+  library behaviour, but operators see different failure surfaces for transient
+  errors across the two subsystems: flaky S3 networks self-heal up to 3 attempts
+  deep before the operator sees an `S3Error`, while flaky Vault networks surface
+  `VaultError` on the first transient. Operator-actionable note in the README's
+  troubleshooting section: a `VaultError::RequestFailed` on a known- reliable
+  Vault deployment is often a one-off — `cbsbuild build` is safe to re-run.
+  Wrapping `utils::vault` calls in caller-side retry is intentionally _not_ done
+  in M1; can be revisited if benchmarks show operator-impacting flake.
 - `check_release_exists` distinguishes 404 (returns `Ok(false)`) from permission
   / network errors (returns `Err`).
 - Content-type detection in `release_upload_components` is a simple match on
@@ -299,7 +323,15 @@ registry + signing + storage) to Rust. The Python tree split mirrored in design
   - `pub async fn load_files(paths: &[Utf8Path]) -> Result<SecretsMgr, SecretsError>`
     — load each file via `Secrets::load` (the private helper in `models.rs`),
     call `merge()` per design 002 line 628–629. Async because file reads go via
-    `tokio::fs`.
+    `tokio::fs`. **An empty `paths` slice returns `Ok(SecretsMgr::empty())`**
+    (an empty manager with all four family HashMaps initialized to empty) — not
+    an error. Operator-facing rationale: deployments that mint `secrets.yaml`
+    from Vault refs at request time start with zero pre-populated files; the
+    manager is built incrementally and the `paths.is_empty()` case is a normal
+    startup path, not an operator-actionable failure. The caller is responsible
+    for ensuring `SecretsMgr` is non-empty by the time `dump_to_runner` is
+    called if the build pipeline requires credentials — this is a per-build
+    policy decision, not a manager-construction concern.
   - `pub fn merge(&mut self, other: Secrets)` — append the per-family Vecs.
   - `pub async fn resolve_vault_refs(&mut self, config: &VaultConfig) -> Result<(), SecretsError>`
     — walks each Vault-side entry across all four families (`GitVaultCreds`,
@@ -311,7 +343,15 @@ registry + signing + storage) to Rust. The Python tree split mirrored in design
   - `pub async fn dump_to_runner(&self, path: &Utf8Path) -> Result<(), SecretsError>`
     — serialise the merged + resolved set to YAML, write to a tempfile that the
     runner (Phase 4) mounts at `/runner/cbs-build.secrets.yaml` (design 002
-    §Runner Subsystem mount table).
+    §Runner Subsystem mount table). **The write is atomic: serialise to a
+    sibling tempfile (`<path>.tmp`) with mode 0600 via `camino-tempfile`,
+    `tokio::fs::sync_all` to flush the file's data + metadata to disk, then
+    `tokio::fs::rename` to the final path.** This guarantees the runner never
+    observes a partially-written secrets file if `dump_to_runner` is interrupted
+    (signal, panic, runner kill). Mode 0600 is set on the tempfile **before**
+    the rename so the file is owner-only from the moment it exists at the final
+    path; secrets are never world-readable even transiently. Rename within the
+    same directory is atomic on Linux (POSIX `rename(2)` guarantee).
 - `cbsd-rs/cbscore/src/secrets/git.rs` — git-secret-specific helpers (e.g.,
   extracting an SSH key from a `GitVaultCreds::Ssh` entry's vault payload into a
   temp `~/.ssh/key` file with mode 0600).
@@ -368,7 +408,13 @@ registry + signing + storage) to Rust. The Python tree split mirrored in design
   replaced with the corresponding `*Plain*` variant.
 - Integration test (`#[ignore]`-able): write a real `secrets.yaml` to tempfile,
   load via `load_files`, dump via `dump_to_runner`, parse the dumped file and
-  assert structural equality (round-trip on a realistic shape).
+  assert structural equality (round-trip on a realistic shape). **The fixture
+  must populate at least one entry in each of the four credential families
+  (`git`, `storage`, `signing`, `registry`)** — a single-family fixture would
+  not exercise the per-family HashMap merge/dump paths and could let a
+  serde-side bug in one family slip past the test. Each family entry should pair
+  a `*Plain*` and a `*Vault*` variant where applicable so the dump path covers
+  both shapes.
 - Mode-0600 assertion on the dumped tempfile: the file is not world-readable.
 - Mode-0600 assertion on the SSH key tempfile written by `secrets/git.rs` when
   extracting a `GitVaultCreds::Ssh` payload: the file is not world-readable
@@ -388,16 +434,31 @@ Land the file IO for the config types defined in Phase 1. Per design 002
     — read the file via `tokio::fs::read_to_string`, choose YAML vs JSON by
     extension (`.yaml` / `.yml` → YAML, anything else → JSON), parse via
     `VersionedConfig::into_latest()` (Phase 1 Commit 5).
+    **`io::ErrorKind::NotFound` on the `tokio::fs::read_to_string` call maps to
+    `ConfigError::NotFound { path: path.to_owned() }`** (Phase 1 Commit 2 added
+    the variant), not a generic `Io { source }` variant. The CLI's top-level
+    error renderer can match on `NotFound` specifically and surface the pinned
+    Display text
+    (`"config file not found at {path}; create one with cbsbuild config init"`),
+    giving the operator a clear next step. Other IO errors (permission denied,
+    IO failure mid-read) still propagate via the
+    `Io { #[from] source: std::io::Error }` variant.
   - `pub async fn Config::store(&self, path: &Utf8Path) -> Result<(), ConfigError>`
     — serialise via `serde_saphyr::to_string` (two-space indent, flow-style
-    off), wrap as `VersionedConfig::V1`, write to disk via `tokio::fs::write`.
-    Per design 002 line 498–507: creates the parent dir if it does not exist
-    (`tokio::fs::create_dir_all`), mirroring Python's
-    `mkdir(exist_ok=True, parents=True)` in `cmds/config.py:302`. **Both
-    functions are `async fn`** because they do filesystem IO via `tokio::fs`.
-    (Design 002's sketch lines 506–507 uses `pub fn` matching the Python
-    signature; the Rust port is fully async, so the IO operations become
-    `async fn` to avoid blocking the tokio runtime.)
+    off), wrap as `VersionedConfig::V1`. Per design 002 line 498–507: creates
+    the parent dir if it does not exist (`tokio::fs::create_dir_all`), mirroring
+    Python's `mkdir(exist_ok=True, parents=True)` in `cmds/config.py:302`. **The
+    write is atomic: serialise to a sibling tempfile in the same parent dir (via
+    `camino-tempfile`), `tokio::fs::sync_all` to flush data + metadata to disk,
+    then `tokio::fs::rename` to the final path.** Mirrors the same pattern used
+    by `SecretsMgr::dump_to_runner` (Commit 3) and by
+    `cbscore::versions::desc::write_descriptor` (Phase 4 Commit 1): rename
+    within the same directory is atomic on Linux, so a concurrent reader never
+    observes a partially-written config file even if `store` is interrupted
+    (signal, panic, write error). **Both functions are `async fn`** because they
+    do filesystem IO via `tokio::fs`. (Design 002's sketch lines 506–507 uses
+    `pub fn` matching the Python signature; the Rust port is fully async, so the
+    IO operations become `async fn` to avoid blocking the tokio runtime.)
 - `cbsd-rs/cbscore/src/lib.rs` — `pub mod config;`.
 
 **Design constraints:**
