@@ -179,25 +179,49 @@ cleanly from Commit 1.
   `pub use resolve::resolve_root;` so callers reach it as
   `cbscore::versions::resolve_root`. This file-per-IO-function layout matches
   `versions/desc.rs` (Phase 4 Commit 1's `read_descriptor`) and
-  `versions/create.rs` (Phase 6 Commit 2's `version_create_helper`). Add:
-  `pub async fn resolve_root(cli: Option<&Utf8Path>, config: &Config) -> Result<Utf8PathBuf, VersionError>`
-  implementing the precedence:
-  1. If `cli.is_some()` → return that path.
-  2. Else if `config.paths.versions.is_some()` → return that path.
-  3. Else → call `cbscore::utils::git::repo_root().await` (Phase 2 Commit 4),
-     return `repo_root.join("_versions")`. On `Err` from `repo_root`, capture
-     cwd best-effort
-     (`std::env::current_dir().ok().and_then(|p| Utf8PathBuf::try_from(p).ok()).unwrap_or_else(|| Utf8PathBuf::from("<unknown>"))`)
-     and return `Err(VersionError::NoDescriptorRoot { cwd })`. Never propagate
-     the raw `std::io::Error` from `current_dir`; that would bypass the OQ5
-     friendly text.
-- `cbsd-rs/cbscore-types/src/versions/errors.rs` — add
-  `NoDescriptorRoot { cwd: Utf8PathBuf }` variant to `VersionError` (which
-  already lives in `cbscore-types` per Phase 1 Commit 2's error taxonomy) and
-  implement its `Display` arm in the same file. `Utf8PathBuf` is already a dep
-  of `cbscore-types` via `camino` (Phase 1 Commit 1); rendering `cwd` is pure
-  string formatting that does **not** call any `cbscore` IO function, so no
-  layering violation occurs. The `Display` arm produces the OQ5 four-line text:
+  `versions/create.rs` (Phase 6 Commit 2's `version_create_helper`). Add two
+  items:
+  - `pub async fn resolve_root(cli: Option<&Utf8Path>, config: &Config) -> Result<Utf8PathBuf, VersionError>`
+    implementing the precedence:
+    1. If `cli.is_some()` → call `canonicalize_root(p).await` and return.
+    2. Else if `config.paths.versions.is_some()` → call
+       `canonicalize_root(p).await` and return.
+    3. Else → call `cbscore::utils::git::repo_root().await` (Phase 2 Commit 4),
+       return `repo_root.join("_versions")` (no canonicalize — git's
+       `--show-toplevel` already returns an absolute, symlink-resolved path). On
+       `Err` from `repo_root`, capture cwd best-effort
+       (`std::env::current_dir().ok().and_then(|p| Utf8PathBuf::try_from(p).ok()).unwrap_or_else(|| Utf8PathBuf::from("<unknown>"))`)
+       and return `Err(VersionError::NoDescriptorRoot { cwd })`. Never propagate
+       the raw `std::io::Error` from `current_dir`; that would bypass the OQ5
+       friendly text.
+  - `async fn canonicalize_root(p: &Utf8Path) -> Result<Utf8PathBuf, VersionError>`
+    — private helper that calls `tokio::fs::canonicalize(p.as_std_path())` to
+    produce an absolute, symlink-resolved path. On `Err` (most commonly `ENOENT`
+    because the operator-supplied directory does not exist yet), return
+    `Err(VersionError::DescriptorRootResolve { path: p.to_owned(), source })`.
+    If the resolved path is non-UTF-8, return
+    `Err(VersionError::DescriptorRootNotUtf8 { path })` with the lossy string
+    form. Canonicalization runs before every downstream consumer
+    (`descriptor_path`, the patch walker, the runner mount line) so the
+    `debug_assert!(root.is_absolute())` in `descriptor_path` (Commit 1 of this
+    plan) is guaranteed to hold. Operators relocating the descriptor store must
+    `mkdir -p` the target before passing `--versions-dir` / setting
+    `paths.versions`; the canonicalize step fails with a clean
+    operator-actionable error otherwise.
+- `cbsd-rs/cbscore-types/src/versions/errors.rs` — add three variants to
+  `VersionError` (which already lives in `cbscore-types` per Phase 1 Commit 2's
+  error taxonomy):
+  - `NoDescriptorRoot { cwd: Utf8PathBuf }` — the OQ5 "no override, no git, no
+    fallback" case.
+  - `DescriptorRootResolve { path: Utf8PathBuf, source: std::io::Error }` —
+    `canonicalize` failed on an operator-supplied path (most commonly ENOENT
+    because the directory doesn't exist yet).
+  - `DescriptorRootNotUtf8 { path: String }` — `canonicalize` succeeded but the
+    resolved absolute path is non-UTF-8. Implement each `Display` arm in the
+    same file. `Utf8PathBuf` is already a dep of `cbscore-types` via `camino`
+    (Phase 1 Commit 1); rendering pure string formatting does **not** call any
+    `cbscore` IO function, so no layering violation occurs. The
+    `NoDescriptorRoot` `Display` arm produces the OQ5 four-line text:
   ```text
   cannot resolve descriptor store location.
     no --versions-dir flag was supplied,
@@ -205,6 +229,11 @@ cleanly from Commit 1.
     and the current directory ({cwd}) is not inside a git checkout.
     set one of the above to choose where descriptors live.
   ```
+  The `DescriptorRootResolve` arm produces an operator-actionable message naming
+  the path and the underlying error, with hint text pointing at `mkdir -p`. The
+  `DescriptorRootNotUtf8` arm names the rejected path. Both variants and their
+  pinned Display text are documented in design 004 §Resolver as the canonical
+  specification; this commit implements them.
 
 **Design constraints:**
 
@@ -225,10 +254,18 @@ cleanly from Commit 1.
 
 **Testable:**
 
-- Unit test: CLI flag wins over config field. Pass both, assert CLI value
-  returned.
+- Unit test: CLI flag wins over config field. Pass both, assert the resolved
+  canonicalized path matches.
 - Unit test: config field wins over fallback. Pass `cli = None`, config field
-  `Some("/x")`, assert `/x` returned (no git call).
+  pointing at a real `tempfile::TempDir`, assert the canonicalized path of that
+  tempdir is returned (no git call).
+- Unit test: `canonicalize_root` errors on a non-existent path. Pass
+  `--versions-dir /tmp/does-not-exist-<random>`, assert
+  `Err(VersionError::DescriptorRootResolve { path, source })` with
+  `source.kind() == NotFound`.
+- Unit test: `canonicalize_root` resolves a symlink. Create a real dir, symlink
+  to it, pass the symlink path, assert the returned path is the symlink target
+  (not the symlink itself).
 - Unit test: fallback works inside a temp git repo. `git init` a temp dir, `cd`
   into it, call `resolve_root(None, &config_with_no_versions)`, assert the
   result is `<tempdir>/_versions`.
