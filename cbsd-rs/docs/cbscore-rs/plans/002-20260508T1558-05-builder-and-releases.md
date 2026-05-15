@@ -55,7 +55,8 @@ string (CLI tree lands in Phase 6).
 - Phase 3 — `utils::s3` for RPM + release-descriptor uploads; `utils::vault` for
   transit signing; `config::Config` for `paths.scratch` / `signing.gpg` /
   `signing.transit` / `storage.s3.bucket` settings; `secrets::SecretsMgr` for
-  resolved GPG passphrases and registry creds.
+  resolved git credentials (consumed by `prepare::run` for private-repo source
+  fetches), GPG passphrases (signing), and registry creds (upload).
 - Phase 4 — Phase 5 does **not** call into the runner. The runner (host-side)
   spawns the container that invokes the in-container `cbsbuild` (Phase 6 CLI)
   which then calls `builder::run_build` (this phase). Phase 4 is a peer, not a
@@ -107,10 +108,17 @@ write per-component `BuildComponentInfo` records.
   CLI; no external `cbscore-types` consumer needs it.
 - `cbsd-rs/cbscore/src/builder/prepare.rs` — port of
   `cbscore/builder/prepare.py`. Public surface:
-  - `pub async fn run(desc: &VersionDescriptor, config: &Config, opts: &BuildOptions) -> Result<PrepareReport, BuilderError>`
+  - `pub async fn run(desc: &VersionDescriptor, config: &Config, secrets: &SecretsMgr, opts: &BuildOptions) -> Result<PrepareReport, BuilderError>`
     — the stage entry point. Returns a `PrepareReport` carrying the
     per-component `BuildComponentInfo` records that downstream stages consume.
-    `PrepareReport` is declared inline in this file.
+    `PrepareReport` is declared inline in this file. The `secrets: &SecretsMgr`
+    arg threads through to the underlying `utils::git` calls so that source
+    fetches against private SSH/HTTPS repos can resolve the matching `GitCreds`
+    entry by host (matches design 002's §Build Pipeline orchestrator sketch,
+    which threads `secrets` into every stage uniformly). Even on M1 deployments
+    with public-only repos, the param is present so the orchestrator's
+    `prepare::run(desc, config, secrets, opts).await?` line matches the other
+    stages 1:1.
   - Private helpers for source fetch (via `utils::git::git_clone` +
     `git_fetch`), patch-walker (per design 002 §Effects of UUIDv7 VERSIONs
     §Patches per design 005 — the patch walker that selects

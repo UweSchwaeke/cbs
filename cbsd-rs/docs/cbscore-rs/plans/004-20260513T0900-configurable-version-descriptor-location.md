@@ -78,12 +78,14 @@ Design references: design 004 (this plan implements its Migration table steps
 seq-004 interleaves between **seq-002 Phase 6 Commit 4 and Commit 5**.
 
 The recommended order is: land Phase 6 Commits 1–4, then this plan's three
-commits, then Phase 6 Commit 5 (M1 acceptance gate). This way the gate exercises
-the configurable resolver instead of the transitional hardcoded path. The Phase
-6 plan's §Out of scope block records this interleave point and the slip-handling
-fallback explicitly (lines 67–77 of `002-20260508T1558-06-cbsbuild-cli.md`); if
-seq-004 slips, the acceptance gate runs against the hardcoded path with a note
-that `--versions-dir` is not yet exercised, and re-runs after seq-004 lands.
+commits, then Phase 6 Commits 5–6 (visibility audit + M1 smoke gate). This way
+the smoke gate exercises the configurable resolver instead of the transitional
+hardcoded path, and the visibility audit (Commit 5) covers seq-004's newly-added
+items too. The Phase 6 plan's §Out of scope block records this interleave point
+and the slip-handling fallback explicitly (lines 67–77 of
+`002-20260508T1558-06-cbsbuild-cli.md`); if seq-004 slips, the M1 smoke gate
+(Commit 6) runs against the hardcoded path with a note that `--versions-dir` is
+not yet exercised, and re-runs after seq-004 lands.
 
 Step 5 of design 004's Migration table — the interactive `config init` "Versions
 path" prompt and the bypass-mode pre-fill — is **deliberately out of scope**
@@ -321,15 +323,15 @@ that Phase 6 Commit 2 landed.
 - Unit test: with both unset and the test cwd outside any git repo, the command
   exits non-zero with the OQ5 error text on stderr (no panic, no
   `std::io::Error` leaked through).
-- Integration test slot for the Phase 6 Commit 5 M1 acceptance gate: add
+- Integration test slot for the Phase 6 Commit 6 M1 smoke gate: add
   `--versions-dir <tempdir>` to one invocation so the gate exercises the
   resolved-CLI-flag path end-to-end. (This is a one-line addition to the
   existing test fixture; the gate itself is Phase 6's responsibility.)
 
 ## End-of-feature acceptance (interleave gate)
 
-After all three commits land, before seq-002 Phase 6 Commit 5 (M1-acceptance)
-runs:
+After all three commits land, before seq-002 Phase 6 Commits 5–6 (visibility
+audit + M1 smoke gate) run:
 
 - `cargo build --workspace`, `cargo test --workspace`,
   `cargo clippy --workspace`, `cargo fmt --all --check` all pass with zero
@@ -346,6 +348,6 @@ runs:
   the seq as **Landed** (or whichever status keyword matches the README's
   existing usage when the work completes).
 
-When this gate is green, seq-002 Phase 6 Commit 5 runs and includes
-`--versions-dir` in its M1 acceptance fixtures so the gate certifies the final
-M1-1.0.0 CLI surface.
+When this gate is green, seq-002 Phase 6 Commits 5–6 run and include
+`--versions-dir` in the M1 smoke gate's fixtures (Commit 6) so the gate
+certifies the final M1-1.0.0 CLI surface.

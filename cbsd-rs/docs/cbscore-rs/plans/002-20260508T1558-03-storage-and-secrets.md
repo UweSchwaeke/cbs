@@ -290,7 +290,7 @@ independent review.
   CBSCORE_TEST_VAULT_TOKEN to enable" message when either is missing. Un-ignore
   in CI via `cargo test -- --include-ignored` once the dev-Vault sidecar is
   configured. Matches the env-var contract pattern from Phase 3 Commit 1
-  (AWS*_), Phase 6 Commit 5 (CBSCORE*TEST*_), and Phase 7 Commit 3.
+  (AWS*_), Phase 6 Commit 6 (CBSCORE*TEST*_), and Phase 7 Commit 3.
 - Negative test: KV read on a missing path returns
   `Err(VaultError::PathNotFound)` (not a generic `RequestFailed`).
 - Negative test: AppRole login with an invalid `role_id` returns
