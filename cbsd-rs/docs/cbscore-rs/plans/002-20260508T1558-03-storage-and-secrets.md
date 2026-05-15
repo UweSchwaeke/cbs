@@ -100,13 +100,27 @@ replacing the Python `aioboto3` driver.
     `application/x-rpm`, JSON → `application/json`).
   - `s3_upload_rpms(bucket, key_prefix, rpm_paths) -> Result<(), S3Error>` (used
     by `builder::upload` in Phase 5).
-- `cbsd-rs/cbscore/src/utils/s3/errors.rs` — `S3Error` enum wrapping
-  `aws_sdk_s3::Error` and `aws_sdk_s3::operation::*::*Error` per operation via
-  `#[from]`. Design 002 §Error Taxonomy line 239–240 explicitly allows boxing
-  framework errors (`aws_sdk_s3`, `reqwest`, …) that cannot be exhaustively
-  matched. `S3Error` lives in `cbscore`, not `cbscore-types`, because the
-  cbscore-types error taxonomy doesn't include S3 — callers in `releases::s3`
-  (Phase 5) wrap via `#[from] S3Error` into their domain `ReleaseError`.
+- `cbsd-rs/cbscore/src/utils/s3/errors.rs` — `S3Error` enum with one variant per
+  S3 operation cbscore-rs uses, each carrying `#[from]` for the matching
+  `aws_sdk_s3::operation::*::*Error` type:
+  - `Head { #[from] source: SdkError<HeadObjectError> }` — used by
+    `check_release_exists`. 404-handling logic at the call site converts
+    `Err(SdkError::ServiceError(_))` with HTTP status 404 to `Ok(false)` before
+    this variant is constructed.
+  - `List { #[from] source: SdkError<ListObjectsV2Error> }` — used by
+    `check_released_components`.
+  - `Put { #[from] source: SdkError<PutObjectError> }` — used by
+    `release_desc_upload`, `release_upload_components`, `s3_upload_rpms`.
+  - `Other { #[from] source: aws_sdk_s3::Error }` — catch-all for the aggregate
+    error type when an operation surfaces an error not covered by its
+    per-operation type.
+
+  Design 002 §Error Taxonomy line 239–240 explicitly allows boxing framework
+  errors (`aws_sdk_s3`, `reqwest`, …) that cannot be exhaustively matched.
+  `S3Error` lives in `cbscore`, not `cbscore-types`, because the cbscore-types
+  error taxonomy doesn't include S3 — callers in `releases::s3` (Phase 5) wrap
+  via `#[from] S3Error` into their domain `ReleaseError`.
+
 - `cbsd-rs/cbscore/Cargo.toml` — add `aws-config = "1"` and `aws-sdk-s3 = "1"`
   per design 001 §Cargo Sketch (already listed in the cbscore Cargo sketch as
   IO-side deps that fill in over Phases 2–5).
@@ -119,6 +133,12 @@ replacing the Python `aioboto3` driver.
 - `aws_config::load_defaults(BehaviorVersion::latest())` at module init, cached
   in a `OnceCell` per process.
 - All operations are async free functions; no struct state.
+- **Tracing instrumentation.** Every public async function is wrapped in
+  `#[tracing::instrument(level = "debug", target = "cbscore::utils::s3", skip(body, rpm_paths))]`
+  (or the appropriate target / skip-list per function — `skip` excludes large
+  buffers and credential-bearing args from automatic span field capture).
+  Captures the operation duration and arg shape in the trace timeline so
+  operators can see slow S3 ops without adding manual span scaffolding.
 - HTTP timeouts go via `aws_sdk_s3::Config::builder().timeout_config(…)`;
   default to 30s read / 30s connect.
 - `check_release_exists` distinguishes 404 (returns `Ok(false)`) from permission
@@ -169,13 +189,18 @@ the Python `hvac` driver.
     requested path. Operator-actionable; the test in §Testable asserts this
     variant specifically. Display text pinned:
     `"vault path '{mount}/{path}' not found"`.
-  - `AuthFailed { method: &'static str, source: vaultrs::error::ClientError }` —
-    token / AppRole / userpass login failed. `method` is one of `"token"`,
-    `"approle"`, `"userpass"` for the operator-visible message. Display text
-    pinned: `"vault {method} auth failed: {source}"`.
-  - `RequestFailed { source: vaultrs::error::ClientError }` — generic transport
-    / 5xx / unexpected-response error; `#[from]` for the boxed
-    `vaultrs::error::ClientError`. Display text pinned:
+  - `AuthFailed { method: &'static str, #[source] source: vaultrs::error::ClientError }`
+    — token / AppRole / userpass login failed. `method` is one of `"token"`,
+    `"approle"`, `"userpass"` for the operator-visible message. Explicit
+    `#[source]` annotation (not relying on thiserror's auto-detection of the
+    field name `source`) ensures `Error::source()` chain traversal reaches the
+    underlying ClientError unambiguously. No `#[from]` (multi-field variants
+    cannot use it — the conversion is hand-rolled at the auth call site).
+    Display text pinned: `"vault {method} auth failed: {source}"`.
+  - `RequestFailed { #[from] source: vaultrs::error::ClientError }` — generic
+    transport / 5xx / unexpected-response error. `#[from]` triggers the
+    automatic `From<ClientError>` impl and marks the field as `#[source]`
+    automatically (thiserror convention). Display text pinned:
     `"vault request failed: {source}"`.
   - `BadResponse { message: String }` — Vault returned a 200 with a body shape
     the wrapper didn't expect (e.g., missing `data` key in a KV v2 response).
@@ -210,6 +235,12 @@ the Python `hvac` driver.
   auth applies (no token caching) — same security posture as `kv_read`.
 - All vault traffic uses `rustls` (no native TLS). HTTP timeouts as for S3
   (30s).
+- **Tracing instrumentation.** Every public async function is wrapped in
+  `#[tracing::instrument(level = "debug", target = "cbscore::utils::vault", skip(config))]`
+  (`skip(config)` excludes the `VaultConfig` arg from automatic span field
+  capture — it carries credential-bearing fields). Captures KV-read /
+  AppRole-login / transit-sign duration in the trace timeline so slow Vault ops
+  surface without manual span scaffolding.
 
 **Commit-size rationale:** ~300 LOC sits below the 400-line sweet spot named in
 `cbsd-rs/CLAUDE.md` §Commit Granularity. Kept as a standalone commit because

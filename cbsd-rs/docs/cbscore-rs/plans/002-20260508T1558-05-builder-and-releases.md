@@ -137,6 +137,15 @@ write per-component `BuildComponentInfo` records.
   the accepted recovery semantic for `force = true`: the operator explicitly
   asked for a fresh build, so a partial-clear that leaves nothing behind is
   correct behaviour.
+- **Concurrent invocation: invoker responsibility.** Each `cbsbuild build`
+  invocation derives `config.paths.scratch` from its `--config` (or
+  default-resolved config). cbsbuild does **not** acquire a lock on the scratch
+  path; the binary assumes the invoker (operator or cbsd-worker) ensures no two
+  concurrent invocations share the same scratch path for the same component.
+  cbsd-worker enforces this by handling one build at a time (Phase 7 spec).
+  Operators running `cbsbuild build` directly are responsible for not
+  parallelising two builds against the same `config.paths.scratch`. No internal
+  mutual-exclusion mechanism ships with cbscore-rs.
 - The patch walker handles both regex-parseable VERSIONs and malformed inputs
   per design 005 (the Rust port adds an explicit guard catching
   `Err(MalformedVersion)` from `get_major_version` / `get_minor_version`,
@@ -202,13 +211,22 @@ primary consumer; Phase 6 imports it through the public surface.
   but do not loop on cycles). Pick `walkdir` for cycle protection out of the
   box.
 - Parse failures on individual files do **not** cascade: log the per-file error
-  at `tracing::warn!` (target `"cbscore::core::component"`) and continue. The
-  function returns the **last** per-file error variant encountered
-  (`ComponentError::Yaml`, `MissingSchemaVersion`, or `UnknownSchemaVersion`)
-  only if **no** components were successfully loaded; mixed partial success is
-  reported as `Ok(<the loaded subset>)` with the per-file errors as warnings on
-  the log. This matches Python's `cbscore/core/component.py` which
-  `try / except continue`s on per-file parse failure.
+  at `tracing::warn!` with structured fields:
+  ```rust
+  tracing::warn!(
+      target: TARGET_CORE_COMPONENT,
+      path = %path,
+      "component file parse failed: {}", err,
+  );
+  ```
+  `path` is a structured field (not interpolated into the message string) so log
+  parsers / filters can extract it. The function returns the **last** per-file
+  error variant encountered (`ComponentError::Yaml`, `MissingSchemaVersion`, or
+  `UnknownSchemaVersion`) only if **no** components were successfully loaded;
+  mixed partial success is reported as `Ok(<the loaded subset>)` with the
+  per-file errors as warnings on the log. This matches Python's
+  `cbscore/core/component.py` which `try / except continue`s on per-file parse
+  failure.
 - Duplicate `name:` field across two component files **is** an error
   (`DuplicateComponentName`) — the in-memory map can only carry one value per
   key. Python raises at the same point.
