@@ -12,4 +12,5 @@
 
 pub mod gc;
 pub mod sse;
+pub mod tail;
 pub mod writer;

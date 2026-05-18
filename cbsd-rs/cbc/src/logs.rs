@@ -49,7 +49,7 @@ struct TailArgs {
     id: i64,
 
     /// Number of lines to show
-    #[arg(short = 'n', long = "lines", default_value = "30")]
+    #[arg(short = 'n', long = "lines", default_value = "50")]
     n: u32,
 }
 
@@ -78,8 +78,9 @@ struct TailResponse {
     #[allow(dead_code)]
     build_id: i64,
     lines: Vec<String>,
-    total_lines: u64,
     returned: u64,
+    requested: u64,
+    truncated: bool,
 }
 
 #[derive(Deserialize)]
@@ -123,7 +124,17 @@ async fn cmd_tail(
         .get(&format!("builds/{}/logs/tail?n={}", args.id, args.n))
         .await?;
 
-    println!("(showing {} of {} lines)", resp.returned, resp.total_lines);
+    if resp.truncated {
+        println!(
+            "(showing {} of {} requested lines; earlier output truncated by server)",
+            resp.returned, resp.requested
+        );
+    } else {
+        println!(
+            "(showing {} of {} requested lines)",
+            resp.returned, resp.requested
+        );
+    }
     for line in &resp.lines {
         println!("{line}");
     }

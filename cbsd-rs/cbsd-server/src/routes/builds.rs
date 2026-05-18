@@ -474,11 +474,14 @@ struct LogsTailQuery {
 }
 
 fn default_tail_n() -> u32 {
-    30
+    50
 }
 
-/// Maximum number of lines the tail endpoint will return.
-const MAX_TAIL_LINES: u32 = 10_000;
+/// Maximum number of lines the tail endpoint will return (per WCP D7).
+const MAX_TAIL_LINES: u32 = 1_000;
+
+/// Maximum bytes the tail endpoint will read from disk per request (WCP D7).
+const MAX_TAIL_BYTES: u64 = 4 * 1024 * 1024;
 
 #[utoipa::path(
     get,
@@ -499,7 +502,7 @@ async fn logs_tail(
     Query(params): Query<LogsTailQuery>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorDetail>)> {
     // Cap n at MAX_TAIL_LINES.
-    let n = params.n.min(MAX_TAIL_LINES) as usize;
+    let requested = params.n.min(MAX_TAIL_LINES) as usize;
 
     // Reuse the same :own/:any logic as get_build — if you can see the
     // build, you can see its logs.
@@ -527,9 +530,8 @@ async fn logs_tail(
     // Determine log file path.
     let log_path = state.config.log_dir.join(format!("builds/{id}.log"));
 
-    // Read the file (if it exists).
-    let contents = match tokio::fs::read_to_string(&log_path).await {
-        Ok(c) => c,
+    let result = match crate::logs::tail::read_tail(&log_path, requested, MAX_TAIL_BYTES).await {
+        Ok(r) => r,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             tracing::warn!(
                 build_id = id,
@@ -539,7 +541,7 @@ async fn logs_tail(
             return Err(auth_error(StatusCode::NOT_FOUND, "no logs yet"));
         }
         Err(e) => {
-            tracing::error!("failed to read log file for build {id}: {e}");
+            tracing::error!("failed to tail log file for build {id}: {e}");
             return Err(auth_error(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to read log file",
@@ -547,16 +549,14 @@ async fn logs_tail(
         }
     };
 
-    // Take last N lines.
-    let all_lines: Vec<&str> = contents.lines().collect();
-    let start = all_lines.len().saturating_sub(n);
-    let tail: Vec<&str> = all_lines[start..].to_vec();
-
     Ok(Json(serde_json::json!({
         "build_id": id,
-        "lines": tail,
-        "total_lines": all_lines.len(),
-        "returned": tail.len(),
+        "lines": result.lines,
+        "returned": result.returned,
+        "requested": result.requested,
+        "truncated": result.truncated,
+        "bytes_scanned": result.bytes_scanned,
+        "max_tail_bytes": MAX_TAIL_BYTES,
     })))
 }
 
