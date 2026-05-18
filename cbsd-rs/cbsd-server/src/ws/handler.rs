@@ -20,9 +20,12 @@ use axum::response::IntoResponse;
 use cbsd_proto::BuildId;
 use cbsd_proto::ws::{BuildFinishedStatus, ServerMessage, WorkerMessage, WorkerReportedState};
 
-use crate::app::AppState;
+use sqlx::SqlitePool;
+
+use crate::app::{AppState, LogWatchers};
 use crate::db;
 use crate::db::workers::WorkerRow;
+use crate::queue::{ActiveAssignmentReceipt, SharedBuildQueue};
 use crate::ws::dispatch;
 use crate::ws::liveness::WorkerState;
 
@@ -653,7 +656,15 @@ async fn handle_worker_message(
             state: ws,
             build_id,
         } => {
-            handle_worker_status(state, connection_id, worker_name, ws, build_id).await;
+            handle_worker_status(
+                state,
+                connection_id,
+                worker_name,
+                registered_worker_id,
+                ws,
+                build_id,
+            )
+            .await;
         }
         WorkerMessage::WorkerStopping { ref reason } => {
             tracing::info!(
@@ -674,11 +685,212 @@ async fn handle_worker_message(
     }
 }
 
+/// Snapshot of an active build observed during idle reconciliation. Captured
+/// under the queue lock so the per-candidate DB lookup and queue mutation can
+/// run without holding the lock across SQLite I/O (cbsd-rs CLAUDE.md
+/// "Correctness Invariants" #2).
+struct IdleReconcileCandidate {
+    build_id: i64,
+    prev_connection_id: String,
+    receipt: ActiveAssignmentReceipt,
+    /// `true` if the previous connection's worker is in the `Connected` state
+    /// (still authenticated and live). `false` if Disconnected, Dead, or
+    /// missing from the workers map.
+    prev_connection_live: bool,
+}
+
+/// Outcome of the idle-reconcile per-candidate decision matrix (WCP D3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum IdleReconcileAction {
+    /// Don't touch this build — leave it for normal in-flight resolution.
+    /// Used for `dispatched + AwaitingReceipt` where the previous connection
+    /// is still live (the dispatch might still complete).
+    Skip,
+    /// Roll the build back to QUEUED, clearing provenance.
+    RollbackToQueued,
+    /// Mark the build FAILURE — the worker reports idle but the DB says
+    /// `started`, so the worker lost the executing build.
+    FailBuild,
+    /// Mark the build REVOKED — the worker reports idle but the DB says
+    /// `revoking`. The revoke target is gone; finalise the build per
+    /// WCP D3's `revoking + idle worker → revoked` row.
+    MarkRevoked,
+}
+
+/// Pure-function decision matrix used by `(WorkerReportedState::Idle, _)`
+/// after the cross-worker filter (build's persisted `worker_id` matches the
+/// reporter). Per WCP D3:
+/// - `dispatched + AwaitingReceipt + prev_live` → Skip
+/// - `dispatched + AwaitingReceipt + !prev_live` → RollbackToQueued
+/// - `dispatched + ReceivedByWorker` → RollbackToQueued (regardless of prev)
+/// - `started` → FailBuild
+/// - `revoking` → MarkRevoked
+/// - other states → Skip
+fn idle_reconcile_decision(
+    db_state: &str,
+    receipt: ActiveAssignmentReceipt,
+    prev_connection_live: bool,
+) -> IdleReconcileAction {
+    match db_state {
+        "dispatched" => match receipt {
+            ActiveAssignmentReceipt::AwaitingReceipt if prev_connection_live => {
+                IdleReconcileAction::Skip
+            }
+            _ => IdleReconcileAction::RollbackToQueued,
+        },
+        "started" => IdleReconcileAction::FailBuild,
+        "revoking" => IdleReconcileAction::MarkRevoked,
+        _ => IdleReconcileAction::Skip,
+    }
+}
+
+/// Terminal status accepted by [`cleanup_terminal_state`]. Closed set,
+/// kept narrow so the helper cannot be invoked with a non-terminal
+/// state string like `"queued"` or `"dispatched"`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TerminalStatus {
+    /// `builds.state = 'failure'`.
+    Failure,
+    /// `builds.state = 'revoked'`.
+    Revoked,
+}
+
+impl TerminalStatus {
+    /// Wire-format spelling stored in the `builds.state` column.
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Failure => "failure",
+            Self::Revoked => "revoked",
+        }
+    }
+}
+
+/// Shared terminal-state cleanup used by every path that finalises an
+/// active build (idle reconciler's FailBuild and MarkRevoked branches,
+/// `fail_build`, `handle_worker_dead`'s "revoking" arm, and the dispatch
+/// module's integrity-reject and revoke-timeout paths). Marks the build
+/// finished with the supplied [`TerminalStatus`], finalises the build
+/// log row, and removes the active entry and log watcher. Takes the
+/// three state pieces it touches explicitly so integration tests can
+/// drive it without a full `AppState`.
+pub(crate) async fn cleanup_terminal_state(
+    pool: &SqlitePool,
+    queue: &SharedBuildQueue,
+    log_watchers: &LogWatchers,
+    build_id: i64,
+    status: TerminalStatus,
+    reason: &str,
+) {
+    let status_str = status.as_str();
+    if let Err(e) =
+        crate::db::builds::set_build_finished(pool, build_id, status_str, Some(reason), None).await
+    {
+        tracing::error!(
+            build_id,
+            status = status_str,
+            "failed to mark build {status_str}: {e}"
+        );
+    }
+    if let Err(e) = crate::db::builds::set_build_log_finished(pool, build_id).await {
+        tracing::error!(build_id, "failed to mark log finished: {e}");
+    }
+    {
+        let mut q = queue.lock().await;
+        q.active.remove(&build_id);
+    }
+    {
+        let mut watchers = log_watchers.lock().await;
+        watchers.remove(&build_id);
+    }
+}
+
+/// Per-candidate idle-reconcile body. Runs the DB-backed cross-worker
+/// filter (WCP D3 / gap G8) and dispatches on `idle_reconcile_decision`.
+/// Takes the state pieces it touches explicitly so integration tests can
+/// drive it with a synthetic candidate, without a full `AppState`.
+async fn idle_reconcile_one(
+    pool: &SqlitePool,
+    queue: &SharedBuildQueue,
+    log_watchers: &LogWatchers,
+    candidate: &IdleReconcileCandidate,
+    registered_worker_id: &str,
+) {
+    let build = match crate::db::builds::get_build(pool, candidate.build_id).await {
+        Ok(Some(b)) => b,
+        _ => return,
+    };
+
+    // Cross-worker filter: only touch builds whose persisted worker_id
+    // matches the reporter's authenticated id.
+    if build.worker_id.as_deref() != Some(registered_worker_id) {
+        return;
+    }
+
+    match idle_reconcile_decision(
+        &build.state,
+        candidate.receipt,
+        candidate.prev_connection_live,
+    ) {
+        IdleReconcileAction::Skip => {
+            tracing::debug!(
+                build_id = candidate.build_id,
+                prev_connection = %candidate.prev_connection_id,
+                db_state = %build.state,
+                receipt = ?candidate.receipt,
+                "reconnect idle: skip"
+            );
+        }
+        IdleReconcileAction::RollbackToQueued => {
+            tracing::warn!(
+                build_id = candidate.build_id,
+                prev_connection = %candidate.prev_connection_id,
+                receipt = ?candidate.receipt,
+                "reconnect idle: rolling back stale dispatch to queued"
+            );
+            dispatch::rollback_active_to_queued(pool, queue, log_watchers, candidate.build_id)
+                .await;
+        }
+        IdleReconcileAction::FailBuild => {
+            tracing::error!(
+                build_id = candidate.build_id,
+                prev_connection = %candidate.prev_connection_id,
+                "reconnect idle: DB=started — marking FAILURE(worker lost build)"
+            );
+            cleanup_terminal_state(
+                pool,
+                queue,
+                log_watchers,
+                candidate.build_id,
+                TerminalStatus::Failure,
+                "worker lost build",
+            )
+            .await;
+        }
+        IdleReconcileAction::MarkRevoked => {
+            tracing::warn!(
+                build_id = candidate.build_id,
+                prev_connection = %candidate.prev_connection_id,
+                "reconnect idle: DB=revoking — marking REVOKED"
+            );
+            cleanup_terminal_state(
+                pool,
+                queue,
+                log_watchers,
+                candidate.build_id,
+                TerminalStatus::Revoked,
+                "idle worker on revoking build",
+            )
+            .await;
+        }
+    }
+}
+
 /// Reconnection decision table.
 async fn handle_worker_status(
     state: &AppState,
     connection_id: &str,
     worker_name: &str,
+    registered_worker_id: &str,
     reported_state: WorkerReportedState,
     reported_build_id: Option<BuildId>,
 ) {
@@ -692,16 +904,66 @@ async fn handle_worker_status(
 
     match (reported_state, reported_build_id) {
         (WorkerReportedState::Building, Some(build_id)) => {
-            let db_state = match crate::db::builds::get_build(&state.pool, build_id.0).await {
-                Ok(Some(b)) => b.state,
-                Ok(None) => "not_found".to_string(),
+            let build = match crate::db::builds::get_build(&state.pool, build_id.0).await {
+                Ok(Some(b)) => b,
+                Ok(None) => {
+                    tracing::warn!(
+                        build_id = build_id.0,
+                        "reconnect: build not found in DB — sending revoke"
+                    );
+                    dispatch::send_reporter_directed_revoke(
+                        &state.worker_senders,
+                        connection_id,
+                        build_id,
+                    )
+                    .await;
+                    return;
+                }
                 Err(e) => {
                     tracing::error!(build_id = build_id.0, "reconnect: DB lookup failed: {e}");
                     return;
                 }
             };
+            let db_state = build.state.as_str();
+            let db_worker_id = build.worker_id.as_deref();
 
-            match db_state.as_str() {
+            // Two-phase ownership check (WCP D1, migration step 4-5): for
+            // resumable states, the persisted `builds.worker_id` must match
+            // the authenticated registered worker ID of the reporter. The
+            // DB query above already ran outside the queue lock; the queue
+            // mutation below reacquires the lock.
+            let resumable = matches!(db_state, "dispatched" | "started");
+            let owns = resumable
+                && db_worker_id
+                    .map(|w| w == registered_worker_id)
+                    .unwrap_or(false);
+
+            if resumable && !owns {
+                tracing::warn!(
+                    build_id = build_id.0,
+                    db_state = %db_state,
+                    db_worker_id = ?db_worker_id,
+                    registered_worker_id = %registered_worker_id,
+                    "reconnect: building claim for build not assigned to this worker"
+                );
+                dispatch::send_unauthorized_action(
+                    &state.worker_senders,
+                    connection_id,
+                    build_id,
+                    cbsd_proto::ws::WorkerBuildAction::WorkerStatus,
+                    cbsd_proto::ws::UnauthorizedBuildReason::NotAssigned,
+                )
+                .await;
+                dispatch::send_reporter_directed_revoke(
+                    &state.worker_senders,
+                    connection_id,
+                    build_id,
+                )
+                .await;
+                return;
+            }
+
+            match db_state {
                 "queued" => {
                     tracing::warn!(
                         build_id = build_id.0,
@@ -749,19 +1011,6 @@ async fn handle_worker_status(
                     );
                     let _ = dispatch::send_build_revoke(state, build_id.0).await;
                 }
-                "not_found" => {
-                    tracing::warn!(
-                        build_id = build_id.0,
-                        "reconnect: build not found in DB — sending revoke"
-                    );
-                    let msg = ServerMessage::BuildRevoke { build_id };
-                    let json = serde_json::to_string(&msg)
-                        .expect("ServerMessage serialization cannot fail");
-                    let senders = state.worker_senders.lock().await;
-                    if let Some(tx) = senders.get(connection_id) {
-                        let _ = tx.send(Message::Text(json.into()));
-                    }
-                }
                 other => {
                     tracing::warn!(
                         build_id = build_id.0,
@@ -773,52 +1022,41 @@ async fn handle_worker_status(
         }
 
         (WorkerReportedState::Idle, _) => {
-            let stale_builds: Vec<(i64, String)> = {
+            // Phase 1 (under queue lock): snapshot every active entry whose
+            // connection differs from the reporter, capturing the prior
+            // connection's liveness and the receipt state. Note the active
+            // entry's connection_id is the PRIOR connection; the reporter
+            // is on a NEW connection_id.
+            let candidates: Vec<IdleReconcileCandidate> = {
                 let queue = state.queue.lock().await;
                 queue
                     .active
                     .values()
-                    .filter(|ab| {
-                        ab.connection_id != connection_id
-                            && queue.get_worker(&ab.connection_id).is_none_or(|ws| {
-                                matches!(ws, WorkerState::Disconnected { .. } | WorkerState::Dead)
-                            })
+                    .filter(|ab| ab.connection_id != connection_id)
+                    .map(|ab| IdleReconcileCandidate {
+                        build_id: ab.build_id,
+                        prev_connection_id: ab.connection_id.clone(),
+                        receipt: ab.receipt,
+                        prev_connection_live: queue
+                            .get_worker(&ab.connection_id)
+                            .is_some_and(|ws| matches!(ws, WorkerState::Connected { .. })),
                     })
-                    .map(|ab| (ab.build_id, ab.connection_id.clone()))
                     .collect()
             };
 
-            for (build_id, old_cid) in &stale_builds {
-                let db_state = match crate::db::builds::get_build(&state.pool, *build_id).await {
-                    Ok(Some(b)) => b.state,
-                    _ => continue,
-                };
-
-                match db_state.as_str() {
-                    "dispatched" => {
-                        tracing::warn!(
-                            build_id = build_id,
-                            old_connection = %old_cid,
-                            "reconnect idle: DB=dispatched — re-queuing"
-                        );
-                        dispatch::rollback_active_to_queued(
-                            &state.pool,
-                            &state.queue,
-                            &state.log_watchers,
-                            *build_id,
-                        )
-                        .await;
-                    }
-                    "started" => {
-                        tracing::error!(
-                            build_id = build_id,
-                            old_connection = %old_cid,
-                            "reconnect idle: DB=started — marking FAILURE(worker lost build)"
-                        );
-                        fail_build(state, *build_id, "worker lost build").await;
-                    }
-                    _ => {}
-                }
+            // Phase 2 (no lock held): for each candidate, run the
+            // DB-backed ownership check (per WCP D3 / gap G8 fix) and
+            // dispatch. Extracted to `idle_reconcile_one` so integration
+            // tests can drive the same path with explicit state args.
+            for cand in &candidates {
+                idle_reconcile_one(
+                    &state.pool,
+                    &state.queue,
+                    &state.log_watchers,
+                    cand,
+                    registered_worker_id,
+                )
+                .await;
             }
 
             if let Err(dispatch::DispatchError::NothingToDispatch) =
@@ -889,30 +1127,15 @@ pub async fn handle_worker_dead(state: &AppState, connection_id: &str) {
                     connection_id = %connection_id,
                     "worker dead while revoking — marking REVOKED"
                 );
-                if let Err(e) = crate::db::builds::set_build_finished(
+                cleanup_terminal_state(
                     &state.pool,
+                    &state.queue,
+                    &state.log_watchers,
                     build_id,
-                    "revoked",
-                    Some("worker dead during revoke"),
-                    None,
+                    TerminalStatus::Revoked,
+                    "worker dead during revoke",
                 )
-                .await
-                {
-                    tracing::error!(build_id = build_id, "failed to mark revoked: {e}");
-                }
-                if let Err(e) =
-                    crate::db::builds::set_build_log_finished(&state.pool, build_id).await
-                {
-                    tracing::error!(build_id = build_id, "failed to mark log finished: {e}");
-                }
-                {
-                    let mut queue = state.queue.lock().await;
-                    queue.active.remove(&build_id);
-                }
-                {
-                    let mut watchers = state.log_watchers.lock().await;
-                    watchers.remove(&build_id);
-                }
+                .await;
             }
             _ => {
                 let mut queue = state.queue.lock().await;
@@ -934,24 +1157,18 @@ pub async fn handle_worker_dead(state: &AppState, connection_id: &str) {
 }
 
 /// Mark a build as FAILURE, clean up active map and log watchers.
+/// Thin `AppState`-aware wrapper around [`cleanup_terminal_state`] for
+/// callers that already have a `&AppState` in scope.
 async fn fail_build(state: &AppState, build_id: i64, reason: &str) {
-    if let Err(e) =
-        crate::db::builds::set_build_finished(&state.pool, build_id, "failure", Some(reason), None)
-            .await
-    {
-        tracing::error!(build_id = build_id, "failed to mark build failed: {e}");
-    }
-    if let Err(e) = crate::db::builds::set_build_log_finished(&state.pool, build_id).await {
-        tracing::error!(build_id = build_id, "failed to mark log finished: {e}");
-    }
-    {
-        let mut queue = state.queue.lock().await;
-        queue.active.remove(&build_id);
-    }
-    {
-        let mut watchers = state.log_watchers.lock().await;
-        watchers.remove(&build_id);
-    }
+    cleanup_terminal_state(
+        &state.pool,
+        &state.queue,
+        &state.log_watchers,
+        build_id,
+        TerminalStatus::Failure,
+        reason,
+    )
+    .await;
 }
 
 /// Clean up worker state on connection close.
@@ -1047,5 +1264,415 @@ fn message_type_name(msg: &WorkerMessage) -> &'static str {
         WorkerMessage::BuildRejected { .. } => "build_rejected",
         WorkerMessage::WorkerStatus { .. } => "worker_status",
         WorkerMessage::WorkerStopping { .. } => "worker_stopping",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn idle_dispatched_awaiting_receipt_live_prev_skips() {
+        let action = idle_reconcile_decision(
+            "dispatched",
+            ActiveAssignmentReceipt::AwaitingReceipt,
+            /* prev_connection_live */ true,
+        );
+        assert_eq!(action, IdleReconcileAction::Skip);
+    }
+
+    #[test]
+    fn idle_dispatched_awaiting_receipt_dead_prev_rolls_back() {
+        let action = idle_reconcile_decision(
+            "dispatched",
+            ActiveAssignmentReceipt::AwaitingReceipt,
+            /* prev_connection_live */ false,
+        );
+        assert_eq!(action, IdleReconcileAction::RollbackToQueued);
+    }
+
+    #[test]
+    fn idle_dispatched_received_by_worker_always_rolls_back() {
+        // Live previous connection is no protection here: ReceivedByWorker
+        // means the worker had it and now reports idle, so it has dropped
+        // the build (WCP D3).
+        for prev_live in [true, false] {
+            let action = idle_reconcile_decision(
+                "dispatched",
+                ActiveAssignmentReceipt::ReceivedByWorker,
+                prev_live,
+            );
+            assert_eq!(
+                action,
+                IdleReconcileAction::RollbackToQueued,
+                "prev_live={prev_live}"
+            );
+        }
+    }
+
+    #[test]
+    fn idle_started_fails_the_build() {
+        for receipt in [
+            ActiveAssignmentReceipt::AwaitingReceipt,
+            ActiveAssignmentReceipt::ReceivedByWorker,
+        ] {
+            for prev_live in [true, false] {
+                let action = idle_reconcile_decision("started", receipt, prev_live);
+                assert_eq!(
+                    action,
+                    IdleReconcileAction::FailBuild,
+                    "receipt={receipt:?} prev_live={prev_live}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn idle_other_states_are_skipped() {
+        for state in ["queued", "failure", "success", "revoked"] {
+            let action =
+                idle_reconcile_decision(state, ActiveAssignmentReceipt::ReceivedByWorker, false);
+            assert_eq!(action, IdleReconcileAction::Skip, "state={state}");
+        }
+    }
+
+    #[test]
+    fn idle_revoking_marks_revoked() {
+        // WCP D3 matrix row: revoking + idle worker → revoked. Receipt
+        // state and prev-connection liveness are irrelevant for this row.
+        for receipt in [
+            ActiveAssignmentReceipt::AwaitingReceipt,
+            ActiveAssignmentReceipt::ReceivedByWorker,
+        ] {
+            for prev_live in [true, false] {
+                let action = idle_reconcile_decision("revoking", receipt, prev_live);
+                assert_eq!(
+                    action,
+                    IdleReconcileAction::MarkRevoked,
+                    "receipt={receipt:?} prev_live={prev_live}"
+                );
+            }
+        }
+    }
+
+    // ---- Integration tests for `idle_reconcile_one` (F4) ----
+    //
+    // These exercise the per-candidate idle reconciler against a real
+    // SQLite pool and a real `SharedBuildQueue` / `LogWatchers` map. They
+    // verify the DB-side observable state — column resets, terminal
+    // status transitions — that the pure-function `idle_reconcile_decision`
+    // tests above cannot observe.
+
+    use std::collections::HashMap;
+    use std::str::FromStr;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    use cbsd_proto::{
+        Arch, BuildComponent, BuildDescriptor, BuildDestImage, BuildSignedOffBy, BuildTarget,
+        Priority,
+    };
+    use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+    use tokio::sync::Mutex;
+
+    use crate::queue::{ActiveBuild, BuildQueue};
+
+    async fn test_pool() -> SqlitePool {
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        let id = COUNTER.fetch_add(1, Ordering::SeqCst);
+        let url = format!(
+            "file:idle_reconcile_test_{pid}_{id}?mode=memory&cache=shared",
+            pid = std::process::id(),
+        );
+        let options = SqliteConnectOptions::from_str(&url)
+            .expect("valid sqlite URL")
+            .pragma("foreign_keys", "ON")
+            .pragma("busy_timeout", "5000");
+        let pool = SqlitePoolOptions::new()
+            .max_connections(4)
+            .min_connections(1)
+            .connect_with(options)
+            .await
+            .expect("pool");
+        sqlx::migrate!("../migrations")
+            .run(&pool)
+            .await
+            .expect("migrations");
+        pool
+    }
+
+    fn sample_descriptor() -> BuildDescriptor {
+        BuildDescriptor {
+            version: "v".into(),
+            channel: None,
+            version_type: None,
+            signed_off_by: BuildSignedOffBy {
+                user: "u".into(),
+                email: "u@e.com".into(),
+            },
+            dst_image: BuildDestImage {
+                name: "img".into(),
+                tag: "tag".into(),
+            },
+            components: vec![BuildComponent {
+                name: "c".into(),
+                git_ref: "main".into(),
+                repo: None,
+            }],
+            build: BuildTarget {
+                distro: "fedora".into(),
+                os_version: "42".into(),
+                artifact_type: "rpm".into(),
+                arch: Arch::X86_64,
+            },
+        }
+    }
+
+    async fn seed_user(pool: &SqlitePool, email: &str) {
+        sqlx::query!(
+            "INSERT INTO users (email, name, active, is_robot) VALUES (?, ?, 1, 0)",
+            email,
+            email,
+        )
+        .execute(pool)
+        .await
+        .expect("seed user");
+    }
+
+    async fn insert_in_state(pool: &SqlitePool, state: &str, worker_id: &str) -> i64 {
+        seed_user(pool, "u@e.com").await;
+        let id = crate::db::builds::insert_build(
+            pool,
+            r#"{"name":"t"}"#,
+            "u@e.com",
+            "normal",
+            None,
+            None,
+            None,
+        )
+        .await
+        .expect("insert");
+        sqlx::query!(
+            "UPDATE builds SET state = ?, worker_id = ?, trace_id = 't' WHERE id = ?",
+            state,
+            worker_id,
+            id,
+        )
+        .execute(pool)
+        .await
+        .expect("set state");
+        // build_logs row required for set_build_log_finished.
+        crate::db::builds::insert_build_log_row(pool, id, "/tmp/x.log")
+            .await
+            .expect("insert build_log");
+        id
+    }
+
+    fn empty_queue() -> SharedBuildQueue {
+        Arc::new(Mutex::new(BuildQueue::new()))
+    }
+
+    fn empty_watchers() -> LogWatchers {
+        Arc::new(Mutex::new(HashMap::new()))
+    }
+
+    fn make_active(build_id: i64, connection_id: &str) -> ActiveBuild {
+        ActiveBuild {
+            build_id,
+            connection_id: connection_id.to_string(),
+            dispatched_at: tokio::time::Instant::now(),
+            trace_id: "t".to_string(),
+            descriptor: sample_descriptor(),
+            priority: Priority::Normal,
+            ack_cancel: tokio_util::sync::CancellationToken::new(),
+            receipt: ActiveAssignmentReceipt::AwaitingReceipt,
+        }
+    }
+
+    #[tokio::test]
+    async fn idle_reconcile_one_dispatched_awaiting_dead_prev_rolls_back_and_clears_db() {
+        let pool = test_pool().await;
+        let queue = empty_queue();
+        let watchers = empty_watchers();
+        let build_id = insert_in_state(&pool, "dispatched", "worker-1").await;
+
+        {
+            let mut q = queue.lock().await;
+            q.active.insert(build_id, make_active(build_id, "old-conn"));
+        }
+
+        let candidate = IdleReconcileCandidate {
+            build_id,
+            prev_connection_id: "old-conn".to_string(),
+            receipt: ActiveAssignmentReceipt::AwaitingReceipt,
+            prev_connection_live: false, // dead/disconnected prev
+        };
+
+        idle_reconcile_one(&pool, &queue, &watchers, &candidate, "worker-1").await;
+
+        let build = crate::db::builds::get_build(&pool, build_id)
+            .await
+            .expect("get")
+            .expect("row");
+        assert_eq!(build.state, "queued", "must roll back to queued");
+        assert!(build.worker_id.is_none());
+        assert!(build.trace_id.is_none());
+        assert!(build.error.is_none());
+        assert!(build.started_at.is_none());
+        assert!(build.finished_at.is_none());
+        assert!(build.build_report.is_none());
+    }
+
+    #[tokio::test]
+    async fn idle_reconcile_one_revoking_marks_revoked() {
+        let pool = test_pool().await;
+        let queue = empty_queue();
+        let watchers = empty_watchers();
+        let build_id = insert_in_state(&pool, "revoking", "worker-1").await;
+
+        {
+            let mut q = queue.lock().await;
+            q.active.insert(build_id, make_active(build_id, "old-conn"));
+        }
+        {
+            let (tx, _rx) = tokio::sync::watch::channel(());
+            watchers.lock().await.insert(build_id, tx);
+        }
+
+        let candidate = IdleReconcileCandidate {
+            build_id,
+            prev_connection_id: "old-conn".to_string(),
+            receipt: ActiveAssignmentReceipt::ReceivedByWorker,
+            prev_connection_live: true,
+        };
+
+        idle_reconcile_one(&pool, &queue, &watchers, &candidate, "worker-1").await;
+
+        let build = crate::db::builds::get_build(&pool, build_id)
+            .await
+            .expect("get")
+            .expect("row");
+        assert_eq!(build.state, "revoked", "must finalise to revoked");
+        assert!(build.finished_at.is_some());
+
+        // Verify build_logs.finished is set — this is what the
+        // `set_build_log_finished` call inside `cleanup_terminal_state`
+        // does, and the v1/v2 review N2 specifically called out that
+        // this assertion was missing.
+        let log_row = sqlx::query!(
+            "SELECT finished FROM build_logs WHERE build_id = ?",
+            build_id,
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("log row");
+        assert_eq!(
+            log_row.finished, 1,
+            "build_logs.finished must be set when MarkRevoked completes"
+        );
+
+        assert!(
+            !queue.lock().await.active.contains_key(&build_id),
+            "active entry must be removed"
+        );
+        assert!(
+            !watchers.lock().await.contains_key(&build_id),
+            "log watcher must be removed"
+        );
+    }
+
+    #[tokio::test]
+    async fn idle_reconcile_one_skips_when_db_worker_id_mismatch() {
+        // Cross-worker filter (gap G8): reporter is `worker-1` but the
+        // DB row says the build belongs to `worker-2`. Must skip.
+        let pool = test_pool().await;
+        let queue = empty_queue();
+        let watchers = empty_watchers();
+        let build_id = insert_in_state(&pool, "dispatched", "worker-2").await;
+
+        {
+            let mut q = queue.lock().await;
+            q.active.insert(build_id, make_active(build_id, "old-conn"));
+        }
+
+        let candidate = IdleReconcileCandidate {
+            build_id,
+            prev_connection_id: "old-conn".to_string(),
+            receipt: ActiveAssignmentReceipt::ReceivedByWorker,
+            prev_connection_live: false,
+        };
+
+        idle_reconcile_one(&pool, &queue, &watchers, &candidate, "worker-1").await;
+
+        let build = crate::db::builds::get_build(&pool, build_id)
+            .await
+            .expect("get")
+            .expect("row");
+        assert_eq!(
+            build.state, "dispatched",
+            "state must not change when reporter does not own the build"
+        );
+        assert_eq!(build.worker_id.as_deref(), Some("worker-2"));
+    }
+
+    /// Pins the contract relied on by `dispatch::handle_build_rejected`
+    /// integrity-failure arm and `dispatch::handle_revoke_timeout` after
+    /// they were migrated to delegate to `cleanup_terminal_state`. Both
+    /// callsites previously inlined the cleanup; the integrity arm in
+    /// particular forgot `set_build_log_finished`, which kept SSE log
+    /// streams hanging (review v3 finding NA2). This test ensures every
+    /// future invocation of `cleanup_terminal_state` on the "failure"
+    /// path also flips `build_logs.finished = 1`.
+    #[tokio::test]
+    async fn cleanup_terminal_state_failure_path_finalises_build_log() {
+        let pool = test_pool().await;
+        let queue = empty_queue();
+        let watchers = empty_watchers();
+        let build_id = insert_in_state(&pool, "started", "worker-1").await;
+
+        {
+            let mut q = queue.lock().await;
+            q.active.insert(build_id, make_active(build_id, "conn-1"));
+        }
+        {
+            let (tx, _rx) = tokio::sync::watch::channel(());
+            watchers.lock().await.insert(build_id, tx);
+        }
+
+        cleanup_terminal_state(
+            &pool,
+            &queue,
+            &watchers,
+            build_id,
+            TerminalStatus::Failure,
+            "integrity rejected",
+        )
+        .await;
+
+        let build = crate::db::builds::get_build(&pool, build_id)
+            .await
+            .expect("get")
+            .expect("row");
+        assert_eq!(build.state, "failure");
+
+        let log_row = sqlx::query!(
+            "SELECT finished FROM build_logs WHERE build_id = ?",
+            build_id,
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("log row");
+        assert_eq!(
+            log_row.finished, 1,
+            "build_logs.finished must be set so SSE streams unblock"
+        );
+        assert!(
+            !queue.lock().await.active.contains_key(&build_id),
+            "active entry must be removed"
+        );
+        assert!(
+            !watchers.lock().await.contains_key(&build_id),
+            "log watcher must be removed"
+        );
     }
 }

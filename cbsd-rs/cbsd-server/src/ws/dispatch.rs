@@ -501,7 +501,10 @@ pub async fn handle_build_rejected(
     reason: &str,
 ) {
     if reason.to_lowercase().contains("integrity") {
-        // Integrity failure — mark as failed, do not re-queue.
+        // Integrity failure — mark as failed, do not re-queue. The
+        // canonical `cleanup_terminal_state` helper ensures the
+        // `build_logs.finished` flag is set in the same operation, so
+        // SSE log streams unblock immediately (review v3 finding NA2).
         tracing::error!(
             build_id = build_id,
             connection_id = %connection_id,
@@ -509,25 +512,15 @@ pub async fn handle_build_rejected(
             "build rejected (integrity failure) — marking as failed"
         );
 
-        if let Err(e) =
-            db::builds::set_build_finished(&state.pool, build_id, "failure", Some(reason), None)
-                .await
-        {
-            tracing::error!(
-                build_id = build_id,
-                "failed to update build state to failure: {e}"
-            );
-        }
-
-        // Remove from active builds and log watchers.
-        {
-            let mut queue = state.queue.lock().await;
-            queue.active.remove(&build_id);
-        }
-        {
-            let mut watchers = state.log_watchers.lock().await;
-            watchers.remove(&build_id);
-        }
+        crate::ws::handler::cleanup_terminal_state(
+            &state.pool,
+            &state.queue,
+            &state.log_watchers,
+            build_id,
+            crate::ws::handler::TerminalStatus::Failure,
+            reason,
+        )
+        .await;
     } else {
         // Transient rejection — re-queue at front.
         tracing::warn!(
@@ -739,36 +732,15 @@ pub async fn handle_revoke_timeout(state: &AppState, build_id: i64) {
         "revoke ack timeout — marking REVOKED unilaterally"
     );
 
-    // Mark finished as revoked.
-    if let Err(e) = db::builds::set_build_finished(
+    crate::ws::handler::cleanup_terminal_state(
         &state.pool,
+        &state.queue,
+        &state.log_watchers,
         build_id,
-        "revoked",
-        Some("revoke ack timeout"),
-        None,
+        crate::ws::handler::TerminalStatus::Revoked,
+        "revoke ack timeout",
     )
-    .await
-    {
-        tracing::error!(build_id = build_id, "failed to mark build revoked: {e}");
-    }
-
-    // Mark log as finished.
-    if let Err(e) = db::builds::set_build_log_finished(&state.pool, build_id).await {
-        tracing::error!(
-            build_id = build_id,
-            "failed to mark build log finished: {e}"
-        );
-    }
-
-    // Remove from active builds and log watchers.
-    {
-        let mut queue = state.queue.lock().await;
-        queue.active.remove(&build_id);
-    }
-    {
-        let mut watchers = state.log_watchers.lock().await;
-        watchers.remove(&build_id);
-    }
+    .await;
 }
 
 /// Start the periodic re-dispatch sweep. Returns a `JoinHandle` that can be

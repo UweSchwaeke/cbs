@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE builds SET state = ?, worker_id = ?, trace_id = 't' WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "b0aad2fe68b98dfc3da9db392f6d81534fa68a6b7787414a53515481a09019f3"
+}
