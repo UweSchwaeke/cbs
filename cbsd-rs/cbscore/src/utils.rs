@@ -10,5 +10,6 @@
 //! (`utils::s3`, `utils::vault`) and the secrets manager.
 
 pub mod buildah;
+pub mod git;
 pub mod podman;
 pub mod subprocess;
