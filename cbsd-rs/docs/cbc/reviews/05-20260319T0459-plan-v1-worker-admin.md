@@ -8,7 +8,6 @@ commands are tightly coupled — splitting would create dead code.
 
 The plan faithfully tracks the design:
 
-
 - ID prefix matching fully specified with 403 fallback.
 - Client-side arch validation before round-trip.
 - `worker list` includes BUILD column (`current_build_id`).

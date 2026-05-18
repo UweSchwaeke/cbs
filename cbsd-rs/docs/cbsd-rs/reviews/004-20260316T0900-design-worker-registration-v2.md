@@ -2,7 +2,6 @@
 
 **Documents reviewed:**
 
-
 - `cbsd-rs/docs/cbsd-rs/design/004-20260316T0925-worker-registration.md` (revised)
 - `cbsd-rs/docs/cbsd-rs/plans/004-20260316T1018-01-worker-registration.md` (revised)
 
@@ -82,6 +81,7 @@ before calling `handle_worker_dead`."
 
 The design's reconnection flow specifies:
 1
+>
 > 1. Server checks `BuildQueue.workers` for any existing entry with the
 > 2  same worker UUID (from a previous connection that is now `Disconnected`).
 > 2. If found: the previous connection's state is migrated to the new

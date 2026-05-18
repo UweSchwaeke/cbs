@@ -2,9 +2,7 @@
 
 **Plan reviewed:**
 
-
 - `cbsd-rs/docs/cbsd-rs/plans/008-20260318T1713-periodic-builds.md`
-
 
 **Evaluated against:**
 

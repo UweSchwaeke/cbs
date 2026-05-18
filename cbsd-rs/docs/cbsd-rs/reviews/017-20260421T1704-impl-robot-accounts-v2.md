@@ -407,10 +407,10 @@ layer (G2). None are user-visible production bugs.
 
 ### Nice-to-have (no blocker)
 
-7. Add P3 unit tests for `mark_used` idempotence and warn-on-failure.
-8. Amend the plan to reflect the autosquash (R1 is now `f08b841`, not
+1. Add P3 unit tests for `mark_used` idempotence and warn-on-failure.
+2. Amend the plan to reflect the autosquash (R1 is now `f08b841`, not
    `5c43229`).
-9. Consider splitting the plan's "commit 6" on future features that have a
+3. Consider splitting the plan's "commit 6" on future features that have a
    similar "TokenCache rename + feature" shape — the rename inflated LOC more
    than the robot feature itself.
 

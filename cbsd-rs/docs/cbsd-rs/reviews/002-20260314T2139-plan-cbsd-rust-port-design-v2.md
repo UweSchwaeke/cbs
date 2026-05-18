@@ -2,12 +2,6 @@
 
 **Plans reviewed:**
 
-
-- `cbsd-rs/docs/cbsd-rs/plans/README.md` through `002-20260318T1411-05-integration.md` (all 9 files)
-
-
-**Cross-referenced against:**
-
 - `cbsd-rs/docs/cbsd-rs/design/README.md` and all 3 design documents
 
 ---
@@ -28,16 +22,14 @@ Three blockers remain. The most immediately impactful is B1: the `cargo sqlx pre
 
 Commit 2 says "Run `cargo sqlx prepare` and commit `.sqlx/` directory." But `cargo sqlx prepare` requires a compilable binary (for query analysis), and the binary uses `sqlx::query!` macros that require either a live database or the `.sqlx/` cache to compile. Neither exists when Commit 2 is first being written.
 
-
 **Fix:** Add a numbered "sqlx offline cache bootstrap" procedure to Commit 2:
 
-1. Write migration SQL files.
-2. Create dev DB: `sqlx database create` + `sqlx migrate run` (requires `DATABASE_URL` env var).
-3. Write all `db/*.rs` query code with `DATABASE_URL` pointing to the live dev DB.
-4. Run `cargo sqlx prepare --workspace` from workspace root.
-5. Verify: `SQLX_OFFLINE=true cargo build --workspace` succeeds.
-6. Commit `.sqlx/` directory as a separate "chore: add sqlx offline query cache" commit.
-7. Specify where `.sqlx/` lives (workspace root or per-crate).
+1. Create dev DB: `sqlx database create` + `sqlx migrate run` (requires `DATABASE_URL` env var).
+2. Write all `db/*.rs` query code with `DATABASE_URL` pointing to the live dev DB.
+3. Run `cargo sqlx prepare --workspace` from workspace root.
+4. Verify: `SQLX_OFFLINE=true cargo build --workspace` succeeds.
+5. Commit `.sqlx/` directory as a separate "chore: add sqlx offline query cache" commit.
+6. Specify where `.sqlx/` lives (workspace root or per-crate).
 
 ### B2 — `trace_id` generated outside mutex, never persisted — crash loses it permanently
 

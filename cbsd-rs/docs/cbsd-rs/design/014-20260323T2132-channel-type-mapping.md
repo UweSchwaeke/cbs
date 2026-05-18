@@ -65,19 +65,16 @@ section below).
 
 Given:
 
-
 - Channel "user", type "dev" maps to project
   `cbs-i<joao.luis@clyso.com>{username}`
 - User "<joao.luis@clyso.com>" builds "ceph" with tag
   "v19.2.2"
-
 
 The server rewrites `dst_image.name` to:
 
 ```
 cbs-internal/joao.luis/ceph
 ```
-
 
 cbscore on the worker side prepends the registry from
 its own config, producing the final push URI:
@@ -416,7 +413,6 @@ PUT /api/admin/users/{email}/default-channel
 Body: `{"channel_id": 3}`
 
 Requires `permissions:manage`.
-
 
 ### cbc Changes
 

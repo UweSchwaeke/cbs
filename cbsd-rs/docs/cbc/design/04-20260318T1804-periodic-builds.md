@@ -205,7 +205,6 @@ Displayed in `--help` for `periodic new` and
 
 **Build descriptor:**
 
-
 - `{version}` — `--version` value
 - `{base_tag}` — `--image-tag` value (the template tag
   before interpolation)

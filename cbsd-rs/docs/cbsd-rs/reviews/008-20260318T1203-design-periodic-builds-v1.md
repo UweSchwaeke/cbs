@@ -2,9 +2,7 @@
 
 **Document reviewed:**
 
-
 - `cbsd-rs/docs/cbsd-rs/design/008-20260318T1412-periodic-builds.md`
-
 
 **Cross-referenced against:**
 
@@ -57,7 +55,6 @@ is scoped to `channel=ces-public` and an admin creates a periodic task
 on their behalf targeting `channel=ces-internal`, the task fires outside
 the builder's scope. Even if the scope gap is fixed later, the task is
 unaffected.
-
 
 **Fix:** Choose one explicitly:
 

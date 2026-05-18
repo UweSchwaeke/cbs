@@ -581,19 +581,19 @@ minimum the following land:
 
 ### Should-fix-next-commit
 
-6. **F7** — assign-time forbidden-cap reject on both the robot-create path and
+1. **F7** — assign-time forbidden-cap reject on both the robot-create path and
    `POST /api/admin/entity/{email}/roles`.
-7. **F8** — SSO forgery guard in `create_or_update_user`.
-8. **F9** — return 400 (not 409) for tokenless-robot activate.
-9. **F6** — collapse the three `tokio::spawn` blocks to inline await.
-10. **F12** — deduplicate `verify_api_key` / `verify_robot_token` and
+2. **F8** — SSO forgery guard in `create_or_update_user`.
+3. **F9** — return 400 (not 409) for tokenless-robot activate.
+4. **F6** — collapse the three `tokio::spawn` blocks to inline await.
+5. **F12** — deduplicate `verify_api_key` / `verify_robot_token` and
     `generate_*_material` behind a shared generic.
-11. **F13** — normalise `INSERT OR IGNORE` vs `INSERT` between create and
+6. **F13** — normalise `INSERT OR IGNORE` vs `INSERT` between create and
     revive.
 
 ### Nice-to-have
 
-12. Build response `is_robot` field (design-required).
-13. `cbc --expires infinity` literal support.
-14. Plan update documenting the commit-8 default-channel server change and
+1. Build response `is_robot` field (design-required).
+2. `cbc --expires infinity` literal support.
+3. Plan update documenting the commit-8 default-channel server change and
     flagging it as a breaking API change.

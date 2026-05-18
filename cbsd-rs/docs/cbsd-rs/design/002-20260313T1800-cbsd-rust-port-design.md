@@ -790,8 +790,8 @@ When a build is submitted (via REST API) or a worker becomes idle:
 8. On `build_rejected`: re-acquire mutex, push build back to front of its
    lane, try the next worker.
 9 On send failure: re-acquire mutex, push build back to front of its lane.
-10. On ack timeout: re-acquire mutex, push build back to front of its lane.
-11. If no workers are available, the build stays in its priority lane.
+9. On ack timeout: re-acquire mutex, push build back to front of its lane.
+10. If no workers are available, the build stays in its priority lane.
 
 **DISPATCHED → STARTED gap:** If the worker sends `build_accepted` but
 disconnects before `build_started`, the build stays in `DISPATCHED` with no
@@ -888,7 +888,6 @@ previous server instance.
 
 Workers that were connected to the previous server instance will detect the
 connection drop and enter their reconnection loop. When they reconnect:
-
 
 - If idle: they re-register normally.
 - If mid-build: they send `worker_status`. The server applies the reconnection

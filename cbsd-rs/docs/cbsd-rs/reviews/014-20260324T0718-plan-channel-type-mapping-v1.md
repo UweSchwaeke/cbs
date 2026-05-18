@@ -100,7 +100,6 @@ at the next trigger?
 
 The plan should state one of:
 
-
 - **Yes, re-check scopes** — more secure, prevents
   stale permissions from producing builds
 - **No, skip scopes** — the task was authorized at
@@ -135,7 +134,6 @@ format correctly:
 - `ces/dev` → exact match ✓
 - `ces/*` → prefix match ✓
 - `*` → matches all ✓
-
 
 The actual changes are:
 

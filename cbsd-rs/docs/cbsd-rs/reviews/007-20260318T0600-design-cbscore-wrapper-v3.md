@@ -2,9 +2,7 @@
 
 **Document reviewed:**
 
-
 - `cbsd-rs/docs/cbsd-rs/design/007-20260318T0716-cbscore-wrapper.md` (v3, third revision)
-
 
 **Cross-referenced against:**
 

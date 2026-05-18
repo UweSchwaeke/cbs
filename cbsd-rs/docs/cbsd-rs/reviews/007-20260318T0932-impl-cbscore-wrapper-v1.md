@@ -2,9 +2,7 @@
 
 **Commit reviewed:**
 
-
 - `ab96acc` — implement cbscore-wrapper.py build bridge (180+, 19−, 2 files)
-
 
 **Evaluated against:**
 
@@ -94,7 +92,6 @@ and exit with code 1. The Rust worker sees no structured result line
 (the traceback doesn't start with `{"type":"result"`), so
 `stream_output` returns `(Failure, None)` — correct outcome but with
 no error message.
-
 
 The design's error classification table maps:
 

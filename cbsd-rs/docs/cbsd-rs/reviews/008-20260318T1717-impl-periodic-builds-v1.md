@@ -2,9 +2,7 @@
 
 **Commit reviewed:**
 
-
 - `d061131` — add periodic build scheduling (~2000 LOC, 14 source files)
-
 
 **Evaluated against:**
 
@@ -124,7 +122,6 @@ The design's variable table shows `{DT}` as ISO datetime
 than expected and will not match the Python implementation's format.
 Two periodic tasks firing in the same minute with different second
 offsets (e.g., retry fires) will produce identical tags.
-
 
 **Fix:** Add seconds to the format string:
 

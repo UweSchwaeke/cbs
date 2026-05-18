@@ -5,7 +5,6 @@
 
 **Cross-referenced against:**
 
-
 - `tracing-appender` 0.2.4 source (`rolling::never()`)
 - `cbsd-rs/systemd/` (existing templates)
 - `cbsd-rs/systemd/install.sh`

@@ -72,13 +72,11 @@ tokens.
 
 **Mitigating factors:**
 
-
 - The DB file is local to the server — remote access requires a
   separate vulnerability.
 - The PASETO signing key is also on disk; if both are compromised,
   arbitrary token creation is possible anyway.
 - Session cleanup runs every 60 seconds for expired sessions.
-
 
 **Recommendation:** Either:
 
@@ -140,7 +138,6 @@ still has the token, but the token's `expires` claim fails validation.
 The user gets 401 on every request despite having a valid session. The
 only recovery is to re-authenticate — but the user experience is
 confusing because the session appears alive.
-
 
 **Recommendation:** Either:
 

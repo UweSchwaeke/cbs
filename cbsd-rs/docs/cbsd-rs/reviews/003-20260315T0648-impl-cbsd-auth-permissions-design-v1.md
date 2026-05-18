@@ -2,9 +2,7 @@
 
 **Commit reviewed:**
 
-
 - `f98c88f` — cbsd-rs/server: add OAuth, API key management, and auth routes
-
 
 **Evaluated against:**
 
@@ -141,7 +139,6 @@ The plan's Commit 5 progress table should reflect this.
 
 **Issue 1 — Duplicate user-load + active-check pattern in AuthUser extractor.**
 
-
 The PASETO path (lines 205–245) and the API key path (lines 172–203) both
 contain identical logic:
 
@@ -235,7 +232,6 @@ the next owner-level operation.
 | `whoami` response shape | Partial | Roles/caps populated, full scope detail in Commit 5 |
 
 ---
-
 
 ## Bonus: Ahead-of-Schedule Work
 

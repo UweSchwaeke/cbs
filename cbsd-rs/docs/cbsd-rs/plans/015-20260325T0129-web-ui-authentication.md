@@ -109,7 +109,6 @@ Add `use tower_sessions::Session;` to imports.
 
 **Remove:**
 
-
 - `LoginQuery.cli_port: Option<u16>` field
 - Session insert/read of `cli_port` in both login and callback
 - `if let Some(port) = cli_port` branch (localhost JS redirect

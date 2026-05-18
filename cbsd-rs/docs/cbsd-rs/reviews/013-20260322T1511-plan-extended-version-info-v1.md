@@ -66,7 +66,6 @@ it. ✓
 
 Proto change + worker handler + server handler + liveness
 
-
 + routes + cbc display. Below 200 but independently
 meaningful — after this commit, operators can see worker
 versions. ✓
@@ -93,7 +92,6 @@ health endpoint in `app.rs` returns it. `app.rs` is a
 module (`pub mod app`) declared in `main.rs`. It can
 access `crate::VERSION` — but the plan doesn't specify
 this plumbing.
-
 
 Alternatives:
 

@@ -2,9 +2,7 @@
 
 **Document reviewed:**
 
-
 - `cbsd-rs/docs/cbsd-rs/design/008-20260318T1412-periodic-builds.md` (v3, third revision)
-
 
 **Cross-referenced against:**
 

@@ -2,12 +2,6 @@
 
 **Plans reviewed:**
 
-
-- `cbsd-rs/docs/cbsd-rs/plans/README.md` through `002-20260318T1411-05-integration.md` (all 9 files)
-
-
-**Cross-referenced against:**
-
 - `cbsd-rs/docs/cbsd-rs/design/` (all 4 design documents)
 
 ---

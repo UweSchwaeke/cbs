@@ -88,7 +88,6 @@ uses union syntax, not `Optional`. ✓
 
 `cbsd-proto/src/ws.rs` + `cbsd-worker/src/build/output.rs`
 
-
 + `cbsd-worker/src/ws/handler.rs`. The proto change and
 the worker extraction are tightly coupled (the handler
 constructs the `BuildFinished` message using the output
@@ -162,6 +161,7 @@ checked.
 ---
 
 ## Minor Notes
+
 +
 + **Dependency ordering is correct.** Commit 2 (Python)
   → Commit 3 (worker) → Commit 4 (server). The Rust

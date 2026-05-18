@@ -5,7 +5,6 @@
 
 **Cross-referenced against:**
 
-
 - `cbsd-server/src/routes/auth.rs`
 - `cbsd-server/src/config.rs`
 - `cbsd-server/src/main.rs`

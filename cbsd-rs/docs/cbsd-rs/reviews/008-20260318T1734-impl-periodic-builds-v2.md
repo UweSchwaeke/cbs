@@ -2,9 +2,7 @@
 
 **Commit reviewed:**
 
-
 - `76c2e27` — add periodic build scheduling (amended from `d061131`)
-
 
 **Evaluated against:**
 
@@ -41,7 +39,6 @@ function is eliminated — `insert_build()` now takes
 
 ### F1 — `{DT}` now includes seconds
 
-
 `tag_format.rs:120-128`:
 
 ```rust
@@ -60,7 +57,6 @@ assert_eq!(result, "build-20260318T143045");
 ```
 
 Matches the design's specification: `{DT}` → `20260318T143020`. ✓
-
 
 ### F2 — Shared `insert_build_internal()`
 

@@ -241,7 +241,6 @@ session.set_expiry(Expiry::OnInactivity(
 
 This means:
 
-
 - OAuth flow sessions that are never completed expire after
   10 minutes (current behavior).
 - Web sessions that are completed expire after 7 days of

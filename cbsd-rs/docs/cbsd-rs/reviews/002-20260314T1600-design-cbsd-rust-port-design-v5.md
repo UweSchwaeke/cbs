@@ -2,8 +2,6 @@
 
 **Documents reviewed:**
 
-
-- `cbsd-rs/docs/cbsd-rs/design/README.md`
 - `cbsd-rs/docs/cbsd-rs/design/002-20260313T1800-cbsd-rust-port-design.md`
 - `cbsd-rs/docs/cbsd-rs/design/003-20260313T2129-cbsd-auth-permissions-design.md`
 - `cbsd-rs/docs/cbsd-rs/design/001-20260313T1800-cbsd-project-structure.md`
@@ -39,7 +37,6 @@ Even for the hard-cutover path (users re-auth), the Rust issuer and validator mu
 The shutdown sequence says: "Send `build_revoke` to all workers with active builds" and then "Workers will detect the connection drop and enter their reconnection loop, re-attaching to the new server instance." These directly contradict: if the server sends `build_revoke`, the worker kills the running container, sends `build_finished(revoked)`, and the build is terminally `REVOKED`. The new server instance finds a terminal build and does not re-queue it. Every rolling deploy terminates all in-flight builds.
 
 The reconnection decision table handles `STARTED + worker reconnects building N` correctly (resume, no state change) — but only if the previous server did NOT send `build_revoke`.
-
 
 **Fix:** Split into two modes:
 

@@ -118,7 +118,6 @@ the backwards compat paragraph should be removed.
 
 ### F3 — Moderate: scope check missing from default
 
-
 flow
 
 The build submission flow (steps 3a-3g) doesn't show

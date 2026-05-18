@@ -2,12 +2,10 @@
 
 **Commits reviewed:**
 
-
 - `02a72b1` — docs: design, plan, reviews
 - `2a3a06f` — cbscore: artifact report + builder/runner
 - `0e5eb6b` — cbsd-rs: WebSocket protocol + worker
 - `56a3895` — cbsd-rs/server: storage + API
-
 
 **Evaluated against:**
 
@@ -80,7 +78,6 @@ All match approved documents. ✓
 
 ### 2a3a06f — Python (~220 lines)
 
-
 **`report.py`:**
 
 - Clean Pydantic v2 models with docstrings.
@@ -135,7 +132,6 @@ All match approved documents. ✓
 
 **`ws.rs` (proto):**
 
-
 - `build_report: Option<serde_json::Value>` with
   `serde(default, skip_serializing_if)`. ✓
 - 2 new tests: round-trip with report, missing field
@@ -143,7 +139,6 @@ All match approved documents. ✓
 - Existing tests updated to include `build_report: None`. ✓
 
 **`output.rs`:**
-
 
 - `WrapperResult.build_report: Option<Value>`. ✓
 - Extraction: `parsed.get("build_report").cloned()`. ✓
@@ -156,7 +151,6 @@ All match approved documents. ✓
 
 - All `BuildFinished` construction sites updated. ✓
 - Error paths pass `build_report: None`. ✓
-
 
 **`cbsd-server/ws/handler.rs` (in this commit):**
 
@@ -174,7 +168,6 @@ All match approved documents. ✓
 
 **`builds.rs`:**
 
-
 - `BuildRecord` gains `build_report: Option<Value>`
   with `skip_serializing_if`. ✓
 - `BuildListRecord` — separate type without report. ✓
@@ -188,14 +181,11 @@ All match approved documents. ✓
 
 **`dispatch.rs`:**
 
-
 - `handle_build_finished` gains `build_report` param. ✓
 - `handle_build_rejected` passes `None`. ✓
 - `handle_revoke_timeout` passes `None`. ✓
 
-
 **`handler.rs`:**
-
 
 - `let _ = build_report` removed. ✓
 - Success path: serializes Value→String, passes to

@@ -2,7 +2,6 @@
 
 **Design documents:**
 
-
 - `docs/cbc/design/00-20260318T1800-project-scaffold.md`
 - `docs/cbc/design/01-20260318T1801-authentication.md`
 

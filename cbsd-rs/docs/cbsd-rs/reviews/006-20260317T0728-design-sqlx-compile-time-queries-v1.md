@@ -2,7 +2,6 @@
 
 **Documents reviewed:**
 
-
 - `cbsd-rs/docs/cbsd-rs/design/006-20260317T0732-sqlx-compile-time-queries.md`
 - `cbsd-rs/docs/cbsd-rs/plans/006-20260317T1028-sqlx-macros.md`
 
@@ -60,7 +59,6 @@ Wait — the actual total is 77 including recovery's 7. The design says
 77 but only lists 70 in the table (sum the table: 21+10+8+7+5+4+3+5+2+2+1+1 = 69,
 not 77). The table undercounts by 8: 7 from the missing `recovery.rs`
 and 1 from `admin.rs` (actual: 6, listed: 5).
-
 
 **Corrected totals:**
 

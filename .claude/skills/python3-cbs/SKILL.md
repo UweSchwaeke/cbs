@@ -39,11 +39,13 @@ This is a **uv workspace** monorepo:
 Configuration is **layered**: root is the baseline, package-level files override specific settings.
 
 ### ruff
+
 1. Check for `[tool.ruff]` in the **package's** `pyproject.toml` first
 2. Fall back to root `pyproject.toml` for anything not overridden
 3. Always defer to configured values — never assume rule sets or line lengths
 
 ### basedpyright
+
 1. Check for `pyrightconfig.json` in the **package directory** first
 2. Fall back to root `pyrightconfig.json`
 3. **Always defer to the config** — never assume or impose a strictness mode
@@ -96,6 +98,7 @@ x = some_untyped_call()  # pyright: ignore[reportUnknownVariableType]
 ```
 
 **Rules around ignores — strictly enforced:**
+
 - `# type: ignore` (mypy style) is **not allowed** — use `# pyright: ignore[ruleCode]` only
 - Every ignore must include the specific rule code — bare `# pyright: ignore` is not acceptable
 - **Every new ignore must be explicitly reported to the user with a written justification**
@@ -126,6 +129,7 @@ grep -r "async def\|asyncio\|await" packages/mypkg/src/ --include="*.py" -l
 ```
 
 **Rules:**
+
 - If a package or file uses asyncio, prefer `async def` for new I/O-bound or complex functions
 - Do not add a purely synchronous implementation when an async one is clearly more appropriate
 - For CPU-bound work, sync is fine — use `asyncio.to_thread()` if it needs to be called from async context
@@ -148,16 +152,20 @@ task = asyncio.create_task(some_coroutine())
 ## Exception Handling
 
 ### When to use stdlib vs custom exceptions
+
 - Use **stdlib exceptions** (`ValueError`, `TypeError`, `KeyError`, `FileNotFoundError`, etc.) when they are semantically accurate and sufficient
 - Use **custom exceptions** for everything else — especially domain-specific errors, module-aware context, or when callers need to catch your errors specifically
 
 ### Finding the right base exception
+
 Before defining a new exception class:
+
 1. Search the **current package** for an existing base exception (e.g. `class MyPackageError(Exception)`)
 2. Search **shared packages** for a base or derived exception that fits the context
 3. Only define a new base if none exists — and if so, create a package-level base first
 
 ### Custom exception conventions
+
 ```python
 # Package base exception
 class MyPackageError(Exception):
@@ -174,6 +182,7 @@ class ConfigValidationError(MyPackageError):
 ```
 
 ### Exception chaining
+
 Always use `raise X from Y` when re-raising to preserve the original cause:
 
 ```python
@@ -195,6 +204,7 @@ Use **stdlib `logging`** only. No third-party logging libraries.
 Loggers follow a strict **hierarchical inheritance pattern** — never use `logging.getLogger(__name__)` in module files.
 
 ### Package `__init__.py` — root of the logger tree
+
 Each package defines its top-level logger in `__init__.py`:
 
 ```python
@@ -205,6 +215,7 @@ logger = logging.getLogger("mypkg")  # Named explicitly, not __name__
 ```
 
 ### Sub-module `__init__.py` — inherit and branch
+
 A sub-module's `__init__.py` imports the parent logger and creates a named child:
 
 ```python
@@ -216,6 +227,7 @@ logger = parent_logger.getChild("users")
 ```
 
 ### Module files — same pattern, one level deeper
+
 Every `.py` file imports its parent module's logger and calls `getChild` with a descriptive name (not necessarily `__name__`):
 
 ```python
@@ -229,6 +241,7 @@ logger = parent_logger.getChild("builder")
 The child name should describe the file's role or responsibility — `"builder"`, `"parser"`, `"client"`, `"handler"` — not mechanically mirror the filename if a clearer name exists.
 
 ### Using the logger
+
 ```python
 logger.debug("Trace detail: %s", detail)
 logger.info("User %s logged in", user_id)
@@ -238,6 +251,7 @@ logger.exception("Unexpected error")  # Inside except blocks — captures traceb
 ```
 
 **Rules:**
+
 - Never `logging.getLogger(__name__)` in module files — always inherit via `getChild`
 - Never call `logging.info(...)` / `logging.error(...)` directly — that writes to the root logger
 - Use `%s`-style formatting in log calls, not f-strings — avoids formatting cost when the level is disabled
@@ -281,6 +295,7 @@ uv add basedpyright ruff --dev
 ```
 
 **Rules:**
+
 - Typechecking and linting tools (ruff, basedpyright) are **always** workspace-wide root deps — never per-package
 - Always use `--package <name>` when adding per-package deps from the repo root
 - Check the existing `pyproject.toml` before adding — the dep may already be declared
@@ -375,6 +390,7 @@ except* ValueError as eg:
 Before committing any change, **all three checks must pass** on the modified files, in this order:
 
 ### 1. Format (ruff format)
+
 Always run formatting first — it may change code that linting then checks.
 
 ```bash
@@ -384,6 +400,7 @@ uv run ruff format path/to/file.py
 Formatting is governed by `pyproject.toml` — never assume defaults are in effect. Always let the config drive formatting behaviour, even if it appears to match ruff's defaults.
 
 ### 2. Lint (ruff check)
+
 ```bash
 uv run ruff check path/to/file.py
 # Auto-fix where possible:
@@ -391,17 +408,20 @@ uv run ruff check --fix path/to/file.py
 ```
 
 ### 3. Type check (basedpyright)
+
 ```bash
 uv run basedpyright path/to/file.py
 ```
 
 ### All three, in one go
+
 ```bash
 FILE=path/to/file.py
 uv run ruff format "$FILE" && uv run ruff check --fix "$FILE" && uv run basedpyright "$FILE"
 ```
 
 **Rules:**
+
 - All three must pass with zero errors before a change is considered commit-ready
 - If any check fails, fix it before proceeding — do not commit with known failures
 - Run checks on **all files touched** by the change, not just the primary file

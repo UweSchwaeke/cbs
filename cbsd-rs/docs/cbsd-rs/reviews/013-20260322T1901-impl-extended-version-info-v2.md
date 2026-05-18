@@ -55,7 +55,6 @@ files reading it. Correct commit boundary.
 Round-trip test (`ws.rs:218-220`) now destructures
 `version` and asserts:
 
-
 ```rust
 assert_eq!(version.as_deref(), Some("0.1.0+gtest123"));
 ```

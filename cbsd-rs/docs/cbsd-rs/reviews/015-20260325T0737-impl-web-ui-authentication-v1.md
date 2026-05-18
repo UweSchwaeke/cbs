@@ -90,7 +90,6 @@ tracing::debug!("auth reject: no bearer header and no session token");
 
 The old code used `tracing::warn!` for successful auth path events:
 
-
 - "auth: processing token"
 - "auth: PASETO decoded successfully"
 - "auth: token valid, loading user"

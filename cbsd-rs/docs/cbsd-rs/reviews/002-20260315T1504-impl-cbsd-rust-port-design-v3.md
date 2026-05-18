@@ -2,7 +2,6 @@
 
 **Commits reviewed (8 new since last review):**
 
-
 - `5ea7bb5` — Commit 7: WebSocket handler, liveness, worker tracking (673 lines)
 - `d2dfe6a` — Commit 8a: Build dispatch engine, split-mutex (810 lines)
 - `3866bf7` — Commit 8b: Revocation, reconnection table, periodic sweep (680 lines)
@@ -14,7 +13,6 @@
 
 **Also verified:** Prior review fix (`role_is_scope_dependent` no longer
 treats `*` as scope-dependent) confirmed applied.
-
 
 **Evaluated against:**
 
@@ -215,7 +213,6 @@ dispatched to a worker that accepts the connection but ignores the
 `build_new` message will take 90s to recover instead of 15s.
 
 ### Finding 2 — `ActiveBuild` doesn't store `priority`
-
 
 `handle_build_rejected` (dispatch.rs:388) re-queues with:
 

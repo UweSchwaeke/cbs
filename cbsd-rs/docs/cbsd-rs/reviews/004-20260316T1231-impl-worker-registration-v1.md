@@ -2,14 +2,12 @@
 
 **Commits reviewed (6):**
 
-
 - `d9ade16` — add worker registration and management REST API (691 lines)
 - `3b6feab` — bind WS handshake to registered worker identity (328 lines)
 - `1f21c8e` — add worker token support to config and WS client (158 lines)
 - `4d05e89` — update seed config to create registered workers (137 lines)
 - `4648727` — merge DB and in-memory state in GET /api/workers (91 lines)
 - `5626829` — apply cargo fmt across workspace (225 lines)
-
 
 **Evaluated against:**
 
@@ -149,7 +147,6 @@ auth attempts. The prefix lookup works because the row still exists.
 ---
 
 ## Minor Observations
-
 
 - **`arch` parsing in `list_workers` uses `serde_json` roundtrip.**
   `routes/workers.rs` line 114:

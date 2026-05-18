@@ -2,9 +2,7 @@
 
 **Document reviewed:**
 
-
 - `cbsd-rs/docs/cbsd-rs/design/008-20260318T1412-periodic-builds.md` (revised)
-
 
 **Cross-referenced against:**
 
@@ -79,7 +77,6 @@ The design requires only `periodic:manage` for PUT. If a
 target channel) updates the descriptor to target a different channel,
 the scheduler fires it unchecked — the only gate is `users.active` on
 the original creator.
-
 
 Concrete attack path:
 

@@ -2,12 +2,9 @@
 
 **Commits reviewed:**
 
-
-- `331fdc5` — Phase 0: `cbsd-rs/` directory with CLAUDE.md + plan files
 - `c158ee4` — Phase 1 Commit 1: cbsd-proto crate with shared types
 - `68c35b2` — Phase 1 Commit 2: SQLite schema, server scaffold, config loading
 - `2ac5383` — Phase 2 Commit 3: PASETO tokens, user/token DB, AuthUser extractor
-
 
 **Evaluated against:**
 
@@ -36,10 +33,8 @@ noted. No blockers.
 
 **Plan compliance: Complete.**
 
-
 All Phase 0 requirements fulfilled:
 
-- `cbsd-rs/` directory created at repository root
 - `cbsd-rs/CLAUDE.md` contains all 7 correctness invariants, skill
   references, build commands, git conventions, architecture pointers, and
   sqlx offline cache instructions
@@ -51,7 +46,6 @@ No issues.
 ---
 
 ### Commit 1 (`c158ee4`) — Phase 1: cbsd-proto crate
-
 
 **Plan compliance: 95%. One deviation.**
 
@@ -74,7 +68,6 @@ The plan specifies: "`config.rs` — Shared config types (server URL, TLS CA
 bundle path)." This file was not created. The shared config types will
 likely be needed when the worker crate is implemented (Commit 10).
 
-
 Severity: Low. The types can be added in a later commit without
 retroactive changes. The worker crate is a stub at this point.
 
@@ -93,9 +86,9 @@ retroactive changes. The worker crate is a stub at this point.
 
 **Plan compliance: Complete.**
 
-
 **Schema (001_initial_schema.sql):**
 All 9 tables present and correct (users, tokens, api_keys, roles,
+
 role_caps, user_roles, user_role_scopes, builds, build_logs).
 
 Key schema elements verified against design doc:
@@ -127,14 +120,12 @@ Key schema elements verified against design doc:
 - Expired session deletion background task ✓
 - `GET /api/health` returns `{"status": "ok"}` ✓
 
-
 **Config loading:**
 
 - All config fields from design present ✓
 - Validation: `allowed_domains` empty guard ✓
 - Validation: `backoff_ceiling >= grace_period` guard ✓
 - `--drain` CLI flag present ✓
-
 **Shutdown signal handling:**
 
 - SIGTERM, SIGQUIT, Ctrl+C all handled ✓
@@ -169,7 +160,6 @@ pool setup and migration embedding. The cache is needed starting Commit 3.
 
 **User DB operations (`db/users.rs`):**
 
-
 - `create_or_update_user()` with `ON CONFLICT DO UPDATE` ✓
 - `get_user()` returns `Option<UserRecord>` ✓
 - `is_user_active()` treats missing user as inactive ✓
@@ -177,7 +167,6 @@ pool setup and migration embedding. The cache is needed starting Commit 3.
 **Token DB operations (`db/tokens.rs`):**
 
 - `insert_token()` with `last_insert_rowid()` return ✓
-- `is_token_revoked()` treats unknown token as revoked (safe default) ✓
 - `revoke_token()` with `revoked = 0` idempotency guard ✓
 - `revoke_all_for_user()` with count return ✓
 

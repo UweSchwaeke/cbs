@@ -2,9 +2,7 @@
 
 **Commit reviewed:**
 
-
 - `5be2e5f` — migrate to sqlx compile-time checked query macros (1924+, 443−, 81 files)
-
 
 **Evaluated against:**
 

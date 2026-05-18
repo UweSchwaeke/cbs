@@ -2,7 +2,6 @@
 
 **Documents reviewed:**
 
-
 - `cbsd-rs/docs/cbsd-rs/design/004-20260316T0925-worker-registration.md` (revised)
 - `cbsd-rs/docs/cbsd-rs/plans/004-20260316T1018-01-worker-registration.md` (revised)
 
@@ -79,7 +78,6 @@ The plan handles the double-connect case with:
 
 > If found and `Connected` (stale double-connect): remove old entry,
 > log warning, register new.
-
 
 Not specified:
 

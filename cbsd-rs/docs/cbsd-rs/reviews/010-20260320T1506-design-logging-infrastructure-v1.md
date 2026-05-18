@@ -5,7 +5,6 @@
 
 **Cross-referenced against:**
 
-
 - `cbsd-server/src/ws/dispatch.rs` (log path bug)
 - `cbsd-server/src/logs/writer.rs` (actual file path)
 - `cbsd-server/src/routes/builds.rs` (tail/full paths)
@@ -116,7 +115,6 @@ If the operator configures `log-file: server` (no directory),
 catch (it's `Some`, not `None`), and the file is created
 relative to the CWD of the process — which in a container
 may be `/` or an unexpected location.
-
 
 **Fix:** Validate the `log-file` path at startup:
 

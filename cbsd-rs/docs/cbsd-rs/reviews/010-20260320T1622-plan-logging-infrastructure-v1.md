@@ -95,7 +95,6 @@ Commit 3 touches 9 files across `cbsd-server`,
 lines this is within the guideline, but the blast radius
 is wide. Consider whether the worker changes (Cargo.toml
 
-
 + config.rs + main.rs) could be a separate commit after
 the server changes.
 
@@ -113,6 +112,7 @@ radius is acceptable given the tight coupling.
 ---
 
 ## Minor Notes
+
 +
 + **Commit 2 verification says "cargo test --workspace".**
   There are no tests that exercise the log path format

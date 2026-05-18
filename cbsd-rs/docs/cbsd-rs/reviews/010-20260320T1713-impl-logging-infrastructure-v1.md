@@ -2,12 +2,10 @@
 
 **Commits reviewed:**
 
-
 - `da13205` — docs: design, plan, reviews
 - `9255de9` — fix build log path stored in database
 - `4596788` — file logging with CBSD_DEV console gating
 - `48b2dd1` — logrotate for application logs
-
 
 **Evaluated against:**
 
@@ -77,7 +75,6 @@ Surgically correct. Aligns DB path with writer, tail, and
 full-download routes. SSE and GC now resolve correctly. ✓
 
 ### 4596788 — file logging (~293 lines)
-
 
 **Server `config.rs`:**
 

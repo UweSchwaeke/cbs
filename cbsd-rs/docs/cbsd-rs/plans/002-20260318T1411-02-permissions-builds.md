@@ -23,7 +23,6 @@ The full permission model.
 
 **db/roles.rs:**
 
-
 - CRUD for `roles`, `role_caps`, `user_roles`, `user_role_scopes` tables.
 - `get_effective_caps(user_email)` — joins user_roles → role_caps, returns
   all capabilities.
@@ -31,7 +30,6 @@ The full permission model.
   with their per-assignment scopes for scope evaluation.
 - Builtin role protection: cannot delete or modify caps of `builtin=1` roles
   (returns 409).
-
 
 **auth/extractors.rs (extend):**
 
@@ -43,7 +41,6 @@ The full permission model.
   one assignment satisfying ALL scope checks. Scope types: `channel` (against
   `descriptor.channel`), `registry` (hostname from `dst_image.name`),
   `repository` (each `components[].repo` override).
-
 
 **routes/permissions.rs:**
 
@@ -75,7 +72,6 @@ Builtin role protection (cap modification returns 409). User
 deactivation/activation (idempotent).
 
 ## Commit 6: Build queue, submission, listing, components
-
 
 Builds can be submitted and queued, but not yet dispatched.
 
@@ -127,7 +123,6 @@ Builds can be submitted and queued, but not yet dispatched.
   No capability required beyond authentication.
 
 **components/mod.rs:**
-
 
 - Filesystem scan of `components/` directory.
 - Loads `cbs.component.yaml` descriptors.

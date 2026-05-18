@@ -141,7 +141,6 @@ DB layer should be self-protecting.
 
 `routes/channels.rs` (first type auto-sets default):
 
-
 ```rust
 let _ = db::channels::set_default_type(...).await;
 ```
@@ -227,7 +226,6 @@ value correctly.
 |----------|---|---------|
 | Medium | 5 | F1-F5 |
 | Low | 6 | F6-F11 |
-
 
 No blockers. The medium issues:
 

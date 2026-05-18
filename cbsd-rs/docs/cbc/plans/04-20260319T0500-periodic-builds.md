@@ -107,7 +107,6 @@ Flattens `BuildDescriptorArgs` from `builds.rs` (already
 4. Serialize descriptor to `serde_json::Value`.
 5. Build request body:
 
-
    ```json
    {
      "cron_expr": "<cron>",

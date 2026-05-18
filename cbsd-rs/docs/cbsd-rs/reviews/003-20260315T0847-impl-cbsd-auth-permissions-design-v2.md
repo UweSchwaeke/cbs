@@ -2,7 +2,6 @@
 
 **Commits reviewed:**
 
-
 - `c76962a` — Commit 4a: Google OAuth flow with HKDF session signing
 - `2ce89c4` — Commit 4b: API key management with LRU cache and auth routes
 - `d6beaca` — Commit 5a: RBAC database layer and scope evaluation
@@ -13,7 +12,6 @@
 into two each per the granularity assessment. This review covers the
 split versions. Commit 4 fixes (HKDF, rate limiting, `load_authed_user`,
 default `"cli"`) were fixup'd into the split commits.
-
 
 **Evaluated against:**
 
@@ -101,7 +99,6 @@ No route handlers — independently testable DB + evaluation logic.
 
 ### Plan Compliance: Complete
 
-
 **`routes/permissions.rs`** (812 lines):
 
 - All 10 endpoints implemented ✓
@@ -159,7 +156,6 @@ Phase 3 plan progress table updated. ✓
 ---
 
 ## Code Quality & Issues
-
 
 ### Issue — `role_is_scope_dependent` treats `*` as scope-dependent
 
