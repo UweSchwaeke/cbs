@@ -1,0 +1,61 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026  Clyso
+
+[package]
+name = "cbscore"
+version = "0.1.0"
+edition.workspace = true
+license = "GPL-3.0-or-later"
+repository.workspace = true
+description = "cbscore library: subsystem wrappers, builder pipeline, runner"
+
+[dependencies]
+cbscore-types = { path = "../cbscore-types" }
+
+# async + tracing
+tokio = { version = "1", features = ["full"] }
+tokio-util = "0.7"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+async-trait = "0.1"
+futures-util = "0.3"
+
+# cloud SDKs
+aws-config = "1"
+aws-sdk-s3 = "1"
+vaultrs = "0.8"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+
+# crypto + hashing
+sha2 = "0.10"
+
+# archives + filesystem
+camino = { version = "1", features = ["serde1"] }
+camino-tempfile = "1"
+tar = "0.4"
+flate2 = "1"
+tempfile = "3"
+which = "7"
+
+# serde (descriptor / config types come from cbscore-types)
+serde.workspace = true
+serde_json.workspace = true
+serde-saphyr = "0.0.24"
+
+# errors + helpers
+thiserror = "2"
+url = "2"
+chrono.workspace = true
+rand = "0.9"
+regex = "1"
+uuid = { version = "1", features = ["v4"] }
+
+[dev-dependencies]
+nix = { version = "0.29", features = ["signal"] }
+
+[lints.rust]
+missing_docs = "warn"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+mod_module_files = "warn"

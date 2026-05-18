@@ -462,11 +462,16 @@ cargo fmt --all --check
 
 ## Versioning
 
-The cbscore-rs workspace uses standard semver for its external- facing surface.
-The workspace root `Cargo.toml` carries a single
-`[workspace.package] version = "x.y.z"` field that every member crate inherits
-(`version.workspace = true`). The version is bumped in one commit at release
-time.
+The cbscore-rs workspace uses standard semver for its external-facing surface.
+Each of the three cbscore-rs crates (`cbscore-types`, `cbscore`, `cbsbuild`)
+pins its own `version = "x.y.z"` field in its `Cargo.toml`, matching the
+existing cbsd-_ / `cbc` pattern. All three cbscore-rs crates ship at the same
+version and are bumped together in one commit at release time. The workspace
+root `Cargo.toml` does **not** carry a `[workspace.package] version` field — the
+workspace is multi-tenant (cbsd-_ + cbc + cbscore-rs), and a single shared
+version would either misrepresent the cbsd-\* / cbc crates (which version
+independently) or bind them to the cbscore-rs release cadence. Per-crate pinning
+keeps the workspace root free of cbscore-rs-specific policy.
 
 **When to bump which component:**
 
