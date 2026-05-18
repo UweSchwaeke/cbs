@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "config": {
+    "env": {
+      "PATH": "/usr/local/bin:/usr/bin"
+    },
+    "labels": {
+      "org.opencontainers.image.title": "ceph"
+    },
+    "annotations": {}
+  },
+  "pre": {
+    "keys": ["https://example.com/key.gpg"],
+    "packages": ["gcc", "make"],
+    "repos": [
+      {
+        "name": "ceph-test",
+        "source": "https://example.com/repo/ceph.repo",
+        "dest": "/etc/yum.repos.d/ceph.repo"
+      }
+    ],
+    "scripts": []
+  },
+  "packages": {
+    "required": [
+      {
+        "section": "build",
+        "packages": ["gcc-c++", "cmake"]
+      }
+    ],
+    "optional": []
+  },
+  "post": [
+    {
+      "name": "cleanup",
+      "run": "dnf clean all"
+    }
+  ]
+}

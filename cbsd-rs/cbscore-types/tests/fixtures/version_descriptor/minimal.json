@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "version": "19.2.3-dev.1",
+  "title": "Release Development version 19.2.3 (DEV 1)",
+  "signed_off_by": {
+    "user": "Alice",
+    "email": "alice@example.com"
+  },
+  "image": {
+    "registry": "quay.io",
+    "name": "ceph",
+    "tag": "19.2.3-dev.1"
+  },
+  "components": [
+    {
+      "name": "ceph",
+      "repo": "https://github.com/ceph/ceph.git",
+      "ref": "abcdef1234567890"
+    }
+  ],
+  "distro": "centos",
+  "el_version": 9
+}

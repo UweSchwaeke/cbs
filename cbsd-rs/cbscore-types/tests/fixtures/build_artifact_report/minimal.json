@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "version": "19.2.3",
+  "skipped": false,
+  "container_image": {
+    "name": "quay.io/cbs-build/ceph",
+    "tag": "19.2.3-dev.1",
+    "pushed": true
+  },
+  "release_descriptor": {
+    "s3_path": "releases/19.2.3.json",
+    "bucket": "cbs-releases"
+  },
+  "components": [
+    {
+      "name": "ceph",
+      "version": "19.2.3-42.gabcdef",
+      "sha1": "abcdef1234",
+      "repo_url": "https://github.com/ceph/ceph.git",
+      "rpms_s3_path": "s3://cbs-artifacts/ceph/19.2.3/el9/x86_64/"
+    }
+  ]
+}

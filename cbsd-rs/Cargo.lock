@@ -928,6 +928,7 @@ dependencies = [
  "camino",
  "chrono",
  "serde",
+ "serde-saphyr 0.0.24",
  "serde-value",
  "serde_json",
  "thiserror 2.0.18",

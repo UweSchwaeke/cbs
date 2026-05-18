@@ -19,8 +19,10 @@
 //! when round-tripping credentials in tests.
 
 pub mod errors;
+pub mod versioned;
 
 pub use errors::SecretsError;
+pub use versioned::VersionedSecrets;
 
 use std::collections::HashMap;
 

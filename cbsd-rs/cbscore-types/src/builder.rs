@@ -9,8 +9,10 @@
 
 pub mod errors;
 pub mod report;
+pub mod versioned;
 
 pub use errors::BuilderError;
 pub use report::{
     BuildArtifactReport, ComponentReport, ContainerImageReport, ReleaseDescriptorReport,
 };
+pub use versioned::VersionedBuildArtifactReport;

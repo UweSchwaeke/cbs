@@ -97,9 +97,9 @@ pub struct RegistryStorageConfig {
 #[serde(rename_all = "kebab-case")]
 pub struct StorageConfig {
     /// Optional S3 storage block.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub s3: Option<S3StorageConfig>,
     /// Optional container-registry block.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub registry: Option<RegistryStorageConfig>,
 }

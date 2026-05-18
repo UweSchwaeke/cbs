@@ -20,6 +20,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [dev-dependencies]
 serde_json.workspace = true
+serde-saphyr = "0.0.24"
 
 [lints.rust]
 missing_docs = "warn"

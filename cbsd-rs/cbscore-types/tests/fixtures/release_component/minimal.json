@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "name": "ceph",
+  "version": "19.2.3-42.gabcdef",
+  "sha1": "abcdef1234",
+  "arch": "x86_64",
+  "build_type": "rpm",
+  "os_version": "el9",
+  "repo_url": "https://github.com/ceph/ceph.git",
+  "artifacts": {
+    "loc": "s3://cbs-artifacts/ceph/19.2.3/el9/x86_64/",
+    "release_rpm_loc": "s3://cbs-releases/ceph/19.2.3/release.rpm"
+  }
+}
