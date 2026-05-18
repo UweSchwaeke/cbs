@@ -14,6 +14,7 @@
 //! files and enumerates available container versions.
 
 pub mod tarball;
+pub mod validator;
 
 use std::path::Path;
 
@@ -82,9 +83,4 @@ pub fn load_components(components_dir: &Path) -> Result<Vec<ComponentInfo>, std:
 
     components.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(components)
-}
-
-/// Check whether `name` is a known component.
-pub fn validate_component_name(components: &[ComponentInfo], name: &str) -> bool {
-    components.iter().any(|c| c.name == name)
 }

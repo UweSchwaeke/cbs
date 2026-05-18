@@ -76,6 +76,13 @@ pub async fn trigger_periodic_build(
     let mut descriptor: BuildDescriptor = serde_json::from_str(&task.descriptor)
         .map_err(|e| TriggerError::Fatal(format!("invalid descriptor JSON: {e}")))?;
 
+    // 3b. Per WCP D5: defensively re-validate against the live component
+    // registry. Catches the case where a component listed at task creation
+    // time has since been removed; the trigger MUST disable the task
+    // rather than retry.
+    crate::components::validator::validate_descriptor(&descriptor, &state.components)
+        .map_err(|e| TriggerError::Fatal(format!("descriptor validation failed: {e}")))?;
+
     // 4. Set signed_off_by from the looked-up user.
     descriptor.signed_off_by.user = user.name.clone();
     descriptor.signed_off_by.email = user.email.clone();

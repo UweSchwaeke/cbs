@@ -98,15 +98,11 @@ async fn submit_build(
         ));
     }
 
-    // Validate component names
-    for comp in &body.descriptor.components {
-        if !components::validate_component_name(&state.components, &comp.name) {
-            return Err(auth_error(
-                StatusCode::BAD_REQUEST,
-                &format!("unknown component: {}", comp.name),
-            ));
-        }
-    }
+    // Per WCP D5: every ingress path validates through the centralised
+    // descriptor validator. Catches empty components in addition to unknown
+    // component names.
+    components::validator::validate_descriptor(&body.descriptor, &state.components)
+        .map_err(|e| auth_error(StatusCode::BAD_REQUEST, &e.to_string()))?;
 
     // Repository scope checks from component repo overrides
     let mut scope_checks: Vec<(ScopeType, String)> = Vec::new();

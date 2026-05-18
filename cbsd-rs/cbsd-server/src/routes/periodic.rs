@@ -194,6 +194,13 @@ async fn create_task(
         ));
     }
 
+    // Per WCP D5: shared validator catches empty / unknown components at
+    // create time so the trigger never fires on a known-invalid task.
+    let typed: cbsd_proto::BuildDescriptor = serde_json::from_value(body.descriptor.clone())
+        .map_err(|e| auth_error(StatusCode::BAD_REQUEST, &format!("invalid descriptor: {e}")))?;
+    crate::components::validator::validate_descriptor(&typed, &state.components)
+        .map_err(|e| auth_error(StatusCode::BAD_REQUEST, &e.to_string()))?;
+
     // Validate scopes at creation time so users cannot create tasks
     // targeting channels they lack access to (would silently fail at
     // trigger time).
@@ -407,14 +414,21 @@ async fn update_task(
         ));
     }
 
-    // Validate descriptor if provided.
-    if let Some(ref desc) = body.descriptor
-        && !desc.is_object()
-    {
-        return Err(auth_error(
-            StatusCode::BAD_REQUEST,
-            "descriptor must be a JSON object",
-        ));
+    // Validate descriptor if provided: structural (object) + typed
+    // (non-empty + known component names) per WCP D5.
+    if let Some(ref desc) = body.descriptor {
+        if !desc.is_object() {
+            return Err(auth_error(
+                StatusCode::BAD_REQUEST,
+                "descriptor must be a JSON object",
+            ));
+        }
+        let typed: cbsd_proto::BuildDescriptor =
+            serde_json::from_value(desc.clone()).map_err(|e| {
+                auth_error(StatusCode::BAD_REQUEST, &format!("invalid descriptor: {e}"))
+            })?;
+        crate::components::validator::validate_descriptor(&typed, &state.components)
+            .map_err(|e| auth_error(StatusCode::BAD_REQUEST, &e.to_string()))?;
     }
 
     // Fetch the current row to merge updates.
