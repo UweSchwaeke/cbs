@@ -3,10 +3,15 @@
 
 //! Version-descriptor types and helpers (zero IO).
 //!
-//! Phase 1 lands the error taxonomy in [`errors`]; later commits add
-//! the `VersionDescriptor`, `VersionType`, and supporting struct
-//! definitions plus the `descriptor_path` helper.
+//! - [`desc`] — value-side types for `<root>/<type>/<VERSION>.json`.
+//! - [`utils`] — pure helpers ([`VersionType`] enum here; the
+//!   `regex`-based parse family lives in `cbscore::versions::utils`).
+//! - [`errors`] — the [`VersionError`] taxonomy.
 
+pub mod desc;
 pub mod errors;
+pub mod utils;
 
+pub use desc::{VersionComponent, VersionDescriptor, VersionImage, VersionSignedOffBy};
 pub use errors::VersionError;
+pub use utils::VersionType;

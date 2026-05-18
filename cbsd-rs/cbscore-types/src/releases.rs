@@ -1,11 +1,18 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026  Clyso
 
-//! Release-descriptor types (zero IO).
+//! Release-descriptor types and errors (zero IO).
 //!
-//! Phase 1 lands the error taxonomy in [`errors`]; Phase 5 adds the
-//! S3-publish orchestrator in `cbscore::releases`.
+//! - [`desc`] — value-side types ([`ReleaseDesc`], [`ReleaseComponent`],
+//!   [`ReleaseBuildEntry`], [`ReleaseArtifacts`], [`BuildInfo`],
+//!   [`ArchType`], [`BuildType`]).
+//! - [`errors`] — the [`ReleaseError`] taxonomy.
 
+pub mod desc;
 pub mod errors;
 
+pub use desc::{
+    ArchType, BuildInfo, BuildType, ReleaseArtifacts, ReleaseBuildEntry, ReleaseComponent,
+    ReleaseDesc,
+};
 pub use errors::ReleaseError;
