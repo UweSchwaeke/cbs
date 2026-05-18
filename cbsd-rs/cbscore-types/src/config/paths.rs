@@ -39,6 +39,6 @@ pub struct PathsConfig {
     /// Wire key: `scratch-containers`.
     pub scratch_containers: Utf8PathBuf,
     /// Optional ccache root for incremental C/C++ builds.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ccache: Option<Utf8PathBuf>,
 }

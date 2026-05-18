@@ -9,8 +9,10 @@
 //! Commit 2.
 
 pub mod errors;
+pub mod versioned;
 
 pub use errors::ComponentError;
+pub use versioned::VersionedCoreComponent;
 
 use camino::Utf8PathBuf;
 use serde::{Deserialize, Serialize};

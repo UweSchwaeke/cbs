@@ -13,11 +13,13 @@ pub mod errors;
 pub mod paths;
 pub mod storage;
 pub mod vault;
+pub mod versioned;
 
 pub use errors::ConfigError;
 pub use paths::PathsConfig;
 pub use storage::{RegistryStorageConfig, S3LocationConfig, S3StorageConfig, StorageConfig};
 pub use vault::{VaultAppRoleConfig, VaultConfig, VaultUserPassConfig};
+pub use versioned::{VersionedConfig, VersionedVaultConfig};
 
 use camino::Utf8PathBuf;
 use serde::{Deserialize, Serialize};
@@ -58,19 +60,19 @@ pub struct Config {
     /// Filesystem paths the build pipeline reads and writes.
     pub paths: PathsConfig,
     /// Optional S3 and registry destinations for release artifacts.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub storage: Option<StorageConfig>,
     /// Optional signing-key references; `None` disables signing.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub signing: Option<SigningConfig>,
     /// Optional file-appender logging configuration.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub logging: Option<LoggingConfig>,
     /// Per-deployment secret-file paths consumed by the secrets manager.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub secrets: Vec<Utf8PathBuf>,
     /// Optional `cbs-build.vault.yaml` path.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vault: Option<Utf8PathBuf>,
 }
 
@@ -97,11 +99,11 @@ pub struct Config {
 #[serde(rename_all = "kebab-case")]
 pub struct SigningConfig {
     /// Name of the GPG signing-secret entry, if RPM signing is enabled.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gpg: Option<String>,
     /// Name of the Vault Transit signing-secret entry, if manifest
     /// signing is enabled.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transit: Option<String>,
 }
 

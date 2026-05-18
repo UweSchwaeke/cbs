@@ -1,0 +1,24 @@
+schema-version: 1
+paths:
+  components:
+    - /var/cbs/components
+  scratch: /var/cbs/scratch
+  scratch-containers: /var/cbs/scratch/containers
+  ccache: /var/cbs/ccache
+storage:
+  s3:
+    url: https://s3.example.com
+    artifacts:
+      bucket: cbs-artifacts
+      loc: ceph
+    releases:
+      bucket: cbs-releases
+      loc: ceph
+signing:
+  gpg: rpm-signing
+  transit: image-signing
+logging:
+  log-file: /var/log/cbs-build.log
+secrets:
+  - /etc/cbs/secrets.yaml
+vault: /etc/cbs/cbs-build.vault.yaml

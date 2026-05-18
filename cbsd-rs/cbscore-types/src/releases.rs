@@ -10,9 +10,11 @@
 
 pub mod desc;
 pub mod errors;
+pub mod versioned;
 
 pub use desc::{
     ArchType, BuildInfo, BuildType, ReleaseArtifacts, ReleaseBuildEntry, ReleaseComponent,
     ReleaseDesc,
 };
 pub use errors::ReleaseError;
+pub use versioned::{VersionedReleaseComponent, VersionedReleaseDesc};

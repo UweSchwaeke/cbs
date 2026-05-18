@@ -8,9 +8,11 @@
 
 pub mod desc;
 pub mod errors;
+pub mod versioned;
 
 pub use desc::{
     ContainerConfig, ContainerDescriptor, ContainerPackages, ContainerPackagesEntry, ContainerPre,
     ContainerRepo, ContainerScript,
 };
 pub use errors::ContainerError;
+pub use versioned::VersionedContainerDescriptor;

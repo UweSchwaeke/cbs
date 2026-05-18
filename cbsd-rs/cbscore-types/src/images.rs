@@ -8,6 +8,8 @@
 
 pub mod desc;
 pub mod errors;
+pub mod versioned;
 
 pub use desc::{ImageDescriptor, ImageLocations};
 pub use errors::ImageDescriptorError;
+pub use versioned::VersionedImageDescriptor;

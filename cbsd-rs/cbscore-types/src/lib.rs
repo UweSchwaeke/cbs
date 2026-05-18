@@ -22,4 +22,6 @@ pub mod runner;
 pub mod utils;
 pub mod versions;
 
+pub(crate) mod versioned;
+
 // pub use errors::CbsError;

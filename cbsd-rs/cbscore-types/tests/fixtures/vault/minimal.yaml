@@ -1,0 +1,5 @@
+schema-version: 1
+vault-addr: https://vault.example.com
+auth-approle:
+  role-id: 11111111-2222-3333-4444-555555555555
+  secret-id: 66666666-7777-8888-9999-aaaaaaaaaaaa

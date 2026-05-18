@@ -11,7 +11,9 @@
 pub mod desc;
 pub mod errors;
 pub mod utils;
+pub mod versioned;
 
 pub use desc::{VersionComponent, VersionDescriptor, VersionImage, VersionSignedOffBy};
 pub use errors::VersionError;
 pub use utils::VersionType;
+pub use versioned::VersionedVersionDescriptor;

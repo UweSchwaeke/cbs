@@ -1,0 +1,11 @@
+schema-version: 1
+name: ceph
+repo: https://github.com/ceph/ceph.git
+build:
+  rpm:
+    build: make rpm
+    release-rpm: ceph-release
+  get-version: git describe --always
+  deps: ceph-common
+containers:
+  path: containers/ceph.yaml

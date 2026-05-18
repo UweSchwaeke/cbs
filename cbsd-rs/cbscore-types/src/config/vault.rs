@@ -85,13 +85,13 @@ pub struct VaultConfig {
     /// Vault server URL. Wire key: `vault-addr`.
     pub vault_addr: String,
     /// Optional userpass auth credentials. Wire key: `auth-user`.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auth_user: Option<VaultUserPassConfig>,
     /// Optional `AppRole` auth credentials. Wire key: `auth-approle`.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auth_approle: Option<VaultAppRoleConfig>,
     /// Optional explicit token (highest-precedence auth path).
     /// Wire key: `auth-token`.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auth_token: Option<String>,
 }
