@@ -13,13 +13,13 @@ cuts.
 
 ## Progress
 
-| #   | Commit                                                       | ~LOC | Status  |
-| --- | ------------------------------------------------------------ | ---- | ------- |
-| 1   | `cbscore: add utils::subprocess (SecureArg + async_run_cmd)` | ~500 | Done    |
-| 2   | `cbscore: add utils::podman + utils::buildah wrappers`       | ~400 | Done    |
-| 3   | `cbscore: add images::skopeo driver`                         | ~150 | Done    |
-| 4   | `cbscore: add utils::git wrapper`                            | ~500 | Done    |
-| 5   | `cbscore: add versions::utils parse_version family`          | ~230 | Pending |
+| #   | Commit                                                       | ~LOC | Status |
+| --- | ------------------------------------------------------------ | ---- | ------ |
+| 1   | `cbscore: add utils::subprocess (SecureArg + async_run_cmd)` | ~500 | Done   |
+| 2   | `cbscore: add utils::podman + utils::buildah wrappers`       | ~400 | Done   |
+| 3   | `cbscore: add images::skopeo driver`                         | ~150 | Done   |
+| 4   | `cbscore: add utils::git wrapper`                            | ~500 | Done   |
+| 5   | `cbscore: add versions::utils parse_version family`          | ~230 | Done   |
 
 **Estimate:** ~1780 LOC, 5 commits.
 
