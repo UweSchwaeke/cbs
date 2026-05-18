@@ -49,19 +49,33 @@ impl LogWriterState {
 /// Append build output lines to the log file and update the seq-to-offset
 /// index. Notifies any SSE watchers that new data is available.
 ///
+/// Ownership is enforced upstream by the per-handler check
+/// (`dispatch::authorize_lifecycle_message`), which runs before this is
+/// invoked; `connection_id` is plumbed through here for tracing context
+/// per WCP D6.
+///
 /// - `log_dir`: base log directory (e.g., `./logs`)
 /// - `build_id`: the build whose log file to append to
 /// - `start_seq`: sequence number of the first line in `lines`
 /// - `lines`: output lines (without trailing newlines)
+/// - `connection_id`: connection that produced these lines (tracing)
+#[allow(clippy::too_many_arguments)]
 pub async fn write_build_output(
     log_writer: &SharedLogWriter,
     log_watchers: &LogWatchers,
     log_dir: &Path,
     pool: &SqlitePool,
     build_id: i64,
+    connection_id: &str,
     start_seq: u64,
     lines: &[String],
 ) -> Result<(), io::Error> {
+    tracing::trace!(
+        build_id,
+        connection_id = %connection_id,
+        line_count = lines.len(),
+        "write_build_output"
+    );
     use tokio::io::AsyncWriteExt;
 
     if lines.is_empty() {

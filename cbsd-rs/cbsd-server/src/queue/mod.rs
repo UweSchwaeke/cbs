@@ -22,6 +22,24 @@ use serde::Serialize;
 
 use crate::ws::liveness::{ConnectionId, WorkerState};
 
+/// Live receipt state for an active assignment. Per WCP D4/SI-25, this is
+/// in-memory only: it is never serialised to the wire and is not
+/// reconstructed after a server restart (startup recovery fails dispatched
+/// rows). The first authoritative producer is the per-handler ownership
+/// check; the first reader is the same-worker idle-reconnect rollback
+/// decision (commit 3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ActiveAssignmentReceipt {
+    /// Server has dispatched but has not yet observed a message that proves
+    /// the worker has the assignment. The dispatch-ack timer is authoritative.
+    AwaitingReceipt,
+    /// An owned worker message (build_accepted, owned build_started, owned
+    /// build_output, etc.) has proved the worker received the assignment.
+    /// Idle-reconnect MUST treat this assignment as still owned by the prior
+    /// connection rather than rolling it back.
+    ReceivedByWorker,
+}
+
 /// A build that has been dispatched to a worker and is currently active.
 #[allow(dead_code)]
 pub struct ActiveBuild {
@@ -31,9 +49,11 @@ pub struct ActiveBuild {
     pub trace_id: String,
     pub descriptor: BuildDescriptor,
     pub priority: Priority,
-    /// Cancel token for the dispatch ack timeout. Cancelled when
-    /// `build_accepted` is received.
+    /// Cancel token for the dispatch ack timeout. Cancelled when an owned
+    /// lifecycle message proves the worker has the assignment.
     pub ack_cancel: tokio_util::sync::CancellationToken,
+    /// Receipt state: tracks whether an owned message has proved delivery.
+    pub receipt: ActiveAssignmentReceipt,
 }
 
 /// Summary information about a connected worker (returned by `GET /workers`).
@@ -130,6 +150,21 @@ impl BuildQueue {
         lane_contains(&self.high, build_id)
             || lane_contains(&self.normal, build_id)
             || lane_contains(&self.low, build_id)
+    }
+
+    /// Return the active build for `build_id` only if it is currently
+    /// assigned to `connection_id`, with mutable access so lifecycle
+    /// handlers can cancel the ack timer or update receipt state under the
+    /// queue lock. Per WCP D1, this is the authoritative ownership
+    /// predicate for incoming worker lifecycle messages.
+    pub fn active_build_for_connection_mut(
+        &mut self,
+        build_id: i64,
+        connection_id: &str,
+    ) -> Option<&mut ActiveBuild> {
+        self.active
+            .get_mut(&build_id)
+            .filter(|ab| ab.connection_id == connection_id)
     }
 
     /// Get a mutable reference to the lane for the given priority.
@@ -338,5 +373,52 @@ mod tests {
         q.enqueue(queued(1, Priority::Low));
         assert!(q.contains(BuildId(1)));
         assert!(!q.contains(BuildId(2)));
+    }
+
+    fn make_active(build_id: i64, connection_id: &str) -> ActiveBuild {
+        ActiveBuild {
+            build_id,
+            connection_id: connection_id.to_string(),
+            dispatched_at: tokio::time::Instant::now(),
+            trace_id: "trace".to_string(),
+            descriptor: sample_descriptor(),
+            priority: Priority::Normal,
+            ack_cancel: tokio_util::sync::CancellationToken::new(),
+            receipt: ActiveAssignmentReceipt::AwaitingReceipt,
+        }
+    }
+
+    #[tokio::test]
+    async fn active_build_for_connection_matches_owner_only() {
+        let mut q = BuildQueue::new();
+        q.active.insert(42, make_active(42, "owner"));
+
+        assert!(q.active_build_for_connection_mut(42, "owner").is_some());
+        assert!(q.active_build_for_connection_mut(42, "stranger").is_none());
+        assert!(q.active_build_for_connection_mut(99, "owner").is_none());
+    }
+
+    #[tokio::test]
+    async fn active_build_for_connection_mut_allows_state_update() {
+        let mut q = BuildQueue::new();
+        q.active.insert(42, make_active(42, "owner"));
+
+        let ab = q
+            .active_build_for_connection_mut(42, "owner")
+            .expect("owned");
+        ab.receipt = ActiveAssignmentReceipt::ReceivedByWorker;
+
+        let after = q.active.get(&42).expect("still active");
+        assert_eq!(after.receipt, ActiveAssignmentReceipt::ReceivedByWorker);
+    }
+
+    #[tokio::test]
+    async fn active_build_for_connection_mut_rejects_wrong_owner() {
+        let mut q = BuildQueue::new();
+        q.active.insert(42, make_active(42, "owner"));
+
+        assert!(q.active_build_for_connection_mut(42, "stranger").is_none());
+        let unchanged = q.active.get(&42).expect("still active");
+        assert_eq!(unchanged.receipt, ActiveAssignmentReceipt::AwaitingReceipt);
     }
 }

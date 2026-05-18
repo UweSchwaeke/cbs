@@ -430,6 +430,23 @@ pub async fn run_connection(
                         tracing::error!(%reason, "server error, closing connection");
                         return Err(HandlerError::ServerError(reason));
                     }
+                    ServerMessage::UnauthorizedBuildAction {
+                        build_id,
+                        action,
+                        reason,
+                    } => {
+                        // Non-fatal per WCP D2: server is telling us our
+                        // lifecycle message targeted a build we don't own.
+                        // This commit only logs the mismatch; active
+                        // stop-work response on stale-execution evidence
+                        // lands with the worker supervisor (commit 6).
+                        tracing::warn!(
+                            %build_id,
+                            ?action,
+                            ?reason,
+                            "server rejected lifecycle message as unauthorized"
+                        );
+                    }
                 }
             }
 

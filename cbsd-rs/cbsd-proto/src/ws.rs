@@ -51,6 +51,40 @@ pub enum ServerMessage {
         min_version: Option<u32>,
         max_version: Option<u32>,
     },
+
+    /// Server's reply to a worker lifecycle message that targeted a build the
+    /// reporting connection does not own. Non-fatal: the worker MUST NOT
+    /// close the connection in response. Per WCP D1/D2.
+    UnauthorizedBuildAction {
+        build_id: BuildId,
+        action: WorkerBuildAction,
+        reason: UnauthorizedBuildReason,
+    },
+}
+
+/// Worker-to-server lifecycle action that can be rejected as unauthorized
+/// when the reporting connection does not own the target build. Per WCP
+/// D3, `WorkerStatus` is the first normative variant — it covers the case
+/// where a reconnecting worker claims `Building` on a build it does not
+/// actually own per the persisted `builds.worker_id`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkerBuildAction {
+    WorkerStatus,
+    BuildAccepted,
+    BuildStarted,
+    BuildOutput,
+    BuildFinished,
+    BuildRejected,
+}
+
+/// Coarse reason exposed to workers for an unauthorized build action. Detail
+/// stays in the server log; the wire enum is intentionally narrow per WCP D2.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UnauthorizedBuildReason {
+    /// The build is not currently assigned to the reporting connection.
+    NotAssigned,
 }
 
 // ---------------------------------------------------------------------------
@@ -337,6 +371,50 @@ mod tests {
         };
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains(r#""build_id":42"#));
+    }
+
+    #[test]
+    fn worker_build_action_worker_status_serdes_as_snake_case() {
+        let msg = ServerMessage::UnauthorizedBuildAction {
+            build_id: BuildId(11),
+            action: WorkerBuildAction::WorkerStatus,
+            reason: UnauthorizedBuildReason::NotAssigned,
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains(r#""action":"worker_status""#));
+        let parsed: ServerMessage = serde_json::from_str(&json).unwrap();
+        match parsed {
+            ServerMessage::UnauthorizedBuildAction { action, .. } => {
+                assert_eq!(action, WorkerBuildAction::WorkerStatus);
+            }
+            _ => panic!("expected UnauthorizedBuildAction"),
+        }
+    }
+
+    #[test]
+    fn server_message_unauthorized_build_action_round_trip() {
+        let msg = ServerMessage::UnauthorizedBuildAction {
+            build_id: BuildId(7),
+            action: WorkerBuildAction::BuildStarted,
+            reason: UnauthorizedBuildReason::NotAssigned,
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains(r#""type":"unauthorized_build_action""#));
+        assert!(json.contains(r#""action":"build_started""#));
+        assert!(json.contains(r#""reason":"not_assigned""#));
+        let parsed: ServerMessage = serde_json::from_str(&json).unwrap();
+        match parsed {
+            ServerMessage::UnauthorizedBuildAction {
+                build_id,
+                action,
+                reason,
+            } => {
+                assert_eq!(build_id, BuildId(7));
+                assert_eq!(action, WorkerBuildAction::BuildStarted);
+                assert_eq!(reason, UnauthorizedBuildReason::NotAssigned);
+            }
+            _ => panic!("expected UnauthorizedBuildAction"),
+        }
     }
 
     #[test]

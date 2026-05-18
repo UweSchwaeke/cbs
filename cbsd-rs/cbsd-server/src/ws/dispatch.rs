@@ -22,7 +22,7 @@ use cbsd_proto::ws::ServerMessage;
 use cbsd_proto::{BuildId, Priority};
 use sqlx::SqlitePool;
 
-use crate::app::{AppState, LogWatchers};
+use crate::app::{AppState, LogWatchers, WorkerSenders};
 use crate::components::tarball;
 use crate::db;
 use crate::queue::{ActiveBuild, QueuedBuild, SharedBuildQueue};
@@ -132,6 +132,7 @@ pub async fn try_dispatch(state: &AppState) -> Result<(), DispatchError> {
                 descriptor: build.descriptor.clone(),
                 priority: build.priority,
                 ack_cancel: ack_cancel.clone(),
+                receipt: crate::queue::ActiveAssignmentReceipt::AwaitingReceipt,
             },
         );
 
@@ -545,6 +546,109 @@ pub async fn handle_build_rejected(
     }
 }
 
+/// Send a `ServerMessage` text frame to a specific connection, ignoring
+/// missing senders. Used by reactive responses (`UnauthorizedBuildAction`,
+/// reporter-directed `BuildRevoke`) that must not mutate any DB or queue state.
+async fn send_text_to_connection(
+    worker_senders: &WorkerSenders,
+    connection_id: &str,
+    msg: &ServerMessage,
+) {
+    let text = serde_json::to_string(msg).expect("ServerMessage serialization cannot fail");
+    let senders = worker_senders.lock().await;
+    if let Some(tx) = senders.get(connection_id) {
+        let _ = tx.send(Message::Text(text.into()));
+    }
+}
+
+/// Per WCP D1: check that `connection_id` currently owns `build_id`'s active
+/// assignment. On unauthorized, sends `UnauthorizedBuildAction` (and, for
+/// execution-evidence actions per WCP D2, a reporter-directed `BuildRevoke`)
+/// and returns `false`. On authorized, cancels the dispatch-ack timer and
+/// marks the receipt `ReceivedByWorker` under the queue lock.
+///
+/// Caller MUST early-return on `false`; the response has already been sent
+/// and no further handler work should run for this message.
+pub async fn authorize_lifecycle_message(
+    queue: &SharedBuildQueue,
+    worker_senders: &WorkerSenders,
+    connection_id: &str,
+    build_id: BuildId,
+    action: cbsd_proto::ws::WorkerBuildAction,
+) -> bool {
+    use crate::queue::ActiveAssignmentReceipt;
+
+    let owned = {
+        let mut q = queue.lock().await;
+        if let Some(ab) = q.active_build_for_connection_mut(build_id.0, connection_id) {
+            ab.ack_cancel.cancel();
+            ab.receipt = ActiveAssignmentReceipt::ReceivedByWorker;
+            true
+        } else {
+            false
+        }
+    };
+
+    if !owned {
+        tracing::warn!(
+            build_id = build_id.0,
+            connection_id = %connection_id,
+            ?action,
+            "unauthorized lifecycle message: build not assigned to this connection"
+        );
+        send_unauthorized_action(
+            worker_senders,
+            connection_id,
+            build_id,
+            action,
+            cbsd_proto::ws::UnauthorizedBuildReason::NotAssigned,
+        )
+        .await;
+        if matches!(
+            action,
+            cbsd_proto::ws::WorkerBuildAction::BuildStarted
+                | cbsd_proto::ws::WorkerBuildAction::BuildOutput
+        ) {
+            send_reporter_directed_revoke(worker_senders, connection_id, build_id).await;
+        }
+    }
+
+    owned
+}
+
+/// Reply to an unauthorized lifecycle message: tells the reporting connection
+/// it does not own `build_id`. Per WCP D2 the reply is non-fatal and exposes
+/// only a coarse reason. Caller's responsibility to also send a
+/// reporter-directed `BuildRevoke` for execution-evidence actions.
+pub async fn send_unauthorized_action(
+    worker_senders: &WorkerSenders,
+    connection_id: &str,
+    build_id: BuildId,
+    action: cbsd_proto::ws::WorkerBuildAction,
+    reason: cbsd_proto::ws::UnauthorizedBuildReason,
+) {
+    let msg = ServerMessage::UnauthorizedBuildAction {
+        build_id,
+        action,
+        reason,
+    };
+    send_text_to_connection(worker_senders, connection_id, &msg).await;
+}
+
+/// Send a `BuildRevoke` to the reporting connection for an unauthorized
+/// execution-evidence message (`build_started` / `build_output`). Per WCP D2,
+/// this MUST NOT touch the real assignment's DB row, queue entry, ack timer,
+/// or log watcher — it is reporter-directed cleanup only. Use
+/// `send_build_revoke` for the state-mutating admin-initiated path.
+pub async fn send_reporter_directed_revoke(
+    worker_senders: &WorkerSenders,
+    connection_id: &str,
+    build_id: BuildId,
+) {
+    let msg = ServerMessage::BuildRevoke { build_id };
+    send_text_to_connection(worker_senders, connection_id, &msg).await;
+}
+
 /// Send a `BuildRevoke` message to the worker running a build, transition the
 /// build to "revoking" in the DB, and spawn a timeout task that will mark the
 /// build REVOKED unilaterally if the worker does not acknowledge in time.
@@ -833,6 +937,7 @@ mod tests {
             descriptor: sample_descriptor(),
             priority: Priority::Normal,
             ack_cancel: tokio_util::sync::CancellationToken::new(),
+            receipt: crate::queue::ActiveAssignmentReceipt::AwaitingReceipt,
         }
     }
 
@@ -1153,5 +1258,206 @@ mod tests {
             .expect("row");
         assert_eq!(build.state, "started");
         assert!(build.started_at.is_some(), "started_at populated");
+    }
+
+    /// Register a synthetic worker sender for `connection_id`, returning the
+    /// matching receiver so tests can assert on outgoing messages.
+    async fn register_sender(
+        worker_senders: &WorkerSenders,
+        connection_id: &str,
+    ) -> tokio::sync::mpsc::UnboundedReceiver<Message> {
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        worker_senders
+            .lock()
+            .await
+            .insert(connection_id.to_string(), tx);
+        rx
+    }
+
+    fn assert_unauthorized(
+        msg: Option<Message>,
+        expected_action: cbsd_proto::ws::WorkerBuildAction,
+    ) {
+        let Some(Message::Text(text)) = msg else {
+            panic!("expected Text frame, got {msg:?}");
+        };
+        let parsed: ServerMessage = serde_json::from_str(text.as_str()).expect("parse");
+        match parsed {
+            ServerMessage::UnauthorizedBuildAction { action, reason, .. } => {
+                assert_eq!(action, expected_action);
+                assert_eq!(reason, cbsd_proto::ws::UnauthorizedBuildReason::NotAssigned);
+            }
+            other => panic!("expected UnauthorizedBuildAction, got {other:?}"),
+        }
+    }
+
+    fn assert_build_revoke(msg: Option<Message>) {
+        let Some(Message::Text(text)) = msg else {
+            panic!("expected Text frame, got {msg:?}");
+        };
+        let parsed: ServerMessage = serde_json::from_str(text.as_str()).expect("parse");
+        assert!(
+            matches!(parsed, ServerMessage::BuildRevoke { .. }),
+            "expected BuildRevoke, got {parsed:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn authorize_lifecycle_message_passes_owned_build_and_updates_receipt() {
+        let queue = empty_queue();
+        let senders: WorkerSenders = Arc::new(Mutex::new(HashMap::new()));
+        let ack = tokio_util::sync::CancellationToken::new();
+        {
+            let mut q = queue.lock().await;
+            q.active.insert(
+                42,
+                ActiveBuild {
+                    ack_cancel: ack.clone(),
+                    ..make_active(42, "owner")
+                },
+            );
+        }
+
+        let ok = authorize_lifecycle_message(
+            &queue,
+            &senders,
+            "owner",
+            BuildId(42),
+            cbsd_proto::ws::WorkerBuildAction::BuildAccepted,
+        )
+        .await;
+        assert!(ok);
+        assert!(ack.is_cancelled());
+
+        let q = queue.lock().await;
+        let ab = q.active.get(&42).expect("still active");
+        assert_eq!(
+            ab.receipt,
+            crate::queue::ActiveAssignmentReceipt::ReceivedByWorker
+        );
+    }
+
+    #[tokio::test]
+    async fn authorize_lifecycle_message_rejects_stranger_and_sends_unauthorized_only() {
+        let queue = empty_queue();
+        let senders: WorkerSenders = Arc::new(Mutex::new(HashMap::new()));
+        let mut rx = register_sender(&senders, "stranger").await;
+        {
+            let mut q = queue.lock().await;
+            q.active.insert(42, make_active(42, "owner"));
+        }
+
+        let ok = authorize_lifecycle_message(
+            &queue,
+            &senders,
+            "stranger",
+            BuildId(42),
+            cbsd_proto::ws::WorkerBuildAction::BuildAccepted,
+        )
+        .await;
+        assert!(!ok);
+
+        assert_unauthorized(
+            rx.recv().await,
+            cbsd_proto::ws::WorkerBuildAction::BuildAccepted,
+        );
+        // No reporter-directed revoke for `build_accepted` per WCP D2.
+        assert!(
+            rx.try_recv().is_err(),
+            "build_accepted must not trigger reporter-directed revoke"
+        );
+
+        let q = queue.lock().await;
+        let ab = q.active.get(&42).expect("real assignment untouched");
+        assert_eq!(
+            ab.receipt,
+            crate::queue::ActiveAssignmentReceipt::AwaitingReceipt
+        );
+        assert_eq!(ab.connection_id, "owner");
+    }
+
+    #[tokio::test]
+    async fn authorize_lifecycle_message_unauthorized_build_started_also_sends_reporter_revoke() {
+        let queue = empty_queue();
+        let senders: WorkerSenders = Arc::new(Mutex::new(HashMap::new()));
+        let mut rx = register_sender(&senders, "stranger").await;
+        {
+            let mut q = queue.lock().await;
+            q.active.insert(42, make_active(42, "owner"));
+        }
+
+        let ok = authorize_lifecycle_message(
+            &queue,
+            &senders,
+            "stranger",
+            BuildId(42),
+            cbsd_proto::ws::WorkerBuildAction::BuildStarted,
+        )
+        .await;
+        assert!(!ok);
+
+        assert_unauthorized(
+            rx.recv().await,
+            cbsd_proto::ws::WorkerBuildAction::BuildStarted,
+        );
+        assert_build_revoke(rx.recv().await);
+    }
+
+    #[tokio::test]
+    async fn authorize_lifecycle_message_unauthorized_build_output_also_sends_reporter_revoke() {
+        let queue = empty_queue();
+        let senders: WorkerSenders = Arc::new(Mutex::new(HashMap::new()));
+        let mut rx = register_sender(&senders, "stranger").await;
+        {
+            let mut q = queue.lock().await;
+            q.active.insert(42, make_active(42, "owner"));
+        }
+
+        let ok = authorize_lifecycle_message(
+            &queue,
+            &senders,
+            "stranger",
+            BuildId(42),
+            cbsd_proto::ws::WorkerBuildAction::BuildOutput,
+        )
+        .await;
+        assert!(!ok);
+
+        assert_unauthorized(
+            rx.recv().await,
+            cbsd_proto::ws::WorkerBuildAction::BuildOutput,
+        );
+        assert_build_revoke(rx.recv().await);
+    }
+
+    #[tokio::test]
+    async fn authorize_lifecycle_message_non_evidence_actions_skip_revoke() {
+        // Spoof rejection for BuildAccepted, BuildFinished, BuildRejected:
+        // each sends UnauthorizedBuildAction but does NOT send a
+        // reporter-directed BuildRevoke, since only execution-evidence
+        // actions (build_started, build_output) trigger the revoke.
+        for action in [
+            cbsd_proto::ws::WorkerBuildAction::BuildAccepted,
+            cbsd_proto::ws::WorkerBuildAction::BuildFinished,
+            cbsd_proto::ws::WorkerBuildAction::BuildRejected,
+        ] {
+            let queue = empty_queue();
+            let senders: WorkerSenders = Arc::new(Mutex::new(HashMap::new()));
+            let mut rx = register_sender(&senders, "stranger").await;
+            {
+                let mut q = queue.lock().await;
+                q.active.insert(42, make_active(42, "owner"));
+            }
+
+            let ok = authorize_lifecycle_message(&queue, &senders, "stranger", BuildId(42), action)
+                .await;
+            assert!(!ok, "action={action:?}");
+
+            assert_unauthorized(rx.recv().await, action);
+            assert!(
+                rx.try_recv().is_err(),
+                "action={action:?} must not trigger reporter-directed revoke"
+            );
+        }
     }
 }

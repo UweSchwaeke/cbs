@@ -513,9 +513,31 @@ async fn handle_worker_message(
             );
         }
         WorkerMessage::BuildAccepted { build_id } => {
+            if !dispatch::authorize_lifecycle_message(
+                &state.queue,
+                &state.worker_senders,
+                connection_id,
+                build_id,
+                cbsd_proto::ws::WorkerBuildAction::BuildAccepted,
+            )
+            .await
+            {
+                return;
+            }
             dispatch::handle_build_accepted(state, connection_id, build_id.0).await;
         }
         WorkerMessage::BuildStarted { build_id } => {
+            if !dispatch::authorize_lifecycle_message(
+                &state.queue,
+                &state.worker_senders,
+                connection_id,
+                build_id,
+                cbsd_proto::ws::WorkerBuildAction::BuildStarted,
+            )
+            .await
+            {
+                return;
+            }
             dispatch::handle_build_started(state, build_id.0).await;
         }
         WorkerMessage::BuildOutput {
@@ -531,12 +553,24 @@ async fn handle_worker_message(
                 line_count = lines.len(),
                 "build output"
             );
+            if !dispatch::authorize_lifecycle_message(
+                &state.queue,
+                &state.worker_senders,
+                connection_id,
+                build_id,
+                cbsd_proto::ws::WorkerBuildAction::BuildOutput,
+            )
+            .await
+            {
+                return;
+            }
             if let Err(e) = crate::logs::writer::write_build_output(
                 &state.log_writer,
                 &state.log_watchers,
                 &state.config.log_dir,
                 &state.pool,
                 build_id.0,
+                connection_id,
                 start_seq,
                 lines,
             )
@@ -554,6 +588,17 @@ async fn handle_worker_message(
             ref error,
             ref build_report,
         } => {
+            if !dispatch::authorize_lifecycle_message(
+                &state.queue,
+                &state.worker_senders,
+                connection_id,
+                build_id,
+                cbsd_proto::ws::WorkerBuildAction::BuildFinished,
+            )
+            .await
+            {
+                return;
+            }
             let status_str = match status {
                 BuildFinishedStatus::Success => "success",
                 BuildFinishedStatus::Failure => "failure",
@@ -591,6 +636,17 @@ async fn handle_worker_message(
             build_id,
             ref reason,
         } => {
+            if !dispatch::authorize_lifecycle_message(
+                &state.queue,
+                &state.worker_senders,
+                connection_id,
+                build_id,
+                cbsd_proto::ws::WorkerBuildAction::BuildRejected,
+            )
+            .await
+            {
+                return;
+            }
             dispatch::handle_build_rejected(state, connection_id, build_id.0, reason).await;
         }
         WorkerMessage::WorkerStatus {
