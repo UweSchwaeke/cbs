@@ -13,3 +13,4 @@
 pub mod component;
 pub mod executor;
 pub mod output;
+pub mod supervisor;

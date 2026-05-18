@@ -22,6 +22,7 @@ use clap::Parser;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::{EnvFilter, fmt};
 
+use crate::build::supervisor::Supervisor;
 use crate::config::WorkerConfig;
 use crate::signal::{ShutdownState, install_signal_handler};
 use crate::ws::connection::reconnect_loop;
@@ -141,8 +142,18 @@ async fn main() {
     let state = Arc::new(ShutdownState::new());
     let _signal_handle = install_signal_handler(Arc::clone(&state));
 
+    // Build the process-level supervisor that owns active-build state
+    // across websocket reconnects. Spool files live under the same temp
+    // dir used for component tarballs to keep all per-build scratch in
+    // one place.
+    let spool_root = config
+        .component_temp_dir
+        .clone()
+        .unwrap_or_else(|| std::env::temp_dir().join("cbsd-worker-spool"));
+    let supervisor = Arc::new(Supervisor::new(spool_root));
+
     // Run the reconnection loop (returns on SIGTERM).
-    reconnect_loop(&config, state).await;
+    reconnect_loop(&config, supervisor, state).await;
 
     tracing::info!("cbsd-worker stopped");
 }

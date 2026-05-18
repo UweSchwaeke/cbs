@@ -16,6 +16,7 @@ use rand::Rng;
 use tokio_tungstenite::tungstenite;
 use tungstenite::client::IntoClientRequest;
 
+use crate::build::supervisor::Supervisor;
 use crate::config::ResolvedWorkerConfig;
 use crate::signal::ShutdownState;
 use crate::ws::handler;
@@ -121,7 +122,16 @@ impl rustls::client::danger::ServerCertVerifier for NoVerifier {
 
 /// Run the worker's main reconnect loop. Returns only when SIGTERM is
 /// received (via `state.is_stopping()`).
-pub async fn reconnect_loop(config: &ResolvedWorkerConfig, state: Arc<ShutdownState>) {
+///
+/// The supervisor outlives any single connection attempt: when a
+/// connection drops mid-build, the active subprocess keeps running and
+/// is reattached to the next successful websocket. (Gap G6 of the WCP
+/// soundness review.)
+pub async fn reconnect_loop(
+    config: &ResolvedWorkerConfig,
+    supervisor: Arc<Supervisor>,
+    state: Arc<ShutdownState>,
+) {
     let ceiling = config.backoff_ceiling_secs() as f64;
     let mut backoff = Backoff::new(ceiling);
 
@@ -139,10 +149,21 @@ pub async fn reconnect_loop(config: &ResolvedWorkerConfig, state: Arc<ShutdownSt
                 backoff.reset();
                 tracing::info!("connected to server");
 
-                if let Err(err) = handler::run_connection(stream, config, Arc::clone(&state)).await
+                if let Err(err) = handler::run_connection(
+                    stream,
+                    config,
+                    Arc::clone(&supervisor),
+                    Arc::clone(&state),
+                )
+                .await
                 {
                     tracing::warn!(%err, "connection closed");
                 }
+                // Detach the now-defunct transport so subsequent output
+                // goes to the spool instead of an already-closed
+                // channel. Build state is preserved across the
+                // reconnect.
+                supervisor.detach_transport().await;
             }
             Err(err) => {
                 tracing::warn!(%err, "connection attempt failed");
