@@ -142,8 +142,12 @@ The foundation. Every other wrapper in this phase invokes `async_run_cmd`.
 
 - `cbsd-rs/cbscore/src/utils/podman.rs` — port of `cbscore/utils/podman.py`.
   Free async functions: `podman_run(opts) -> Result<RunOutcome, PodmanError>`,
-  `podman_stop(name, timeout) -> Result<(), PodmanError>`,
-  `podman_pull(image_ref) -> Result<(), PodmanError>`,
+  `podman_stop(name: Option<&str>, timeout: Duration) -> Result<(), PodmanError>`
+  (when `name` is `Some(n)`, emits `podman stop --time <secs> <n>`; when `name`
+  is `None`, emits `podman stop --time <secs> --all` — matches Python
+  `cbscore/utils/podman.py:podman_stop`'s optional-name behaviour 1:1, so Phase
+  4 Commit 2's `runner::stop(None, …)` delegates directly without routing
+  through a second helper), `podman_pull(image_ref) -> Result<(), PodmanError>`,
   `podman_image_inspect(image_ref) -> Result<ImageMeta, PodmanError>`, etc.
 - `cbsd-rs/cbscore/src/utils/buildah.rs` — port of `cbscore/utils/buildah.py`.
   Free async functions: `buildah_from`, `buildah_commit`, `buildah_unmount`,
@@ -168,6 +172,12 @@ The foundation. Every other wrapper in this phase invokes `async_run_cmd`.
   `podman_run` with `--cidfile <tempdir>/cid` and `--rm` and the supplied
   mounts). The cidfile path comes from a per-test `tempfile::TempDir` (never a
   hard-coded `/tmp/cid` which would race between parallel test runs).
+- `podman_stop` command construction covers both branches:
+  `podman_stop(Some("ces_abcdef0123"), Duration::from_secs(1))` produces
+  `podman stop --time 1 ces_abcdef0123`;
+  `podman_stop(None, Duration::from_secs(1))` produces
+  `podman stop --time 1 --all`. Exercises the Option-typed name path Phase 4
+  Commit 2's `runner::stop` wraps for the `--all` form.
 - Error parsing: feed a known-bad podman stderr string into the error decoder,
   assert the right `PodmanError` variant is produced.
 - `buildah_unmount` of an unmounted container produces a recoverable error
