@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE builds\n         SET state = 'queued',\n             worker_id = NULL,\n             trace_id = NULL,\n             error = NULL,\n             started_at = NULL,\n             finished_at = NULL,\n             build_report = NULL\n         WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "045b71811b9d79e7c6bedacdd953564d613f6037d2c670fa33f0300865ede588"
+}

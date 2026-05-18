@@ -20,11 +20,12 @@
 use axum::extract::ws::Message;
 use cbsd_proto::ws::ServerMessage;
 use cbsd_proto::{BuildId, Priority};
+use sqlx::SqlitePool;
 
-use crate::app::AppState;
+use crate::app::{AppState, LogWatchers};
 use crate::components::tarball;
 use crate::db;
-use crate::queue::{ActiveBuild, QueuedBuild};
+use crate::queue::{ActiveBuild, QueuedBuild, SharedBuildQueue};
 
 /// Errors that can occur during dispatch.
 #[derive(Debug)]
@@ -186,46 +187,19 @@ pub async fn try_dispatch(state: &AppState) -> Result<(), DispatchError> {
     let json_text =
         serde_json::to_string(&build_new).expect("ServerMessage serialization cannot fail");
 
-    let send_result = {
-        let senders = state.worker_senders.lock().await;
-        if let Some(tx) = senders.get(&dispatch_info.connection_id) {
-            tx.send(Message::Text(json_text.into()))
-                .and_then(|()| tx.send(Message::Binary(tar_gz_bytes.into())))
-                .map_err(|e| DispatchError::Send(e.to_string()))
-        } else {
-            Err(DispatchError::Send(format!(
-                "no sender for connection {}",
-                dispatch_info.connection_id
-            )))
-        }
-    };
-
-    // Step 12: On send failure, roll back.
-    if let Err(e) = send_result {
-        tracing::error!(
-            build_id = dispatch_info.build_id.0,
-            connection_id = %dispatch_info.connection_id,
-            "failed to send build to worker: {e}"
-        );
-
-        let mut queue = state.queue.lock().await;
-        queue.active.remove(&dispatch_info.build_id.0);
-
-        // Re-queue the build at front of its priority lane.
-        queue.enqueue_front(QueuedBuild {
-            build_id: dispatch_info.build_id,
-            priority: dispatch_info.priority,
-            descriptor: dispatch_info.descriptor,
-            user_email: String::new(), // not used for re-queue ordering
-            queued_at: 0,              // not used for re-queue ordering
-        });
-
-        // Remove watch sender.
-        let mut watchers = state.log_watchers.lock().await;
-        watchers.remove(&dispatch_info.build_id.0);
-
-        return Err(e);
-    }
+    // Steps 11-12: send the JSON frame + binary tarball frame; on any send
+    // failure roll back per WCP D4 SI-6/SI-13. The extracted helper makes
+    // the send-then-rollback wiring testable as one unit.
+    send_and_recover(
+        &state.pool,
+        &state.queue,
+        &state.log_watchers,
+        &state.worker_senders,
+        &dispatch_info,
+        json_text,
+        tar_gz_bytes,
+    )
+    .await?;
 
     // Step 13: Spawn ack timeout task. If the worker doesn't send
     // build_accepted within dispatch_ack_timeout_secs, re-queue the build.
@@ -253,19 +227,11 @@ pub async fn try_dispatch(state: &AppState) -> Result<(), DispatchError> {
                             timeout_secs = ack_timeout_secs,
                             "dispatch ack timeout — re-queuing build"
                         );
-                        let mut queue = ack_state.queue.lock().await;
-                        if let Some(active) = queue.active.remove(&ack_build_id.0) {
-                            queue.enqueue_front(QueuedBuild {
-                                build_id: ack_build_id,
-                                priority: active.priority,
-                                descriptor: active.descriptor,
-                                user_email: String::new(),
-                                queued_at: 0,
-                            });
-                        }
-                        drop(queue);
-                        let _ = db::builds::update_build_state(
-                            &ack_state.pool, ack_build_id.0, "queued", None,
+                        rollback_active_to_queued(
+                            &ack_state.pool,
+                            &ack_state.queue,
+                            &ack_state.log_watchers,
+                            ack_build_id.0,
                         ).await;
                         // Re-dispatch will be picked up by the periodic sweep
                         // (30s) or the next build_finished event.
@@ -319,6 +285,145 @@ pub async fn handle_build_started(state: &AppState, build_id: i64) {
                 "failed to update build state to started: {e}"
             );
         }
+    }
+}
+
+/// Roll an active build back to `queued` after a failed or abandoned
+/// dispatch. Per WCP D4: clears the six provenance columns via the
+/// dedicated rollback DB operation, cancels the dispatch-ack timer,
+/// drops the log watcher, and re-enqueues at the front of the build's
+/// priority lane. Returns `true` if the build was active and is now
+/// rolled back; `false` if no active entry existed.
+///
+/// Takes the three pieces of `AppState` it touches as explicit args so
+/// callers in tests can drive the path without a full `AppState`.
+pub async fn rollback_active_to_queued(
+    pool: &SqlitePool,
+    queue: &SharedBuildQueue,
+    log_watchers: &LogWatchers,
+    build_id: i64,
+) -> bool {
+    let active = {
+        let mut q = queue.lock().await;
+        q.active.remove(&build_id)
+    };
+
+    let Some(ab) = active else {
+        return false;
+    };
+
+    ab.ack_cancel.cancel();
+
+    if let Err(e) = db::builds::rollback_dispatch_to_queued(pool, build_id).await {
+        tracing::error!(build_id, "rollback to queued failed: {e}");
+    }
+
+    {
+        let mut q = queue.lock().await;
+        q.enqueue_front(QueuedBuild {
+            build_id: BuildId(build_id),
+            priority: ab.priority,
+            descriptor: ab.descriptor,
+            user_email: String::new(),
+            queued_at: 0,
+        });
+    }
+
+    {
+        let mut watchers = log_watchers.lock().await;
+        watchers.remove(&build_id);
+    }
+
+    true
+}
+
+/// Step-12 send-failure rollback path of `try_dispatch`, extracted into
+/// a private helper that takes explicit state pieces so the regression
+/// guard for WCP D4 SI-6/SI-13 (review v1 finding F1) can be tested
+/// without standing up a full `AppState`. Logs the failure, then
+/// delegates to `rollback_active_to_queued` to shed in-memory state and
+/// clear all six provenance columns in the DB.
+async fn handle_dispatch_send_failure(
+    pool: &SqlitePool,
+    queue: &SharedBuildQueue,
+    log_watchers: &LogWatchers,
+    build_id: BuildId,
+    connection_id: &str,
+    err: &DispatchError,
+) {
+    tracing::error!(
+        build_id = build_id.0,
+        connection_id = %connection_id,
+        "failed to send build to worker: {err}"
+    );
+    rollback_active_to_queued(pool, queue, log_watchers, build_id.0).await;
+}
+
+/// Send `BuildNew`'s JSON frame and component tarball binary frame to the
+/// worker; on any send failure, invoke `handle_dispatch_send_failure` and
+/// surface the error. Couples the send and the rollback in one helper so
+/// the wiring between them — the load-bearing invariant per WCP D4 — is
+/// testable end-to-end without standing up a full `AppState`.
+async fn send_and_recover(
+    pool: &SqlitePool,
+    queue: &SharedBuildQueue,
+    log_watchers: &LogWatchers,
+    worker_senders: &WorkerSenders,
+    dispatch_info: &DispatchInfo,
+    json_text: String,
+    tar_gz_bytes: Vec<u8>,
+) -> Result<(), DispatchError> {
+    let send_result = {
+        let senders = worker_senders.lock().await;
+        if let Some(tx) = senders.get(&dispatch_info.connection_id) {
+            tx.send(Message::Text(json_text.into()))
+                .and_then(|()| tx.send(Message::Binary(tar_gz_bytes.into())))
+                .map_err(|e| DispatchError::Send(e.to_string()))
+        } else {
+            Err(DispatchError::Send(format!(
+                "no sender for connection {}",
+                dispatch_info.connection_id
+            )))
+        }
+    };
+
+    if let Err(e) = send_result {
+        handle_dispatch_send_failure(
+            pool,
+            queue,
+            log_watchers,
+            dispatch_info.build_id,
+            &dispatch_info.connection_id,
+            &e,
+        )
+        .await;
+        return Err(e);
+    }
+    Ok(())
+}
+
+/// On reconnect-Building with DB state `dispatched`, attach the new
+/// connection to the existing active entry **before** committing the
+/// `dispatched -> started` transition. Per WCP G10, the DB transition
+/// is the observation point for ownership checks (added in commit 2);
+/// the active entry's `connection_id` must already reflect the new
+/// connection when `started` is committed.
+pub async fn attach_connection_and_start(
+    pool: &SqlitePool,
+    queue: &SharedBuildQueue,
+    build_id: i64,
+    connection_id: &str,
+) {
+    {
+        let mut q = queue.lock().await;
+        if let Some(ab) = q.active.get_mut(&build_id) {
+            ab.connection_id = connection_id.to_string();
+        }
+    }
+    match db::builds::set_build_started(pool, build_id).await {
+        Ok(true) => tracing::info!(build_id, "build started (reconnect)"),
+        Ok(false) => tracing::warn!(build_id, "build started: no DB row updated"),
+        Err(e) => tracing::error!(build_id, "set_build_started failed: {e}"),
     }
 }
 
@@ -431,38 +536,7 @@ pub async fn handle_build_rejected(
             "build rejected — re-queuing"
         );
 
-        // Extract the build info from active, then re-queue.
-        let active_build = {
-            let mut queue = state.queue.lock().await;
-            queue.active.remove(&build_id)
-        };
-
-        if let Some(ab) = active_build {
-            ab.ack_cancel.cancel(); // cancel ack timer if still running
-            let mut queue = state.queue.lock().await;
-            queue.enqueue_front(QueuedBuild {
-                build_id: BuildId(build_id),
-                priority: ab.priority,
-                descriptor: ab.descriptor,
-                user_email: String::new(),
-                queued_at: 0,
-            });
-        }
-
-        // Revert DB state to queued.
-        if let Err(e) = db::builds::update_build_state(&state.pool, build_id, "queued", None).await
-        {
-            tracing::error!(
-                build_id = build_id,
-                "failed to revert build state to queued: {e}"
-            );
-        }
-
-        // Remove watch sender (will be re-created on next dispatch).
-        {
-            let mut watchers = state.log_watchers.lock().await;
-            watchers.remove(&build_id);
-        }
+        rollback_active_to_queued(&state.pool, &state.queue, &state.log_watchers, build_id).await;
 
         // Try to dispatch to another worker.
         if let Err(DispatchError::NothingToDispatch) = try_dispatch(state).await {
@@ -641,4 +715,443 @@ struct DispatchInfo {
     descriptor: cbsd_proto::BuildDescriptor,
     trace_id: String,
     connection_id: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+    use std::str::FromStr;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    use cbsd_proto::{
+        Arch, BuildComponent, BuildDescriptor, BuildDestImage, BuildSignedOffBy, BuildTarget,
+        Priority,
+    };
+    use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+    use tokio::sync::Mutex;
+
+    use super::*;
+    use crate::queue::BuildQueue;
+
+    /// In-memory SQLite pool for one test, isolated by URL.
+    async fn test_pool() -> SqlitePool {
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        let id = COUNTER.fetch_add(1, Ordering::SeqCst);
+        let url = format!(
+            "file:dispatch_test_{pid}_{id}?mode=memory&cache=shared",
+            pid = std::process::id(),
+        );
+        let options = SqliteConnectOptions::from_str(&url)
+            .expect("valid sqlite URL")
+            .pragma("foreign_keys", "ON")
+            .pragma("busy_timeout", "5000");
+        let pool = SqlitePoolOptions::new()
+            .max_connections(4)
+            .min_connections(1)
+            .connect_with(options)
+            .await
+            .expect("pool");
+        sqlx::migrate!("../migrations")
+            .run(&pool)
+            .await
+            .expect("migrations");
+        pool
+    }
+
+    fn sample_descriptor() -> BuildDescriptor {
+        BuildDescriptor {
+            version: "19.2.3".to_string(),
+            channel: None,
+            version_type: None,
+            signed_off_by: BuildSignedOffBy {
+                user: "u".to_string(),
+                email: "u@e.com".to_string(),
+            },
+            dst_image: BuildDestImage {
+                name: "img".to_string(),
+                tag: "tag".to_string(),
+            },
+            components: vec![BuildComponent {
+                name: "c".to_string(),
+                git_ref: "main".to_string(),
+                repo: None,
+            }],
+            build: BuildTarget {
+                distro: "fedora".to_string(),
+                os_version: "42".to_string(),
+                artifact_type: "rpm".to_string(),
+                arch: Arch::X86_64,
+            },
+        }
+    }
+
+    fn empty_queue() -> SharedBuildQueue {
+        Arc::new(Mutex::new(BuildQueue::new()))
+    }
+
+    fn empty_log_watchers() -> LogWatchers {
+        Arc::new(Mutex::new(HashMap::new()))
+    }
+
+    async fn seed_user(pool: &SqlitePool, email: &str) {
+        sqlx::query!(
+            "INSERT INTO users (email, name, active, is_robot) VALUES (?, ?, 1, 0)",
+            email,
+            email,
+        )
+        .execute(pool)
+        .await
+        .expect("seed user");
+    }
+
+    async fn insert_dispatched(pool: &SqlitePool) -> i64 {
+        seed_user(pool, "u@e.com").await;
+        let id = db::builds::insert_build(
+            pool,
+            r#"{"name":"t"}"#,
+            "u@e.com",
+            "normal",
+            None,
+            None,
+            None,
+        )
+        .await
+        .expect("insert");
+        db::builds::set_build_dispatched(pool, id, "trace-1", "worker-1")
+            .await
+            .expect("dispatched");
+        id
+    }
+
+    fn make_active(build_id: i64, connection_id: &str) -> ActiveBuild {
+        ActiveBuild {
+            build_id,
+            connection_id: connection_id.to_string(),
+            dispatched_at: tokio::time::Instant::now(),
+            trace_id: "trace-1".to_string(),
+            descriptor: sample_descriptor(),
+            priority: Priority::Normal,
+            ack_cancel: tokio_util::sync::CancellationToken::new(),
+        }
+    }
+
+    #[tokio::test]
+    async fn rollback_active_to_queued_resets_db_and_reenqueues_at_front() {
+        let pool = test_pool().await;
+        let queue = empty_queue();
+        let watchers = empty_log_watchers();
+        let build_id = insert_dispatched(&pool).await;
+
+        let ack = tokio_util::sync::CancellationToken::new();
+        {
+            let mut q = queue.lock().await;
+            q.active.insert(
+                build_id,
+                ActiveBuild {
+                    ack_cancel: ack.clone(),
+                    ..make_active(build_id, "conn-1")
+                },
+            );
+        }
+        {
+            let (tx, _rx) = tokio::sync::watch::channel(());
+            watchers.lock().await.insert(build_id, tx);
+        }
+
+        let rolled = rollback_active_to_queued(&pool, &queue, &watchers, build_id).await;
+        assert!(rolled);
+        assert!(ack.is_cancelled(), "ack timer should be cancelled");
+
+        let q = queue.lock().await;
+        assert!(!q.active.contains_key(&build_id));
+        assert!(q.contains(BuildId(build_id)), "build re-enqueued");
+        drop(q);
+
+        let watchers = watchers.lock().await;
+        assert!(!watchers.contains_key(&build_id));
+        drop(watchers);
+
+        // All six WCP D4 SI-6/SI-13 provenance columns must be NULL — this
+        // is the regression guard for F1 (send-failure rollback skipping
+        // the DB cleanup). The helper is now invoked from `try_dispatch`
+        // step 12 on send failure, so the same invariant applies there.
+        let build = db::builds::get_build(&pool, build_id)
+            .await
+            .expect("get")
+            .expect("row");
+        assert_eq!(build.state, "queued");
+        assert!(build.worker_id.is_none());
+        assert!(build.trace_id.is_none());
+        assert!(build.error.is_none());
+        assert!(build.started_at.is_none());
+        assert!(build.finished_at.is_none());
+        assert!(build.build_report.is_none());
+    }
+
+    #[tokio::test]
+    async fn rollback_active_to_queued_returns_false_when_not_active() {
+        let pool = test_pool().await;
+        let queue = empty_queue();
+        let watchers = empty_log_watchers();
+
+        let rolled = rollback_active_to_queued(&pool, &queue, &watchers, 1234).await;
+        assert!(!rolled);
+    }
+
+    /// Regression guard for review v1 finding F1: `try_dispatch` step 12
+    /// must clear the DB on send failure, not just the in-memory queue.
+    /// The production code's step 12 is now a single call to
+    /// `handle_dispatch_send_failure`, so reverting step 12 would replace
+    /// this helper call with a divergent implementation and any change
+    /// is visible in code review. This test pins the helper's contract:
+    /// after invocation, all six WCP D4 provenance columns are NULL and
+    /// the build is re-enqueued at front.
+    #[tokio::test]
+    async fn handle_dispatch_send_failure_clears_six_columns_and_requeues() {
+        let pool = test_pool().await;
+        let queue = empty_queue();
+        let watchers = empty_log_watchers();
+        let build_id = insert_dispatched(&pool).await;
+
+        // Mirror production state at the point step 12 fires: the build
+        // row in DB is `dispatched` with worker_id + trace_id set
+        // (`set_build_dispatched` already did that in `insert_dispatched`),
+        // and the in-memory queue holds an `ActiveBuild` + log watcher.
+        let ack = tokio_util::sync::CancellationToken::new();
+        {
+            let mut q = queue.lock().await;
+            q.active.insert(
+                build_id,
+                ActiveBuild {
+                    ack_cancel: ack.clone(),
+                    ..make_active(build_id, "conn-bad")
+                },
+            );
+        }
+        {
+            let (tx, _rx) = tokio::sync::watch::channel(());
+            watchers.lock().await.insert(build_id, tx);
+        }
+
+        let err = DispatchError::Send("simulated broken sender".to_string());
+        handle_dispatch_send_failure(
+            &pool,
+            &queue,
+            &watchers,
+            BuildId(build_id),
+            "conn-bad",
+            &err,
+        )
+        .await;
+
+        let build = db::builds::get_build(&pool, build_id)
+            .await
+            .expect("get")
+            .expect("row");
+        assert_eq!(build.state, "queued");
+        assert!(build.worker_id.is_none(), "worker_id must be cleared");
+        assert!(build.trace_id.is_none(), "trace_id must be cleared");
+        assert!(build.error.is_none());
+        assert!(build.started_at.is_none());
+        assert!(build.finished_at.is_none());
+        assert!(build.build_report.is_none());
+
+        let q = queue.lock().await;
+        assert!(!q.active.contains_key(&build_id), "active entry removed");
+        assert!(
+            q.contains(BuildId(build_id)),
+            "build re-enqueued at front of priority lane"
+        );
+        drop(q);
+
+        let watchers = watchers.lock().await;
+        assert!(
+            !watchers.contains_key(&build_id),
+            "log watcher must be removed"
+        );
+        assert!(ack.is_cancelled(), "ack timer must be cancelled");
+    }
+
+    /// Stage shared by the `send_and_recover_*` tests: insert a build in
+    /// `dispatched` state, place its `ActiveBuild` + log watcher in the
+    /// queue, and return the build id and ack cancellation token so
+    /// callers can assert cancellation.
+    async fn stage_dispatched_active(
+        pool: &SqlitePool,
+        queue: &SharedBuildQueue,
+        log_watchers: &LogWatchers,
+        connection_id: &str,
+    ) -> (i64, tokio_util::sync::CancellationToken) {
+        let build_id = insert_dispatched(pool).await;
+        let ack = tokio_util::sync::CancellationToken::new();
+        {
+            let mut q = queue.lock().await;
+            q.active.insert(
+                build_id,
+                ActiveBuild {
+                    ack_cancel: ack.clone(),
+                    ..make_active(build_id, connection_id)
+                },
+            );
+        }
+        {
+            let (tx, _rx) = tokio::sync::watch::channel(());
+            log_watchers.lock().await.insert(build_id, tx);
+        }
+        (build_id, ack)
+    }
+
+    fn make_dispatch_info(build_id: i64, connection_id: &str) -> DispatchInfo {
+        DispatchInfo {
+            build_id: BuildId(build_id),
+            priority: Priority::Normal,
+            descriptor: sample_descriptor(),
+            trace_id: "trace-1".to_string(),
+            connection_id: connection_id.to_string(),
+        }
+    }
+
+    fn assert_db_rolled_back_to_queued(build: &crate::db::builds::BuildRecord) {
+        assert_eq!(build.state, "queued");
+        assert!(build.worker_id.is_none());
+        assert!(build.trace_id.is_none());
+        assert!(build.error.is_none());
+        assert!(build.started_at.is_none());
+        assert!(build.finished_at.is_none());
+        assert!(build.build_report.is_none());
+    }
+
+    /// End-to-end regression guard for review v3 finding NA1: the send
+    /// path AND the rollback wiring are exercised together by driving
+    /// `send_and_recover` with a sender whose receiver has been dropped,
+    /// which forces `tx.send` to fail. Pinning both the send attempt and
+    /// the rollback together prevents a maintainer from severing step 12
+    /// from `handle_dispatch_send_failure` without a test catching it.
+    #[tokio::test]
+    async fn send_and_recover_with_closed_receiver_rolls_back_db() {
+        let pool = test_pool().await;
+        let queue = empty_queue();
+        let watchers = empty_log_watchers();
+        let senders: WorkerSenders = Arc::new(Mutex::new(HashMap::new()));
+        let (build_id, ack) =
+            stage_dispatched_active(&pool, &queue, &watchers, "conn-broken").await;
+
+        // Register a sender, then drop its receiver to force `tx.send`
+        // to fail on the next call.
+        {
+            let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+            drop(rx);
+            senders.lock().await.insert("conn-broken".to_string(), tx);
+        }
+
+        let info = make_dispatch_info(build_id, "conn-broken");
+        let result = send_and_recover(
+            &pool,
+            &queue,
+            &watchers,
+            &senders,
+            &info,
+            "{}".to_string(),
+            vec![0u8; 4],
+        )
+        .await;
+        assert!(
+            matches!(result, Err(DispatchError::Send(_))),
+            "must surface a Send error, got {result:?}"
+        );
+
+        let build = db::builds::get_build(&pool, build_id)
+            .await
+            .expect("get")
+            .expect("row");
+        assert_db_rolled_back_to_queued(&build);
+
+        let q = queue.lock().await;
+        assert!(!q.active.contains_key(&build_id), "active entry removed");
+        assert!(q.contains(BuildId(build_id)), "build re-enqueued");
+        drop(q);
+
+        assert!(
+            !watchers.lock().await.contains_key(&build_id),
+            "log watcher must be removed"
+        );
+        assert!(ack.is_cancelled(), "ack timer must be cancelled");
+    }
+
+    /// Companion to the closed-receiver test: covers the branch where the
+    /// `WorkerSenders` map has no entry at all for the dispatched
+    /// connection. `send_and_recover` must still take the rollback path.
+    #[tokio::test]
+    async fn send_and_recover_with_no_sender_for_connection_rolls_back_db() {
+        let pool = test_pool().await;
+        let queue = empty_queue();
+        let watchers = empty_log_watchers();
+        let senders: WorkerSenders = Arc::new(Mutex::new(HashMap::new()));
+        let (build_id, ack) =
+            stage_dispatched_active(&pool, &queue, &watchers, "conn-missing").await;
+
+        // No sender registered for "conn-missing".
+        let info = make_dispatch_info(build_id, "conn-missing");
+        let result = send_and_recover(
+            &pool,
+            &queue,
+            &watchers,
+            &senders,
+            &info,
+            "{}".to_string(),
+            vec![0u8; 4],
+        )
+        .await;
+        assert!(
+            matches!(result, Err(DispatchError::Send(_))),
+            "must surface a Send error, got {result:?}"
+        );
+
+        let build = db::builds::get_build(&pool, build_id)
+            .await
+            .expect("get")
+            .expect("row");
+        assert_db_rolled_back_to_queued(&build);
+
+        let q = queue.lock().await;
+        assert!(!q.active.contains_key(&build_id), "active entry removed");
+        assert!(
+            q.contains(BuildId(build_id)),
+            "build re-enqueued at front of priority lane"
+        );
+        drop(q);
+
+        assert!(
+            !watchers.lock().await.contains_key(&build_id),
+            "log watcher must be removed"
+        );
+        assert!(ack.is_cancelled(), "ack timer must be cancelled");
+    }
+
+    #[tokio::test]
+    async fn attach_connection_and_start_updates_connection_then_transitions_to_started() {
+        let pool = test_pool().await;
+        let queue = empty_queue();
+        let build_id = insert_dispatched(&pool).await;
+
+        {
+            let mut q = queue.lock().await;
+            q.active.insert(build_id, make_active(build_id, "old-conn"));
+        }
+
+        attach_connection_and_start(&pool, &queue, build_id, "new-conn").await;
+
+        let q = queue.lock().await;
+        let ab = q.active.get(&build_id).expect("still active");
+        assert_eq!(ab.connection_id, "new-conn");
+        drop(q);
+
+        let build = db::builds::get_build(&pool, build_id)
+            .await
+            .expect("get")
+            .expect("row");
+        assert_eq!(build.state, "started");
+        assert!(build.started_at.is_some(), "started_at populated");
+    }
 }

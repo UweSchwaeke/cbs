@@ -246,6 +246,35 @@ pub async fn update_build_state(
     Ok(result.rows_affected() > 0)
 }
 
+/// Roll a build back to QUEUED after a failed or abandoned dispatch,
+/// clearing every assignment-provenance column in a single statement.
+///
+/// Per WCP D4 (SI-6, SI-13), a build that returns to `queued` from an
+/// abandoned dispatch must not retain stale provenance from the attempt:
+/// `worker_id`, `trace_id`, `error`, `started_at`, `finished_at`, and
+/// `build_report` are all reset to NULL. The generic `update_build_state`
+/// helper does not own this reset list and is the wrong tool for the job.
+///
+/// Returns `true` if a row was updated.
+pub async fn rollback_dispatch_to_queued(pool: &SqlitePool, id: i64) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query!(
+        "UPDATE builds
+         SET state = 'queued',
+             worker_id = NULL,
+             trace_id = NULL,
+             error = NULL,
+             started_at = NULL,
+             finished_at = NULL,
+             build_report = NULL
+         WHERE id = ?",
+        id,
+    )
+    .execute(pool)
+    .await?;
+
+    Ok(result.rows_affected() > 0)
+}
+
 /// Insert a build log metadata row. Called at submission time so the
 /// SSE follow endpoint can find the row before dispatch.
 pub async fn insert_build_log_row(
@@ -373,5 +402,115 @@ fn row_to_build_list_record(r: sqlx::sqlite::SqliteRow) -> BuildListRecord {
         channel_type_id: r.get("channel_type_id"),
         channel_name: r.get("channel_name"),
         channel_type_name: r.get("channel_type_name"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+
+    use super::*;
+
+    /// Per-test in-memory SQLite pool with the project migrations applied.
+    /// Each call returns a fresh, isolated DB.
+    async fn test_pool() -> SqlitePool {
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        let id = COUNTER.fetch_add(1, Ordering::SeqCst);
+        let url = format!(
+            "file:builds_test_{pid}_{id}?mode=memory&cache=shared",
+            pid = std::process::id(),
+        );
+        let options = SqliteConnectOptions::from_str(&url)
+            .expect("valid sqlite URL")
+            .pragma("foreign_keys", "ON")
+            .pragma("busy_timeout", "5000");
+        let pool = SqlitePoolOptions::new()
+            .max_connections(4)
+            .min_connections(1)
+            .connect_with(options)
+            .await
+            .expect("pool");
+        sqlx::migrate!("../migrations")
+            .run(&pool)
+            .await
+            .expect("migrations");
+        pool
+    }
+
+    async fn seed_user(pool: &SqlitePool, email: &str) {
+        sqlx::query!(
+            "INSERT INTO users (email, name, active, is_robot) VALUES (?, ?, 1, 0)",
+            email,
+            email,
+        )
+        .execute(pool)
+        .await
+        .expect("seed user");
+    }
+
+    #[tokio::test]
+    async fn rollback_dispatch_to_queued_clears_all_provenance_columns() {
+        let pool = test_pool().await;
+        seed_user(&pool, "u@e.com").await;
+        let id = insert_build(
+            &pool,
+            r#"{"name":"t"}"#,
+            "u@e.com",
+            "normal",
+            None,
+            None,
+            None,
+        )
+        .await
+        .expect("insert");
+
+        // Drive the row into a "dirty" post-dispatch state covering every
+        // column that the rollback operation must reset.
+        sqlx::query!(
+            "UPDATE builds
+             SET state = 'started',
+                 worker_id = 'w1',
+                 trace_id = 't1',
+                 error = 'e1',
+                 started_at = 1,
+                 finished_at = 2,
+                 build_report = '{\"r\":1}'
+             WHERE id = ?",
+            id,
+        )
+        .execute(&pool)
+        .await
+        .expect("dirty");
+
+        let rolled = rollback_dispatch_to_queued(&pool, id)
+            .await
+            .expect("rollback");
+        assert!(rolled);
+
+        let row = sqlx::query!(
+            "SELECT state, worker_id, trace_id, error, started_at, finished_at, build_report
+             FROM builds WHERE id = ?",
+            id,
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("fetch");
+        assert_eq!(row.state, "queued");
+        assert!(row.worker_id.is_none());
+        assert!(row.trace_id.is_none());
+        assert!(row.error.is_none());
+        assert!(row.started_at.is_none());
+        assert!(row.finished_at.is_none());
+        assert!(row.build_report.is_none());
+    }
+
+    #[tokio::test]
+    async fn rollback_dispatch_to_queued_returns_false_for_unknown_id() {
+        let pool = test_pool().await;
+        let rolled = rollback_dispatch_to_queued(&pool, 9999).await.expect("ok");
+        assert!(!rolled);
     }
 }

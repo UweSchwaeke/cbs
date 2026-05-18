@@ -658,12 +658,15 @@ async fn handle_worker_status(
                         build_id = build_id.0,
                         "reconnect: DB=dispatched, worker building — implicit accept → started"
                     );
-                    dispatch::handle_build_started(state, build_id.0).await;
-
-                    let mut queue = state.queue.lock().await;
-                    if let Some(ab) = queue.active.get_mut(&build_id.0) {
-                        ab.connection_id = connection_id.to_string();
-                    }
+                    // Per WCP G10: set connection_id before the dispatched ->
+                    // started DB transition. The helper does both in order.
+                    dispatch::attach_connection_and_start(
+                        &state.pool,
+                        &state.queue,
+                        build_id.0,
+                        connection_id,
+                    )
+                    .await;
                 }
                 "started" => {
                     tracing::info!(
@@ -742,7 +745,13 @@ async fn handle_worker_status(
                             old_connection = %old_cid,
                             "reconnect idle: DB=dispatched — re-queuing"
                         );
-                        requeue_active_build(state, *build_id).await;
+                        dispatch::rollback_active_to_queued(
+                            &state.pool,
+                            &state.queue,
+                            &state.log_watchers,
+                            *build_id,
+                        )
+                        .await;
                     }
                     "started" => {
                         tracing::error!(
@@ -802,7 +811,13 @@ pub async fn handle_worker_dead(state: &AppState, connection_id: &str) {
                     connection_id = %connection_id,
                     "worker dead — re-queuing dispatched build"
                 );
-                requeue_active_build(state, build_id).await;
+                dispatch::rollback_active_to_queued(
+                    &state.pool,
+                    &state.queue,
+                    &state.log_watchers,
+                    build_id,
+                )
+                .await;
             }
             "started" => {
                 tracing::error!(
@@ -849,6 +864,17 @@ pub async fn handle_worker_dead(state: &AppState, connection_id: &str) {
             }
         }
     }
+
+    // Any builds re-queued above need another idle worker. The previous
+    // implementation called `try_dispatch` per-build inside the now-deleted
+    // `requeue_active_build` helper; a single post-loop call is functionally
+    // equivalent.
+    if let Err(dispatch::DispatchError::NothingToDispatch) = dispatch::try_dispatch(state).await {
+        tracing::debug!(
+            connection_id = %connection_id,
+            "worker dead: no re-dispatch needed"
+        );
+    }
 }
 
 /// Mark a build as FAILURE, clean up active map and log watchers.
@@ -869,41 +895,6 @@ async fn fail_build(state: &AppState, build_id: i64, reason: &str) {
     {
         let mut watchers = state.log_watchers.lock().await;
         watchers.remove(&build_id);
-    }
-}
-
-/// Re-queue an active build at the front of its priority lane.
-/// Uses `ab.priority` — not hardcoded `Priority::Normal`.
-async fn requeue_active_build(state: &AppState, build_id: i64) {
-    let active_build = {
-        let mut queue = state.queue.lock().await;
-        queue.active.remove(&build_id)
-    };
-
-    if let Some(ab) = active_build {
-        if let Err(e) =
-            crate::db::builds::update_build_state(&state.pool, build_id, "queued", None).await
-        {
-            tracing::error!(build_id = build_id, "failed to revert to queued: {e}");
-        }
-
-        let mut queue = state.queue.lock().await;
-        queue.enqueue_front(crate::queue::QueuedBuild {
-            build_id: BuildId(build_id),
-            priority: ab.priority,
-            descriptor: ab.descriptor,
-            user_email: String::new(),
-            queued_at: 0,
-        });
-    }
-
-    {
-        let mut watchers = state.log_watchers.lock().await;
-        watchers.remove(&build_id);
-    }
-
-    if let Err(dispatch::DispatchError::NothingToDispatch) = dispatch::try_dispatch(state).await {
-        tracing::debug!("no workers available after re-queue of build {build_id}");
     }
 }
 
