@@ -13,5 +13,6 @@
 //! extend this crate without revisiting the top-level structure.
 
 pub mod images;
+pub mod secrets;
 pub mod utils;
 pub mod versions;

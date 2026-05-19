@@ -17,7 +17,7 @@ cuts.
 | --- | ------------------------------------------------------- | ---- | ------- |
 | 1   | `cbscore: add utils::s3 wrapper (aws-sdk-s3)`           | ~500 | Done    |
 | 2   | `cbscore: add utils::vault wrapper (vaultrs)`           | ~300 | Done    |
-| 3   | `cbscore: add secrets module (SecretsMgr + merge/dump)` | ~500 | Pending |
+| 3   | `cbscore: add secrets module (SecretsMgr + merge/dump)` | ~500 | Done    |
 | 4   | `cbscore: add config IO (Config::load + Config::store)` | ~250 | Pending |
 
 **Estimate:** ~1550 LOC, 4 commits.

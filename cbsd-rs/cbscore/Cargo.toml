@@ -41,6 +41,7 @@ which = "7"
 serde.workspace = true
 serde_json.workspace = true
 serde-saphyr = "0.0.24"
+serde-value = "0.7"
 
 # errors + helpers
 thiserror = "2"
