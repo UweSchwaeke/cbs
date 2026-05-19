@@ -5,16 +5,14 @@
 //! re-enters `cbsbuild` inside as PID 1.
 //!
 //! Drives the full build state machine (Idle → Preparing → Spawning
-//! → Running → Finished / Failed / Stopped → Cleanup).
-//!
-//! Phase 4 Commit 2 lands the small helpers that the
-//! [`cbsbuild runner stop`] CLI surface (Phase 6) will eventually
-//! expose: [`gen_run_name`] for unique container naming and [`stop`]
-//! for graceful shutdown of a single container or every
-//! cbscore-prefixed container.
-//!
-//! The full state machine + podman invocation (`runner::run`) lands
-//! in Phase 4 Commit 3.
+//! → Running → Finished / Failed / Stopped → Cleanup) — see
+//! [`run`] for the orchestration loop and [`gen_run_name`] /
+//! [`stop`] for the small helpers the Phase 6
+//! `cbsbuild runner stop` CLI surface exposes.
+
+pub mod run;
+
+pub use run::{RunOpts, RunReport, run};
 
 use std::time::Duration;
 

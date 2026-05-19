@@ -64,6 +64,11 @@ pub struct PodmanRunOpts<'a> {
     /// Internal timeout (passed both to podman via `--timeout` and to
     /// the subprocess driver's [`RunOpts::timeout`]).
     pub timeout: Option<Duration>,
+    /// Optional `--workdir` — in-container working directory. Phase 4
+    /// runner pins this to `/runner` for determinism; the in-container
+    /// CLI uses absolute paths for config / secrets / descriptor
+    /// everywhere so `--workdir` is for determinism, not correctness.
+    pub workdir: Option<String>,
     /// Trailing positional args appended after the image.
     pub args: Vec<String>,
 }
@@ -133,6 +138,10 @@ pub fn podman_run_argv(opts: &PodmanRunOpts<'_>) -> Vec<String> {
     if let Some(ep) = &opts.entrypoint {
         argv.push("--entrypoint".into());
         argv.push(ep.clone());
+    }
+    if let Some(wd) = &opts.workdir {
+        argv.push("--workdir".into());
+        argv.push(wd.clone());
     }
     argv.push(opts.image.clone());
     argv.extend(opts.args.iter().cloned());
