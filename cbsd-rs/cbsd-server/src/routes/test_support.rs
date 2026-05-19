@@ -74,9 +74,16 @@ pub async fn test_pool() -> SqlitePool {
 /// only field most handlers actually touch; the rest carry harmless dummy
 /// values (empty queue, empty worker senders, empty log indices, etc.).
 pub fn test_app_state(pool: SqlitePool) -> AppState {
+    test_app_state_with_components_dir(pool, PathBuf::from("/tmp/cbsd-test-components"))
+}
+
+/// `test_app_state` variant that lets the caller override the
+/// `components_dir`. Required by dispatch-level tests that pack a real
+/// component tarball from a tempdir.
+pub fn test_app_state_with_components_dir(pool: SqlitePool, components_dir: PathBuf) -> AppState {
     AppState {
         pool,
-        config: Arc::new(test_server_config()),
+        config: Arc::new(test_server_config_with_components_dir(components_dir)),
         oauth: OAuthState::dummy(),
         token_cache: TokenCache::new(64),
         queue: Arc::new(Mutex::new(BuildQueue::new())),
@@ -91,14 +98,14 @@ pub fn test_app_state(pool: SqlitePool) -> AppState {
     }
 }
 
-fn test_server_config() -> ServerConfig {
+fn test_server_config_with_components_dir(components_dir: PathBuf) -> ServerConfig {
     ServerConfig {
         listen_addr: "127.0.0.1:0".to_string(),
         tls_cert_path: None,
         tls_key_path: None,
         db_path: ":memory:".to_string(),
         log_dir: PathBuf::from("/tmp/cbsd-test-logs"),
-        components_dir: PathBuf::from("/tmp/cbsd-test-components"),
+        components_dir,
         secrets: SecretsConfig {
             token_secret_key: "0".repeat(128),
             max_token_ttl_seconds: 15_552_000,
@@ -114,6 +121,19 @@ fn test_server_config() -> ServerConfig {
         dev: DevConfig::default(),
         logging: LoggingConfig::default(),
     }
+}
+
+/// Create a tempdir with a single child directory named `component_name`
+/// holding one placeholder file, structured so that
+/// `cbsd-server::components::tarball::pack_component(&tempdir.path(),
+/// component_name)` succeeds. The returned `TempDir` cleans up on drop;
+/// callers must keep it alive for the duration of the test.
+pub fn temp_component_dir(component_name: &str) -> tempfile::TempDir {
+    let tmp = tempfile::TempDir::new().expect("tempdir");
+    let component_root = tmp.path().join(component_name);
+    std::fs::create_dir_all(&component_root).expect("mkdir component");
+    std::fs::write(component_root.join("placeholder"), b"test\n").expect("write placeholder");
+    tmp
 }
 
 /// Construct an `AuthUser` with the requested caps. Does not insert a

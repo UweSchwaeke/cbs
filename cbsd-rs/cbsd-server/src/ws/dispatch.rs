@@ -1432,4 +1432,103 @@ mod tests {
             );
         }
     }
+
+    /// End-to-end regression guard for review v4 finding NB1 (Phase 1
+    /// carry-over): drives `try_dispatch` itself with an idle worker
+    /// whose outbound channel is closed, forcing step 11's `tx.send` to
+    /// fail. Asserts step 12 cleared all six WCP D4 SI-6/SI-13
+    /// provenance columns, removed the active entry and log watcher,
+    /// and re-enqueued the build in its priority lane.
+    #[tokio::test]
+    async fn try_dispatch_send_failure_rolls_back_db_end_to_end() {
+        use crate::routes::test_support::{temp_component_dir, test_app_state_with_components_dir};
+        use crate::ws::liveness::WorkerState;
+        use cbsd_proto::Arch;
+
+        let pool = test_pool().await;
+        let component_name = "c"; // matches `sample_descriptor`'s component
+        let tempdir = temp_component_dir(component_name);
+        let state = test_app_state_with_components_dir(pool.clone(), tempdir.path().to_path_buf());
+
+        seed_user(&pool, "u@e.com").await;
+        let descriptor = sample_descriptor();
+        let descriptor_json = serde_json::to_string(&descriptor).expect("serialize");
+        let build_id = db::builds::insert_build(
+            &pool,
+            &descriptor_json,
+            "u@e.com",
+            "normal",
+            None,
+            None,
+            None,
+        )
+        .await
+        .expect("insert");
+
+        {
+            let mut q = state.queue.lock().await;
+            q.enqueue(QueuedBuild {
+                build_id: BuildId(build_id),
+                priority: Priority::Normal,
+                descriptor: descriptor.clone(),
+                user_email: "u@e.com".to_string(),
+                queued_at: 0,
+            });
+            q.workers.insert(
+                "test-conn".to_string(),
+                WorkerState::Connected {
+                    registered_worker_id: "worker-1".to_string(),
+                    worker_name: "test-worker".to_string(),
+                    arch: Arch::X86_64,
+                    cores_total: 4,
+                    ram_total_mb: 1024,
+                    version: None,
+                },
+            );
+        }
+
+        // Drop the receiver so step 11's `tx.send` fails synchronously.
+        {
+            let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+            drop(rx);
+            state
+                .worker_senders
+                .lock()
+                .await
+                .insert("test-conn".to_string(), tx);
+        }
+
+        let result = try_dispatch(&state).await;
+        assert!(
+            matches!(result, Err(DispatchError::Send(_))),
+            "expected DispatchError::Send, got {result:?}"
+        );
+
+        let build = db::builds::get_build(&pool, build_id)
+            .await
+            .expect("get")
+            .expect("row");
+        assert_eq!(build.state, "queued");
+        assert!(build.worker_id.is_none(), "worker_id must be NULL");
+        assert!(build.trace_id.is_none(), "trace_id must be NULL");
+        assert!(build.error.is_none());
+        assert!(build.started_at.is_none());
+        assert!(build.finished_at.is_none());
+        assert!(build.build_report.is_none());
+
+        let q = state.queue.lock().await;
+        assert!(!q.active.contains_key(&build_id));
+        assert!(
+            q.contains(BuildId(build_id)),
+            "build re-enqueued at front of priority lane"
+        );
+        drop(q);
+
+        assert!(
+            !state.log_watchers.lock().await.contains_key(&build_id),
+            "log watcher must be removed"
+        );
+
+        drop(tempdir); // keep the component dir alive until after assertions
+    }
 }
