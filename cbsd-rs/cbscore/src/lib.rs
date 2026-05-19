@@ -14,6 +14,7 @@
 
 pub mod config;
 pub mod images;
+pub mod runner;
 pub mod secrets;
 pub mod utils;
 pub mod versions;
