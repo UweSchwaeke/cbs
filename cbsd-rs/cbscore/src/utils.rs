@@ -14,3 +14,4 @@ pub mod git;
 pub mod podman;
 pub mod s3;
 pub mod subprocess;
+pub mod vault;
