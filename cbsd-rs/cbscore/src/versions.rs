@@ -10,4 +10,5 @@
 //! `cbscore::versions::create`; seq-004 adds `resolve_root` in
 //! `cbscore::versions::resolve`.
 
+pub mod desc;
 pub mod utils;
