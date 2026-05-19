@@ -14,6 +14,7 @@
 
 pub mod builder;
 pub mod config;
+pub mod core;
 pub mod images;
 pub mod runner;
 pub mod secrets;

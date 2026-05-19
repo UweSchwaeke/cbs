@@ -35,6 +35,7 @@ camino-tempfile = "1"
 tar = "0.4"
 flate2 = "1"
 tempfile = "3"
+walkdir = "2"
 which = "7"
 
 # serde (descriptor / config types come from cbscore-types)
