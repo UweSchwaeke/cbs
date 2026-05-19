@@ -43,7 +43,14 @@ class GoogleOAuthUserInfo(pydantic.BaseModel):
     # skipped fields ...
     email: str
     name: str
-    picture: str
+    picture: str | None = None
+
+    @pydantic.model_validator(mode="before")
+    @classmethod
+    def _default_name_to_email(cls, data: object) -> object:
+        if isinstance(data, dict) and not data.get("name") and data.get("email"):
+            data["name"] = data["email"]
+        return data
 
 
 class _GoogleOAuthToken(pydantic.BaseModel):
@@ -122,8 +129,8 @@ def oauth_google_user_info(
 ) -> GoogleOAuthUserInfo:
     try:
         token_res = _GoogleOAuthToken.model_validate(data)
-    except pydantic.ValidationError:
-        raise _GoogleInvalidTokenResponseError() from None
+    except pydantic.ValidationError as e:
+        raise _GoogleInvalidTokenResponseError() from e
 
     return token_res.userinfo
 
