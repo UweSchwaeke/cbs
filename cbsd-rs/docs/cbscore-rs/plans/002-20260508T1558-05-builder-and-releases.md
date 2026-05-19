@@ -17,7 +17,7 @@ cuts.
 | --- | ---------------------------------------------------------------------- | ---- | ------- |
 | 1   | `cbscore: add builder::prepare stage (sources + repo resolution)`      | ~550 | Done    |
 | 2   | `cbscore: add core::component module (load_components IO)`             | ~200 | Done    |
-| 3   | `cbscore: add builder::rpmbuild stage (per-component RPM builds)`      | ~500 | Pending |
+| 3   | `cbscore: add builder::rpmbuild stage (per-component RPM builds)`      | ~500 | Done    |
 | 4   | `cbscore: add containers module + images::sync (container production)` | ~550 | Pending |
 | 5   | `cbscore: add builder::signing + images::signing (GPG + transit)`      | ~500 | Pending |
 | 6   | `cbscore: add builder::upload + releases module (S3 publish)`          | ~600 | Pending |

@@ -10,6 +10,7 @@
 //! [`run_build`] orchestrator.
 
 pub mod prepare;
+pub mod rpmbuild;
 pub mod utils;
 
 /// Caller-supplied options for [`run_build`](self::run_build) and
