@@ -15,7 +15,7 @@ cuts.
 
 | #   | Commit                                                                 | ~LOC | Status  |
 | --- | ---------------------------------------------------------------------- | ---- | ------- |
-| 1   | `cbscore: add builder::prepare stage (sources + repo resolution)`      | ~550 | Pending |
+| 1   | `cbscore: add builder::prepare stage (sources + repo resolution)`      | ~550 | Done    |
 | 2   | `cbscore: add core::component module (load_components IO)`             | ~200 | Pending |
 | 3   | `cbscore: add builder::rpmbuild stage (per-component RPM builds)`      | ~500 | Pending |
 | 4   | `cbscore: add containers module + images::sync (container production)` | ~550 | Pending |

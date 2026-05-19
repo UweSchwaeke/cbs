@@ -12,6 +12,7 @@
 //! Modules are added incrementally by the seq-002 plan; later phases
 //! extend this crate without revisiting the top-level structure.
 
+pub mod builder;
 pub mod config;
 pub mod images;
 pub mod runner;
