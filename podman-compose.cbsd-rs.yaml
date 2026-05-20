@@ -73,9 +73,6 @@ services:
       - /dev/fuse:/dev/fuse:rw
       # Rust workspace source — changes here trigger cargo-watch rebuild
       - ./cbsd-rs:/cbs/src:Z
-      # cbscore-wrapper.py — mounted to the same path as the prod image so
-      # worker.yaml.example works without modification in dev mode
-      - ./cbsd-rs/scripts:/opt/cbsd-rs:ro
       - cbsd-rs-cargo-registry:/usr/local/cargo/registry
       - cbsd-rs-cargo-git:/usr/local/cargo/git
     cap_add:

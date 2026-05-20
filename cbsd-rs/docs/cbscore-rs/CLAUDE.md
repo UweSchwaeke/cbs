@@ -169,8 +169,10 @@ Current Python-side bridges (compatibility anchors):
 - `cbsd/cbslib/worker/builder.py` — biggest in-process consumer of `cbscore`
 - `cbc/src/cbc/cmds/_shared.py`, `crt/src/crt/crtlib/manifest.py` —
   version-parsing consumers
-- `cbsd-rs/scripts/cbscore-wrapper.py` — Python subprocess bridge from the Rust
-  `cbsd-worker`; retired once the cbscore rewrite crates land in `cbsd-rs/`
+
+The Phase 7 cutover (Phase 7 Commits 1a/1b/2, landed pre-M2) retired the Python
+subprocess bridge previously at `cbsd-rs/scripts/cbscore-wrapper.py`;
+`cbsd-worker` now depends on the Rust `cbscore` crate directly.
 
 ## Principles
 

@@ -24,10 +24,9 @@ cbsd-rs/
 ├── Cargo.lock
 ├── .sqlx/              # sqlx offline query cache (committed)
 ├── migrations/         # sqlx SQL migrations (embedded by server)
-├── scripts/            # cbscore-wrapper.py (Python subprocess bridge)
 ├── cbsd-proto/         # shared types crate (no IO, no async)
 ├── cbsd-server/        # server binary (axum REST + WebSocket)
-└── cbsd-worker/        # worker binary (WS client + subprocess)
+└── cbsd-worker/        # worker binary (WS client + in-process executor)
 ```
 
 - **`cbsd-proto`** — BuildDescriptor, Arch, Priority, BuildState, WebSocket
@@ -38,9 +37,9 @@ cbsd-rs/
   permissions, build queue with priority lanes, WebSocket handler for workers,
   SSE log streaming, SQLite persistence (sqlx).
 - **`cbsd-worker`** — WebSocket client (tokio-tungstenite), reconnection with
-  exponential backoff, build executor (spawns cbscore Python wrapper as
-  subprocess), component tarball unpacking, SIGTERM/SIGKILL process group
-  management.
+  exponential backoff, in-process build executor (direct Cargo dep on the
+  cbscore Rust crate), per-build tracing event dispatch into a batched
+  WebSocket output stream, component tarball unpacking.
 
 ## Build & Test
 
@@ -153,8 +152,9 @@ These are easy to get wrong. Document and test them:
 
 4. **`trace_id` lifecycle:** Generated as UUID v4 at dispatch time, under
    the mutex. Persisted in `builds.trace_id`. Included in the `build_new`
-   WebSocket message. Worker sets `CBS_TRACE_ID` env var for cbscore
-   subprocess. Enables cross-boundary log correlation.
+   WebSocket message. Worker pins the value on the `cbsd_build` tracing
+   span that wraps the in-process `cbscore::runner::run` call. Enables
+   cross-boundary log correlation.
 
 5. **`tower-sessions-sqlx-store` initialization:** Call `.migrate().await`
    after sqlx migrations but before the router is built. Creates the

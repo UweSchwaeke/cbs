@@ -143,7 +143,6 @@ server-url: "ws://server-dev:8080/api/ws/worker"
 api-key: "${api_key}"
 arch: "${arch}"
 
-cbscore-wrapper-path: /opt/cbsd-rs/cbscore-wrapper.py
 cbscore-config-path: /cbs/config/cbs-build.config.yaml
 EOF
   chmod 600 "${worker_cfg}"
@@ -166,7 +165,6 @@ server-url: "ws://server:8080/api/ws/worker"
 
 # worker-token: "REPLACE_WITH_TOKEN_FROM_API"
 
-cbscore-wrapper-path: /opt/cbsd-rs/cbscore-wrapper.py
 cbscore-config-path: /cbs/config/cbs-build.config.yaml
 EOF
 }

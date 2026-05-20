@@ -32,8 +32,8 @@ FastAPI + Celery + Redis stack with Rust + axum + SQLite + WebSocket.
   messages); no IO dependencies
 - **`cbsd-server`** — REST API (axum), Google OAuth, PASETO tokens, RBAC,
   build queue, WebSocket handler, SSE log streaming, SQLite persistence (sqlx)
-- **`cbsd-worker`** — WebSocket client, build executor (spawns cbscore Python
-  subprocess), SIGTERM/SIGKILL process management
+- **`cbsd-worker`** — WebSocket client, in-process build executor (direct
+  Cargo dep on the cbscore Rust crate), per-build tracing event dispatch
 - **`cbc`** — Rust CLI client for the CBS service
 
 See `cbsd-rs/CLAUDE.md` for detailed guidance on the Rust workspace.
@@ -154,10 +154,9 @@ cbsd-rs/
   Cargo.lock
   .sqlx/                # sqlx offline query cache (committed)
   migrations/           # sqlx SQL migrations (embedded by server)
-  scripts/              # cbscore-wrapper.py (Python subprocess bridge)
   cbsd-proto/           # Shared types crate (wire format, no IO)
   cbsd-server/          # Server binary (axum REST + WebSocket + SSE)
-  cbsd-worker/          # Worker binary (WS client + subprocess executor)
+  cbsd-worker/          # Worker binary (WS client + in-process cbscore executor)
   cbc/                  # CLI client for CBS service (Rust)
   docs/                 # Design docs, implementation plans, reviews
     cbsd-rs/design/     # Authoritative architecture & design documents
