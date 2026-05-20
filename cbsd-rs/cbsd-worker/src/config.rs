@@ -68,11 +68,11 @@ pub(crate) struct WorkerConfig {
     #[serde(default)]
     pub tls_ca_bundle_path: Option<PathBuf>,
 
-    /// Path to the cbscore-wrapper.py script.
-    #[serde(default)]
-    pub cbscore_wrapper_path: Option<PathBuf>,
-
-    /// Path to cbscore configuration file.
+    /// Path to cbscore configuration file. Post-M2 (Phase 7
+    /// cutover) the role changed from "env var passed to the
+    /// Python wrapper subprocess" to "arg supplied to
+    /// [`cbscore::config::load`](https://docs.rs/cbscore/) at
+    /// build dispatch time".
     #[serde(default)]
     pub cbscore_config_path: Option<PathBuf>,
 
@@ -83,10 +83,6 @@ pub(crate) struct WorkerConfig {
     /// Temporary directory for component tarballs.
     #[serde(default)]
     pub component_temp_dir: Option<PathBuf>,
-
-    /// Seconds before SIGTERM → SIGKILL escalation on build subprocess.
-    #[serde(default)]
-    pub sigkill_escalation_timeout_secs: Option<u64>,
 
     /// Ceiling for reconnection backoff in seconds (default: 30).
     #[serde(default)]
@@ -113,11 +109,9 @@ pub(crate) struct ResolvedWorkerConfig {
     // Operational fields
     #[allow(dead_code)]
     pub tls_ca_bundle_path: Option<PathBuf>,
-    pub cbscore_wrapper_path: Option<PathBuf>,
     pub cbscore_config_path: Option<PathBuf>,
     pub build_timeout_secs: Option<u64>,
     pub component_temp_dir: Option<PathBuf>,
-    pub sigkill_escalation_timeout_secs: Option<u64>,
     pub reconnect_backoff_ceiling_secs: Option<u64>,
 }
 
@@ -215,11 +209,9 @@ impl WorkerConfig {
                 arch,
                 dev_mode: is_dev,
                 tls_ca_bundle_path: self.tls_ca_bundle_path,
-                cbscore_wrapper_path: self.cbscore_wrapper_path,
                 cbscore_config_path: self.cbscore_config_path,
                 build_timeout_secs: self.build_timeout_secs,
                 component_temp_dir: self.component_temp_dir,
-                sigkill_escalation_timeout_secs: self.sigkill_escalation_timeout_secs,
                 reconnect_backoff_ceiling_secs: self.reconnect_backoff_ceiling_secs,
             });
         }
@@ -251,11 +243,9 @@ impl WorkerConfig {
             arch,
             dev_mode: is_dev,
             tls_ca_bundle_path: self.tls_ca_bundle_path,
-            cbscore_wrapper_path: self.cbscore_wrapper_path,
             cbscore_config_path: self.cbscore_config_path,
             build_timeout_secs: self.build_timeout_secs,
             component_temp_dir: self.component_temp_dir,
-            sigkill_escalation_timeout_secs: self.sigkill_escalation_timeout_secs,
             reconnect_backoff_ceiling_secs: self.reconnect_backoff_ceiling_secs,
         })
     }

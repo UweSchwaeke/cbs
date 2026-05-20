@@ -86,18 +86,21 @@ impl std::error::Error for ExecutorError {
     }
 }
 
-/// Resolve the wrapper script path from config or default.
-fn resolve_wrapper_path(config: &ResolvedWorkerConfig) -> PathBuf {
-    if let Some(ref path) = config.cbscore_wrapper_path {
-        path.clone()
-    } else {
-        // Default: look relative to the current executable.
-        let exe_dir = std::env::current_exe()
-            .ok()
-            .and_then(|p| p.parent().map(Path::to_path_buf))
-            .unwrap_or_else(|| PathBuf::from("."));
-        exe_dir.join("scripts").join("cbscore-wrapper.py")
-    }
+/// Resolve the wrapper script path relative to the current
+/// executable.
+///
+/// The `cbscore-wrapper-path:` config key was retired as part of
+/// the Phase 7 cutover prep (Commit 1a); operators with the key
+/// in `worker.yaml` get a silent serde-ignore. The wrapper
+/// itself is retired in Phase 7 Commit 2; the lookup here lives
+/// only long enough for Commit 1b to swap the subprocess body
+/// for the in-process call.
+fn resolve_wrapper_path() -> PathBuf {
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(Path::to_path_buf))
+        .unwrap_or_else(|| PathBuf::from("."));
+    exe_dir.join("scripts").join("cbscore-wrapper.py")
 }
 
 /// Spawn a build subprocess.
@@ -112,7 +115,7 @@ pub(crate) async fn spawn_build(
     component_path: &Path,
     trace_id: &str,
 ) -> Result<BuildExecutor, ExecutorError> {
-    let wrapper_path = resolve_wrapper_path(config);
+    let wrapper_path = resolve_wrapper_path();
     if !wrapper_path.exists() {
         return Err(ExecutorError::WrapperNotFound(wrapper_path));
     }
@@ -131,11 +134,12 @@ pub(crate) async fn spawn_build(
     });
     let input_bytes = serde_json::to_vec(&input).map_err(ExecutorError::SerializeInput)?;
 
-    let sigkill_timeout = Duration::from_secs(
-        config
-            .sigkill_escalation_timeout_secs
-            .unwrap_or(DEFAULT_SIGKILL_TIMEOUT_SECS),
-    );
+    // The `sigkill-escalation-timeout-secs:` config key was retired
+    // alongside `cbscore-wrapper-path:` in Phase 7 Commit 1a; the
+    // SIGTERM → SIGKILL escalator falls back to the fixed default
+    // until Commit 1b drops the subprocess + the escalator entirely
+    // (future-drop based cancellation post-cutover).
+    let sigkill_timeout = Duration::from_secs(DEFAULT_SIGKILL_TIMEOUT_SECS);
 
     // Spawn the subprocess with process group isolation.
     let mut cmd = Command::new("python3");
