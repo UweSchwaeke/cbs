@@ -33,7 +33,7 @@ use crate::ws::liveness::WorkerState;
 ///
 /// After API key verification, looks up the registered worker bound to that
 /// key. Unregistered API keys are rejected with 403.
-pub async fn ws_upgrade(
+pub(crate) async fn ws_upgrade(
     State(state): State<AppState>,
     headers: HeaderMap,
     ws: WebSocketUpgrade,
@@ -778,7 +778,7 @@ async fn handle_worker_status(
 
 /// Handle a worker transitioning to Dead (grace period expired). Resolves
 /// all active builds assigned to that connection.
-pub async fn handle_worker_dead(state: &AppState, connection_id: &str) {
+pub(crate) async fn handle_worker_dead(state: &AppState, connection_id: &str) {
     let active_build_ids = {
         let queue = state.queue.lock().await;
         queue.active_builds_for_connection(connection_id)

@@ -26,7 +26,7 @@ use crate::queue::{QueuedBuild, SharedBuildQueue};
 /// 2. Builds in `revoking` -> mark `revoked`, finalize log rows.
 /// 3. Builds in `queued` -> re-enqueue into the in-memory priority queue.
 /// 4. Clear any stale log watcher entries.
-pub async fn run_startup_recovery(
+pub(crate) async fn run_startup_recovery(
     pool: &SqlitePool,
     queue: &SharedBuildQueue,
     log_watchers: &LogWatchers,

@@ -24,7 +24,7 @@ use crate::db;
 use crate::scopes;
 
 /// Build the channels sub-router: `/api/channels/*`.
-pub fn router() -> Router<AppState> {
+pub(crate) fn router() -> Router<AppState> {
     Router::new()
         .route("/", post(create_channel))
         .route("/", get(list_channels))

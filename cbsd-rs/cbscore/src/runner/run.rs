@@ -864,5 +864,4 @@ mod tests {
         let id = Uuid::nil();
         assert_eq!(trace_id_field(Some(&id)), id.to_string());
     }
-
 }

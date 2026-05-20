@@ -18,7 +18,7 @@ use sha2::{Digest, Sha256};
 
 /// Errors during component tarball handling.
 #[derive(Debug)]
-pub enum ComponentError {
+pub(crate) enum ComponentError {
     /// SHA-256 of the tarball does not match the expected value.
     IntegrityFailed { expected: String, actual: String },
     /// Failed to create the temporary directory.
@@ -55,7 +55,7 @@ impl std::error::Error for ComponentError {
 /// then unpack the tar.gz archive into a new subdirectory under `temp_dir`.
 ///
 /// Returns the path to the unpacked directory.
-pub fn validate_and_unpack(
+pub(crate) fn validate_and_unpack(
     tarball_bytes: &[u8],
     expected_sha256: &str,
     temp_dir: &Path,
@@ -88,7 +88,7 @@ pub fn validate_and_unpack(
 
 /// Remove the unpacked component directory. Logs a warning on failure rather
 /// than returning an error, since cleanup failures are non-fatal.
-pub fn cleanup(path: &Path) {
+pub(crate) fn cleanup(path: &Path) {
     if let Err(err) = std::fs::remove_dir_all(path) {
         tracing::warn!(path = %path.display(), %err, "failed to clean up component directory");
     }

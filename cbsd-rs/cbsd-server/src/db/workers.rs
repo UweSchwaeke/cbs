@@ -15,7 +15,7 @@
 use sqlx::SqlitePool;
 
 /// Full worker row from the database.
-pub struct WorkerRow {
+pub(crate) struct WorkerRow {
     pub id: String,
     pub name: String,
     pub arch: String,
@@ -26,7 +26,7 @@ pub struct WorkerRow {
 }
 
 /// Insert a new worker inside an existing transaction.
-pub async fn insert_worker(
+pub(crate) async fn insert_worker(
     tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
     id: &str,
     name: &str,
@@ -49,7 +49,7 @@ pub async fn insert_worker(
 }
 
 /// Look up a worker by its UUID.
-pub async fn get_worker_by_id(
+pub(crate) async fn get_worker_by_id(
     pool: &SqlitePool,
     id: &str,
 ) -> Result<Option<WorkerRow>, sqlx::Error> {
@@ -75,7 +75,7 @@ pub async fn get_worker_by_id(
 }
 
 /// Look up a worker by its bound API key row ID.
-pub async fn get_worker_by_api_key_id(
+pub(crate) async fn get_worker_by_api_key_id(
     pool: &SqlitePool,
     api_key_id: i64,
 ) -> Result<Option<WorkerRow>, sqlx::Error> {
@@ -101,7 +101,7 @@ pub async fn get_worker_by_api_key_id(
 }
 
 /// List all registered workers.
-pub async fn list_workers(pool: &SqlitePool) -> Result<Vec<WorkerRow>, sqlx::Error> {
+pub(crate) async fn list_workers(pool: &SqlitePool) -> Result<Vec<WorkerRow>, sqlx::Error> {
     let rows = sqlx::query!(
         r#"SELECT id AS "id!", name AS "name!", arch AS "arch!",
                   api_key_id AS "api_key_id!", created_by AS "created_by!",
@@ -127,7 +127,7 @@ pub async fn list_workers(pool: &SqlitePool) -> Result<Vec<WorkerRow>, sqlx::Err
 
 /// Delete a worker by UUID. Returns true if a row was deleted.
 #[allow(dead_code)]
-pub async fn delete_worker(pool: &SqlitePool, id: &str) -> Result<bool, sqlx::Error> {
+pub(crate) async fn delete_worker(pool: &SqlitePool, id: &str) -> Result<bool, sqlx::Error> {
     let result = sqlx::query!("DELETE FROM workers WHERE id = ?", id)
         .execute(pool)
         .await?;
@@ -137,7 +137,7 @@ pub async fn delete_worker(pool: &SqlitePool, id: &str) -> Result<bool, sqlx::Er
 
 /// Update `last_seen` to the current Unix timestamp. Returns true if
 /// a row was updated (false if the worker was deleted mid-flight).
-pub async fn update_last_seen(pool: &SqlitePool, id: &str) -> Result<bool, sqlx::Error> {
+pub(crate) async fn update_last_seen(pool: &SqlitePool, id: &str) -> Result<bool, sqlx::Error> {
     let result = sqlx::query!(
         "UPDATE workers SET last_seen = unixepoch() WHERE id = ?",
         id,
@@ -149,7 +149,7 @@ pub async fn update_last_seen(pool: &SqlitePool, id: &str) -> Result<bool, sqlx:
 }
 
 /// Update the bound API key inside a transaction (used by token regeneration).
-pub async fn update_api_key_id(
+pub(crate) async fn update_api_key_id(
     tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
     id: &str,
     new_api_key_id: i64,

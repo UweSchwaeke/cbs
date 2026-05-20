@@ -17,8 +17,8 @@
 //! sleeps until the earliest one, triggers the build, and handles
 //! success/failure/retry outcomes.
 
-pub mod tag_format;
-pub mod trigger;
+pub(crate) mod tag_format;
+pub(crate) mod trigger;
 
 use std::str::FromStr;
 use std::sync::Arc;
@@ -51,7 +51,7 @@ const MAX_RETRY_COUNT: i64 = 10;
 /// The `notify` handle is used to wake the scheduler when tasks are
 /// created/updated/deleted/enabled/disabled, so it reloads immediately
 /// rather than waiting for the current sleep to expire.
-pub async fn run_scheduler(state: AppState, notify: Arc<tokio::sync::Notify>) {
+pub(crate) async fn run_scheduler(state: AppState, notify: Arc<tokio::sync::Notify>) {
     // Log initial task count.
     match db::periodic::list_enabled_tasks(&state.pool).await {
         Ok(tasks) => {

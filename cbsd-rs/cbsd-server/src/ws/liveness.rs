@@ -15,12 +15,12 @@
 use cbsd_proto::Arch;
 
 /// Server-assigned UUID for a WebSocket connection.
-pub type ConnectionId = String;
+pub(crate) type ConnectionId = String;
 
 /// Tracks the lifecycle state of a connected worker.
 #[allow(dead_code)]
 #[derive(Debug)]
-pub enum WorkerState {
+pub(crate) enum WorkerState {
     /// Worker is connected and ready to accept builds.
     Connected {
         registered_worker_id: String,
@@ -49,12 +49,12 @@ pub enum WorkerState {
 impl WorkerState {
     /// Returns `true` only when the worker is connected and eligible for
     /// build dispatch.
-    pub fn is_dispatch_eligible(&self) -> bool {
+    pub(crate) fn is_dispatch_eligible(&self) -> bool {
         matches!(self, Self::Connected { .. })
     }
 
     /// Registered worker UUID, if available.
-    pub fn registered_worker_id(&self) -> Option<&str> {
+    pub(crate) fn registered_worker_id(&self) -> Option<&str> {
         match self {
             Self::Connected {
                 registered_worker_id,
@@ -74,7 +74,7 @@ impl WorkerState {
 
     /// Human-readable display name, if available.
     #[allow(dead_code)]
-    pub fn worker_name(&self) -> Option<&str> {
+    pub(crate) fn worker_name(&self) -> Option<&str> {
         match self {
             Self::Connected { worker_name, .. }
             | Self::Disconnected { worker_name, .. }
@@ -84,7 +84,7 @@ impl WorkerState {
     }
 
     /// Architecture, if the worker is connected.
-    pub fn arch(&self) -> Option<Arch> {
+    pub(crate) fn arch(&self) -> Option<Arch> {
         match self {
             Self::Connected { arch, .. } | Self::Disconnected { arch, .. } => Some(*arch),
             Self::Stopping { .. } | Self::Dead => None,
@@ -93,7 +93,7 @@ impl WorkerState {
 
     /// Short name for the current state (used in API responses).
     #[allow(dead_code)]
-    pub fn state_name(&self) -> &'static str {
+    pub(crate) fn state_name(&self) -> &'static str {
         match self {
             Self::Connected { .. } => "connected",
             Self::Disconnected { .. } => "disconnected",
@@ -106,7 +106,7 @@ impl WorkerState {
 /// Spawn a background task that sleeps for `grace_secs`, then checks if the
 /// worker is still `Disconnected`. If so, transitions to `Dead` and handles
 /// active builds per the dead-worker resolution table.
-pub fn start_grace_period_monitor(
+pub(crate) fn start_grace_period_monitor(
     state: &crate::app::AppState,
     connection_id: &str,
     grace_secs: u64,

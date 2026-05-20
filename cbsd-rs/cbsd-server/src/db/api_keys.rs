@@ -16,7 +16,7 @@ use sqlx::SqlitePool;
 
 /// Full API key row (including hash) for verification.
 #[allow(dead_code)]
-pub struct ApiKeyRow {
+pub(crate) struct ApiKeyRow {
     pub id: i64,
     pub name: String,
     pub key_hash: String,
@@ -28,14 +28,14 @@ pub struct ApiKeyRow {
 }
 
 /// Summary of an API key for listing (no hash exposed).
-pub struct ApiKeyListItem {
+pub(crate) struct ApiKeyListItem {
     pub key_prefix: String,
     pub name: String,
     pub created_at: i64,
 }
 
 /// Insert a new API key. Returns the row ID.
-pub async fn insert_api_key(
+pub(crate) async fn insert_api_key(
     pool: &SqlitePool,
     name: &str,
     owner_email: &str,
@@ -57,7 +57,7 @@ pub async fn insert_api_key(
 
 /// Find all non-revoked API keys with the given prefix (across all owners).
 /// Used for verification: we iterate results and argon2-verify against each.
-pub async fn find_api_keys_by_prefix(
+pub(crate) async fn find_api_keys_by_prefix(
     pool: &SqlitePool,
     key_prefix: &str,
 ) -> Result<Vec<ApiKeyRow>, sqlx::Error> {
@@ -87,7 +87,7 @@ pub async fn find_api_keys_by_prefix(
 }
 
 /// List all API keys for a user (prefix + name + created_at, no hash).
-pub async fn list_api_keys_for_user(
+pub(crate) async fn list_api_keys_for_user(
     pool: &SqlitePool,
     owner_email: &str,
 ) -> Result<Vec<ApiKeyListItem>, sqlx::Error> {
@@ -112,7 +112,7 @@ pub async fn list_api_keys_for_user(
 }
 
 /// Revoke an API key by owner + prefix. Returns true if a key was revoked.
-pub async fn revoke_api_key_by_prefix(
+pub(crate) async fn revoke_api_key_by_prefix(
     pool: &SqlitePool,
     owner_email: &str,
     key_prefix: &str,
@@ -130,7 +130,7 @@ pub async fn revoke_api_key_by_prefix(
 }
 
 /// Revoke all API keys for a user. Returns number of keys revoked.
-pub async fn revoke_all_api_keys_for_user(
+pub(crate) async fn revoke_all_api_keys_for_user(
     pool: &SqlitePool,
     owner_email: &str,
 ) -> Result<u64, sqlx::Error> {
@@ -148,7 +148,10 @@ pub async fn revoke_all_api_keys_for_user(
 /// deregistration and token regeneration where the calling admin may not
 /// be the original key creator. Returns true if a key was revoked.
 #[allow(dead_code)]
-pub async fn revoke_api_key_by_id(pool: &SqlitePool, api_key_id: i64) -> Result<bool, sqlx::Error> {
+pub(crate) async fn revoke_api_key_by_id(
+    pool: &SqlitePool,
+    api_key_id: i64,
+) -> Result<bool, sqlx::Error> {
     let result = sqlx::query!(
         "UPDATE api_keys SET revoked = 1 WHERE id = ? AND revoked = 0",
         api_key_id,
@@ -161,7 +164,7 @@ pub async fn revoke_api_key_by_id(pool: &SqlitePool, api_key_id: i64) -> Result<
 
 /// Insert an API key inside an existing transaction. Returns the row ID
 /// via `last_insert_rowid()`.
-pub async fn insert_api_key_in_tx(
+pub(crate) async fn insert_api_key_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
     name: &str,
     owner_email: &str,
@@ -184,7 +187,10 @@ pub async fn insert_api_key_in_tx(
 /// Record successful use of an API key. Sets `first_used_at` once (if
 /// NULL) and always updates `last_used_at`. Fire-and-forget — callers
 /// should log errors and proceed rather than failing the request.
-pub async fn mark_api_key_used(pool: &SqlitePool, api_key_id: i64) -> Result<(), sqlx::Error> {
+pub(crate) async fn mark_api_key_used(
+    pool: &SqlitePool,
+    api_key_id: i64,
+) -> Result<(), sqlx::Error> {
     sqlx::query!(
         "UPDATE api_keys
          SET first_used_at = COALESCE(first_used_at, unixepoch()),
@@ -199,7 +205,7 @@ pub async fn mark_api_key_used(pool: &SqlitePool, api_key_id: i64) -> Result<(),
 
 /// Get the key prefix for an API key by its row ID. Used to purge the
 /// LRU cache after revocation when only the row ID is known.
-pub async fn get_key_prefix_by_id(
+pub(crate) async fn get_key_prefix_by_id(
     pool: &SqlitePool,
     api_key_id: i64,
 ) -> Result<Option<String>, sqlx::Error> {

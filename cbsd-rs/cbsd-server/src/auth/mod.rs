@@ -10,7 +10,7 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
 
-pub mod extractors;
-pub mod oauth;
-pub mod paseto;
-pub mod token_cache;
+pub(crate) mod extractors;
+pub(crate) mod oauth;
+pub(crate) mod paseto;
+pub(crate) mod token_cache;

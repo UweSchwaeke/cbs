@@ -38,7 +38,7 @@ const KNOWN_PLACEHOLDERS: &[&str] = &[
 
 /// Validate a tag format string. Returns `Ok(())` if all placeholders are
 /// known, or `Err` with a list of unrecognized placeholder names.
-pub fn validate_tag_format(format: &str) -> Result<(), Vec<String>> {
+pub(crate) fn validate_tag_format(format: &str) -> Result<(), Vec<String>> {
     let mut unknown = Vec::new();
     let mut chars = format.chars().peekable();
 
@@ -68,7 +68,11 @@ pub fn validate_tag_format(format: &str) -> Result<(), Vec<String>> {
 /// Interpolate all `{variable}` placeholders in a tag format string.
 ///
 /// Unknown placeholders are left as-is (including the braces).
-pub fn interpolate_tag(format: &str, descriptor: &BuildDescriptor, now: DateTime<Utc>) -> String {
+pub(crate) fn interpolate_tag(
+    format: &str,
+    descriptor: &BuildDescriptor,
+    now: DateTime<Utc>,
+) -> String {
     let mut result = String::with_capacity(format.len());
     let mut chars = format.chars().peekable();
 
@@ -140,7 +144,7 @@ fn resolve_placeholder(
 /// Validate that a fully interpolated tag conforms to OCI tag constraints:
 /// - Maximum 128 characters
 /// - Matches `^[a-zA-Z0-9_][a-zA-Z0-9_.-]*$`
-pub fn validate_oci_tag(tag: &str) -> Result<(), String> {
+pub(crate) fn validate_oci_tag(tag: &str) -> Result<(), String> {
     if tag.is_empty() {
         return Err("tag must not be empty".to_string());
     }

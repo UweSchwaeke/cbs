@@ -13,7 +13,7 @@
 use sqlx::SqlitePool;
 
 /// Insert a new token record. Returns the token row ID.
-pub async fn insert_token(
+pub(crate) async fn insert_token(
     pool: &SqlitePool,
     user_email: &str,
     token_hash: &str,
@@ -33,7 +33,10 @@ pub async fn insert_token(
 
 /// Check if a token is revoked (by its SHA-256 hash).
 /// Returns true if revoked or unknown (unknown = treat as revoked).
-pub async fn is_token_revoked(pool: &SqlitePool, token_hash: &str) -> Result<bool, sqlx::Error> {
+pub(crate) async fn is_token_revoked(
+    pool: &SqlitePool,
+    token_hash: &str,
+) -> Result<bool, sqlx::Error> {
     let row = sqlx::query!(
         "SELECT revoked FROM tokens WHERE token_hash = ?",
         token_hash,
@@ -48,7 +51,7 @@ pub async fn is_token_revoked(pool: &SqlitePool, token_hash: &str) -> Result<boo
 }
 
 /// Revoke a single token by its SHA-256 hash. Returns true if a token was revoked.
-pub async fn revoke_token(pool: &SqlitePool, token_hash: &str) -> Result<bool, sqlx::Error> {
+pub(crate) async fn revoke_token(pool: &SqlitePool, token_hash: &str) -> Result<bool, sqlx::Error> {
     let result = sqlx::query!(
         "UPDATE tokens SET revoked = 1 WHERE token_hash = ? AND revoked = 0",
         token_hash,
@@ -60,7 +63,10 @@ pub async fn revoke_token(pool: &SqlitePool, token_hash: &str) -> Result<bool, s
 }
 
 /// Revoke all tokens for a given user. Returns number of tokens revoked.
-pub async fn revoke_all_for_user(pool: &SqlitePool, user_email: &str) -> Result<u64, sqlx::Error> {
+pub(crate) async fn revoke_all_for_user(
+    pool: &SqlitePool,
+    user_email: &str,
+) -> Result<u64, sqlx::Error> {
     let result = sqlx::query!(
         "UPDATE tokens SET revoked = 1 WHERE user_email = ? AND revoked = 0",
         user_email,
@@ -74,7 +80,10 @@ pub async fn revoke_all_for_user(pool: &SqlitePool, user_email: &str) -> Result<
 /// Record successful use of a PASETO token. Sets `first_used_at` once (if
 /// NULL) and always updates `last_used_at`. Fire-and-forget — callers
 /// should log errors and proceed rather than failing the request.
-pub async fn mark_token_used(pool: &SqlitePool, token_hash: &str) -> Result<(), sqlx::Error> {
+pub(crate) async fn mark_token_used(
+    pool: &SqlitePool,
+    token_hash: &str,
+) -> Result<(), sqlx::Error> {
     sqlx::query!(
         "UPDATE tokens
          SET first_used_at = COALESCE(first_used_at, unixepoch()),

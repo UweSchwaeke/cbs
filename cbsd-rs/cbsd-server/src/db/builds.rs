@@ -23,7 +23,7 @@ use sqlx::{Row, SqlitePool};
 /// deserialized to `serde_json::Value` so the API returns a nested JSON object.
 /// The list endpoint excludes this field for performance.
 #[derive(Debug, Clone, Serialize)]
-pub struct BuildRecord {
+pub(crate) struct BuildRecord {
     pub id: i64,
     pub descriptor: String,
     pub descriptor_version: i64,
@@ -54,7 +54,7 @@ pub struct BuildRecord {
 /// A build record for list responses. Identical to `BuildRecord` but
 /// without the potentially large `build_report` field.
 #[derive(Debug, Clone, Serialize)]
-pub struct BuildListRecord {
+pub(crate) struct BuildListRecord {
     pub id: i64,
     pub descriptor: String,
     pub descriptor_version: i64,
@@ -81,7 +81,7 @@ pub struct BuildListRecord {
 /// Insert a new build in QUEUED state. Returns the auto-generated build ID.
 /// `periodic_task_id` is set for scheduler-triggered builds, `None` for manual.
 /// `channel_id` and `channel_type_id` track the resolved channel/type mapping.
-pub async fn insert_build(
+pub(crate) async fn insert_build(
     pool: &SqlitePool,
     descriptor_json: &str,
     user_email: &str,
@@ -109,7 +109,10 @@ pub async fn insert_build(
 }
 
 /// Get a single build by ID, with channel/type names via LEFT JOIN.
-pub async fn get_build(pool: &SqlitePool, id: i64) -> Result<Option<BuildRecord>, sqlx::Error> {
+pub(crate) async fn get_build(
+    pool: &SqlitePool,
+    id: i64,
+) -> Result<Option<BuildRecord>, sqlx::Error> {
     let row = sqlx::query!(
         r#"SELECT
                 b.id            AS "id!",
@@ -172,7 +175,7 @@ pub async fn get_build(pool: &SqlitePool, id: i64) -> Result<Option<BuildRecord>
 /// The list query intentionally omits `build_report` to avoid expensive
 /// responses when hundreds of builds each carry KB of report JSON.
 /// Includes channel/type names via LEFT JOIN.
-pub async fn list_builds(
+pub(crate) async fn list_builds(
     pool: &SqlitePool,
     user_filter: Option<&str>,
     state_filter: Option<&str>,
@@ -220,7 +223,7 @@ pub async fn list_builds(
 
 /// Update a build's state. Optionally sets the error message.
 /// Returns `true` if a row was updated.
-pub async fn update_build_state(
+pub(crate) async fn update_build_state(
     pool: &SqlitePool,
     id: i64,
     new_state: &str,
@@ -241,7 +244,7 @@ pub async fn update_build_state(
 
 /// Insert a build log metadata row. Called at submission time so the
 /// SSE follow endpoint can find the row before dispatch.
-pub async fn insert_build_log_row(
+pub(crate) async fn insert_build_log_row(
     pool: &SqlitePool,
     build_id: i64,
     log_path: &str,
@@ -259,7 +262,7 @@ pub async fn insert_build_log_row(
 
 /// Set the trace_id and worker_id on a build, and mark it as dispatched.
 /// Returns `true` if a row was updated.
-pub async fn set_build_dispatched(
+pub(crate) async fn set_build_dispatched(
     pool: &SqlitePool,
     id: i64,
     trace_id: &str,
@@ -280,7 +283,7 @@ pub async fn set_build_dispatched(
 
 /// Mark a build as started and set started_at to the current time.
 /// Returns `true` if a row was updated.
-pub async fn set_build_started(pool: &SqlitePool, id: i64) -> Result<bool, sqlx::Error> {
+pub(crate) async fn set_build_started(pool: &SqlitePool, id: i64) -> Result<bool, sqlx::Error> {
     let result = sqlx::query!(
         "UPDATE builds SET state = 'started', started_at = unixepoch()
          WHERE id = ?",
@@ -295,7 +298,7 @@ pub async fn set_build_started(pool: &SqlitePool, id: i64) -> Result<bool, sqlx:
 /// Mark a build as finished (success, failure, or revoked) and set finished_at.
 /// Optionally records an error message and a build artifact report.
 /// Returns `true` if a row was updated.
-pub async fn set_build_finished(
+pub(crate) async fn set_build_finished(
     pool: &SqlitePool,
     id: i64,
     state: &str,
@@ -318,7 +321,7 @@ pub async fn set_build_finished(
 
 /// Set a build's state to "revoking".
 /// Returns `true` if a row was updated.
-pub async fn set_build_revoking(pool: &SqlitePool, id: i64) -> Result<bool, sqlx::Error> {
+pub(crate) async fn set_build_revoking(pool: &SqlitePool, id: i64) -> Result<bool, sqlx::Error> {
     let result = sqlx::query!("UPDATE builds SET state = 'revoking' WHERE id = ?", id,)
         .execute(pool)
         .await?;
@@ -327,7 +330,10 @@ pub async fn set_build_revoking(pool: &SqlitePool, id: i64) -> Result<bool, sqlx
 }
 
 /// Mark a build log as finished (`build_logs.finished = 1`).
-pub async fn set_build_log_finished(pool: &SqlitePool, build_id: i64) -> Result<(), sqlx::Error> {
+pub(crate) async fn set_build_log_finished(
+    pool: &SqlitePool,
+    build_id: i64,
+) -> Result<(), sqlx::Error> {
     sqlx::query!(
         "UPDATE build_logs SET finished = 1, updated_at = unixepoch() WHERE build_id = ?",
         build_id,

@@ -20,7 +20,7 @@ use sqlx::SqlitePool;
 
 /// A channel record as stored in the database.
 #[derive(Debug, Clone, Serialize)]
-pub struct ChannelRecord {
+pub(crate) struct ChannelRecord {
     pub id: i64,
     pub name: String,
     pub description: String,
@@ -31,7 +31,7 @@ pub struct ChannelRecord {
 
 /// A channel type record as stored in the database.
 #[derive(Debug, Clone, Serialize)]
-pub struct ChannelTypeRecord {
+pub(crate) struct ChannelTypeRecord {
     pub id: i64,
     pub channel_id: i64,
     pub type_name: String,
@@ -42,7 +42,7 @@ pub struct ChannelTypeRecord {
 }
 
 /// Result of resolving a channel/type pair for build submission.
-pub struct ResolvedChannelType {
+pub(crate) struct ResolvedChannelType {
     pub channel_id: i64,
     pub channel_type_id: i64,
     pub project: String,
@@ -54,7 +54,7 @@ pub struct ResolvedChannelType {
 // ---------------------------------------------------------------------------
 
 /// Create a new channel. Returns the auto-generated ID.
-pub async fn create_channel(
+pub(crate) async fn create_channel(
     pool: &SqlitePool,
     name: &str,
     description: &str,
@@ -73,7 +73,7 @@ pub async fn create_channel(
 }
 
 /// Get a channel by ID (active only).
-pub async fn get_channel_by_id(
+pub(crate) async fn get_channel_by_id(
     pool: &SqlitePool,
     id: i64,
 ) -> Result<Option<ChannelRecord>, sqlx::Error> {
@@ -97,7 +97,7 @@ pub async fn get_channel_by_id(
 }
 
 /// Get a channel by name (active only).
-pub async fn get_channel_by_name(
+pub(crate) async fn get_channel_by_name(
     pool: &SqlitePool,
     name: &str,
 ) -> Result<Option<ChannelRecord>, sqlx::Error> {
@@ -121,7 +121,9 @@ pub async fn get_channel_by_name(
 }
 
 /// List all active channels.
-pub async fn list_active_channels(pool: &SqlitePool) -> Result<Vec<ChannelRecord>, sqlx::Error> {
+pub(crate) async fn list_active_channels(
+    pool: &SqlitePool,
+) -> Result<Vec<ChannelRecord>, sqlx::Error> {
     let rows = sqlx::query!(
         r#"SELECT id AS "id!", name AS "name!", description AS "description!",
                   default_type_id, created_at AS "created_at!", updated_at AS "updated_at!"
@@ -144,7 +146,7 @@ pub async fn list_active_channels(pool: &SqlitePool) -> Result<Vec<ChannelRecord
 }
 
 /// Update a channel's name and/or description. Returns true if updated.
-pub async fn update_channel(
+pub(crate) async fn update_channel(
     pool: &SqlitePool,
     id: i64,
     name: &str,
@@ -164,7 +166,7 @@ pub async fn update_channel(
 }
 
 /// Soft-delete a channel and all its active child types in one transaction.
-pub async fn soft_delete_channel(pool: &SqlitePool, id: i64) -> Result<bool, sqlx::Error> {
+pub(crate) async fn soft_delete_channel(pool: &SqlitePool, id: i64) -> Result<bool, sqlx::Error> {
     let mut tx = pool.begin().await?;
 
     let result = sqlx::query!(
@@ -198,7 +200,7 @@ pub async fn soft_delete_channel(pool: &SqlitePool, id: i64) -> Result<bool, sql
 // ---------------------------------------------------------------------------
 
 /// Create a new channel type. Returns the auto-generated ID.
-pub async fn create_type(
+pub(crate) async fn create_type(
     pool: &SqlitePool,
     channel_id: i64,
     type_name: &str,
@@ -221,7 +223,7 @@ pub async fn create_type(
 }
 
 /// Get a channel type by ID (active only).
-pub async fn get_type(
+pub(crate) async fn get_type(
     pool: &SqlitePool,
     id: i64,
 ) -> Result<Option<ChannelTypeRecord>, sqlx::Error> {
@@ -247,7 +249,7 @@ pub async fn get_type(
 }
 
 /// List active types for a channel.
-pub async fn list_types_for_channel(
+pub(crate) async fn list_types_for_channel(
     pool: &SqlitePool,
     channel_id: i64,
 ) -> Result<Vec<ChannelTypeRecord>, sqlx::Error> {
@@ -277,7 +279,7 @@ pub async fn list_types_for_channel(
 }
 
 /// Update a channel type's project and prefix_template. Returns true if updated.
-pub async fn update_type(
+pub(crate) async fn update_type(
     pool: &SqlitePool,
     id: i64,
     project: &str,
@@ -298,7 +300,7 @@ pub async fn update_type(
 
 /// Soft-delete a channel type. If it was the channel's default_type_id,
 /// clears that reference. Both operations run in a single transaction.
-pub async fn soft_delete_type(pool: &SqlitePool, id: i64) -> Result<bool, sqlx::Error> {
+pub(crate) async fn soft_delete_type(pool: &SqlitePool, id: i64) -> Result<bool, sqlx::Error> {
     let mut tx = pool.begin().await?;
 
     let result = sqlx::query!(
@@ -328,7 +330,7 @@ pub async fn soft_delete_type(pool: &SqlitePool, id: i64) -> Result<bool, sqlx::
 }
 
 /// Set the default type for a channel. The type must belong to this channel.
-pub async fn set_default_type(
+pub(crate) async fn set_default_type(
     pool: &SqlitePool,
     channel_id: i64,
     type_id: i64,
@@ -354,7 +356,7 @@ pub async fn set_default_type(
 
 /// Resolve a channel/type pair by name. Returns the IDs, project,
 /// and prefix template for a given (channel_name, type_name) combination.
-pub async fn resolve_channel_type(
+pub(crate) async fn resolve_channel_type(
     pool: &SqlitePool,
     channel_name: &str,
     type_name: &str,

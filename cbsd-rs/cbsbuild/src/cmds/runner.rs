@@ -51,7 +51,7 @@ const REPORT_BASENAME: &str = "build-report.json";
 
 /// `cbsbuild runner …` subcommand enum.
 #[derive(Debug, Subcommand)]
-pub enum RunnerCommand {
+pub(crate) enum RunnerCommand {
     /// Run a build (host-side spawn).
     Run(RunArgs),
     /// Stop a container or every cbscore-prefixed container.
@@ -63,7 +63,7 @@ pub enum RunnerCommand {
 
 /// Shared shape for `runner run` and `runner build`.
 #[derive(Debug, Args)]
-pub struct RunArgs {
+pub(crate) struct RunArgs {
     /// Path to the version-descriptor JSON.
     pub descriptor: Utf8PathBuf,
     /// Skip the in-container rpmbuild step.
@@ -85,7 +85,7 @@ pub struct RunArgs {
 
 /// `cbsbuild runner stop` arguments.
 #[derive(Debug, Args)]
-pub struct StopArgs {
+pub(crate) struct StopArgs {
     /// Stop a single container by name.
     #[arg(long = "name", conflicts_with = "all")]
     pub name: Option<String>,
@@ -95,7 +95,7 @@ pub struct StopArgs {
 }
 
 /// `cbsbuild runner …` handler.
-pub async fn handle(cmd: RunnerCommand, config_path: &Utf8Path) -> Result<()> {
+pub(crate) async fn handle(cmd: RunnerCommand, config_path: &Utf8Path) -> Result<()> {
     match cmd {
         RunnerCommand::Run(args) => handle_run(args, config_path).await,
         RunnerCommand::Stop(args) => handle_stop(args).await,
@@ -105,7 +105,7 @@ pub async fn handle(cmd: RunnerCommand, config_path: &Utf8Path) -> Result<()> {
 
 /// Shared `runner run` / `build` host-side handler. Same behaviour
 /// as `cbsbuild build` (which delegates here).
-pub async fn handle_run(args: RunArgs, config_path: &Utf8Path) -> Result<()> {
+pub(crate) async fn handle_run(args: RunArgs, config_path: &Utf8Path) -> Result<()> {
     let (cfg, secrets) = load_config_and_secrets(config_path).await?;
     let desc = read_descriptor(&args.descriptor)
         .await

@@ -39,17 +39,17 @@ use crate::routes;
 
 /// Per-worker channel sender for outbound WebSocket messages.
 /// The WS handler loop reads from the receiver and forwards to the socket.
-pub type WorkerSender = mpsc::UnboundedSender<Message>;
+pub(crate) type WorkerSender = mpsc::UnboundedSender<Message>;
 
 /// Map of connection_id -> WorkerSender for all connected workers.
-pub type WorkerSenders = Arc<Mutex<HashMap<String, WorkerSender>>>;
+pub(crate) type WorkerSenders = Arc<Mutex<HashMap<String, WorkerSender>>>;
 
 /// Map of build_id -> watch::Sender for log file change notifications.
-pub type LogWatchers = Arc<Mutex<HashMap<i64, watch::Sender<()>>>>;
+pub(crate) type LogWatchers = Arc<Mutex<HashMap<i64, watch::Sender<()>>>>;
 
 /// Shared application state. Extended by subsequent commits.
 #[derive(Clone)]
-pub struct AppState {
+pub(crate) struct AppState {
     pub pool: SqlitePool,
     pub config: Arc<ServerConfig>,
     pub oauth: OAuthState,
@@ -76,7 +76,7 @@ pub struct AppState {
 static X_REQUEST_ID: HeaderName = HeaderName::from_static("x-request-id");
 
 /// Build the axum router.
-pub fn build_router(
+pub(crate) fn build_router(
     state: AppState,
     session_layer: SessionManagerLayer<SqliteStore, SignedCookie>,
 ) -> Router {

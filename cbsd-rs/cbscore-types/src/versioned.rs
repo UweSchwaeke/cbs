@@ -17,7 +17,7 @@ use serde_value::Value;
 
 /// Reasons [`extract_schema_version`] can fail.
 #[derive(Debug, PartialEq, Eq)]
-pub enum ExtractError {
+pub(crate) enum ExtractError {
     /// Top-level wire value was not a YAML mapping / JSON object.
     NotMap,
     /// Map exists but the marker key is absent.
@@ -38,7 +38,7 @@ impl std::fmt::Display for ExtractError {
 
 /// Extract the `schema-version` / `schema_version` u64 marker from a
 /// pre-parsed serde value.
-pub fn extract_schema_version(value: &Value, tag_key: &str) -> Result<u64, ExtractError> {
+pub(crate) fn extract_schema_version(value: &Value, tag_key: &str) -> Result<u64, ExtractError> {
     let Value::Map(map) = value else {
         return Err(ExtractError::NotMap);
     };
@@ -53,7 +53,7 @@ pub fn extract_schema_version(value: &Value, tag_key: &str) -> Result<u64, Extra
 
 /// Serialize the marker integer first under `tag_key`, then the
 /// flattened inner-struct fields.
-pub fn serialize_versioned<S, T>(
+pub(crate) fn serialize_versioned<S, T>(
     serializer: S,
     tag_key: &'static str,
     version: u64,

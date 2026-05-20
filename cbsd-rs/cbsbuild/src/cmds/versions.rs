@@ -38,7 +38,7 @@ const DEFAULT_EL_VERSION: u32 = 9;
 /// `large_enum_variant` would otherwise complain that
 /// `VersionsCommand`'s size is dominated by one arm.
 #[derive(Debug, Subcommand)]
-pub enum VersionsCommand {
+pub(crate) enum VersionsCommand {
     /// Create a version descriptor for `VERSION`.
     Create(Box<CreateArgs>),
     /// List released versions from S3.
@@ -51,7 +51,7 @@ pub enum VersionsCommand {
 
 /// `cbsbuild versions create` arguments.
 #[derive(Debug, Args)]
-pub struct CreateArgs {
+pub(crate) struct CreateArgs {
     /// Version string to create the descriptor for.
     pub version: String,
     /// Component refs in `component@ref` form. Repeatable.
@@ -87,7 +87,7 @@ pub struct CreateArgs {
 
 /// `cbsbuild versions list` arguments.
 #[derive(Debug, Args)]
-pub struct ListArgs {
+pub(crate) struct ListArgs {
     /// Optional override for the S3 prefix to enumerate.
     #[arg(long = "path")]
     pub path: Option<String>,
@@ -95,13 +95,13 @@ pub struct ListArgs {
 
 /// `cbsbuild versions show` / `validate` arguments.
 #[derive(Debug, Args)]
-pub struct ShowArgs {
+pub(crate) struct ShowArgs {
     /// Path to the descriptor JSON.
     pub descriptor: Utf8PathBuf,
 }
 
 /// `cbsbuild versions …` handler.
-pub async fn handle(cmd: VersionsCommand, config_path: &Utf8Path) -> Result<()> {
+pub(crate) async fn handle(cmd: VersionsCommand, config_path: &Utf8Path) -> Result<()> {
     match cmd {
         VersionsCommand::Create(args) => handle_create(*args, config_path).await,
         VersionsCommand::List(args) => handle_list(args, config_path).await,

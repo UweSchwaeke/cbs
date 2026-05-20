@@ -16,7 +16,7 @@ use sqlx::SqlitePool;
 
 /// A periodic task record as stored in the database.
 #[derive(Debug, Clone)]
-pub struct PeriodicTaskRow {
+pub(crate) struct PeriodicTaskRow {
     pub id: String,
     pub cron_expr: String,
     pub tag_format: String,
@@ -38,7 +38,7 @@ pub struct PeriodicTaskRow {
 
 /// Insert a new periodic task.
 #[allow(clippy::too_many_arguments)]
-pub async fn insert_task(
+pub(crate) async fn insert_task(
     pool: &SqlitePool,
     id: &str,
     cron_expr: &str,
@@ -67,7 +67,10 @@ pub async fn insert_task(
 }
 
 /// Get a single periodic task by ID.
-pub async fn get_task(pool: &SqlitePool, id: &str) -> Result<Option<PeriodicTaskRow>, sqlx::Error> {
+pub(crate) async fn get_task(
+    pool: &SqlitePool,
+    id: &str,
+) -> Result<Option<PeriodicTaskRow>, sqlx::Error> {
     let row = sqlx::query!(
         r#"SELECT
                id                 AS "id!",
@@ -113,7 +116,7 @@ pub async fn get_task(pool: &SqlitePool, id: &str) -> Result<Option<PeriodicTask
 }
 
 /// List all periodic tasks, ordered by creation time.
-pub async fn list_tasks(pool: &SqlitePool) -> Result<Vec<PeriodicTaskRow>, sqlx::Error> {
+pub(crate) async fn list_tasks(pool: &SqlitePool) -> Result<Vec<PeriodicTaskRow>, sqlx::Error> {
     let rows = sqlx::query!(
         r#"SELECT
                id                 AS "id!",
@@ -161,7 +164,9 @@ pub async fn list_tasks(pool: &SqlitePool) -> Result<Vec<PeriodicTaskRow>, sqlx:
 }
 
 /// List only enabled periodic tasks, ordered by creation time.
-pub async fn list_enabled_tasks(pool: &SqlitePool) -> Result<Vec<PeriodicTaskRow>, sqlx::Error> {
+pub(crate) async fn list_enabled_tasks(
+    pool: &SqlitePool,
+) -> Result<Vec<PeriodicTaskRow>, sqlx::Error> {
     let rows = sqlx::query!(
         r#"SELECT
                id                 AS "id!",
@@ -209,7 +214,7 @@ pub async fn list_enabled_tasks(pool: &SqlitePool) -> Result<Vec<PeriodicTaskRow
 }
 
 /// Delete a periodic task by ID. Returns `true` if a row was deleted.
-pub async fn delete_task(pool: &SqlitePool, id: &str) -> Result<bool, sqlx::Error> {
+pub(crate) async fn delete_task(pool: &SqlitePool, id: &str) -> Result<bool, sqlx::Error> {
     let result = sqlx::query!("DELETE FROM periodic_tasks WHERE id = ?", id)
         .execute(pool)
         .await?;
@@ -220,7 +225,7 @@ pub async fn delete_task(pool: &SqlitePool, id: &str) -> Result<bool, sqlx::Erro
 /// Enable or disable a periodic task. If `clear_retry` is true, also resets
 /// retry_count, retry_at, and last_error. Returns `true` if a row was updated.
 #[allow(dead_code)]
-pub async fn set_enabled(
+pub(crate) async fn set_enabled(
     pool: &SqlitePool,
     id: &str,
     enabled: bool,
@@ -257,7 +262,7 @@ pub async fn set_enabled(
 }
 
 /// Record a successful trigger: reset retry state and set the last build ID.
-pub async fn update_trigger_success(
+pub(crate) async fn update_trigger_success(
     pool: &SqlitePool,
     id: &str,
     build_id: i64,
@@ -278,7 +283,7 @@ pub async fn update_trigger_success(
 }
 
 /// Record a retry attempt with the next retry timestamp and error message.
-pub async fn update_retry(
+pub(crate) async fn update_retry(
     pool: &SqlitePool,
     id: &str,
     retry_count: i64,
@@ -303,7 +308,7 @@ pub async fn update_retry(
 
 /// Enable a periodic task and reset all retry state (retry_count, retry_at,
 /// last_error). Returns `true` if a row was updated.
-pub async fn enable_task(pool: &SqlitePool, id: &str) -> Result<bool, sqlx::Error> {
+pub(crate) async fn enable_task(pool: &SqlitePool, id: &str) -> Result<bool, sqlx::Error> {
     let result = sqlx::query!(
         r#"UPDATE periodic_tasks
            SET enabled = 1, retry_count = 0, retry_at = NULL,
@@ -320,7 +325,7 @@ pub async fn enable_task(pool: &SqlitePool, id: &str) -> Result<bool, sqlx::Erro
 /// Disable a periodic task. Clears retry_at so the scheduler does not
 /// attempt to fire it, but preserves retry_count and last_error for
 /// diagnostic visibility. Returns `true` if a row was updated.
-pub async fn disable_task(pool: &SqlitePool, id: &str) -> Result<bool, sqlx::Error> {
+pub(crate) async fn disable_task(pool: &SqlitePool, id: &str) -> Result<bool, sqlx::Error> {
     let result = sqlx::query!(
         r#"UPDATE periodic_tasks
            SET enabled = 0, retry_at = NULL, updated_at = unixepoch()
@@ -335,7 +340,7 @@ pub async fn disable_task(pool: &SqlitePool, id: &str) -> Result<bool, sqlx::Err
 
 /// Disable a periodic task and record an error message. Clears retry_at
 /// since the task is no longer scheduled for retry.
-pub async fn disable_with_error(
+pub(crate) async fn disable_with_error(
     pool: &SqlitePool,
     id: &str,
     last_error: &str,

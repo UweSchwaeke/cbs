@@ -30,7 +30,7 @@ use crate::config::ResolvedWorkerConfig;
 const DEFAULT_SIGKILL_TIMEOUT_SECS: u64 = 15;
 
 /// Manages a running build subprocess.
-pub struct BuildExecutor {
+pub(crate) struct BuildExecutor {
     /// The child process handle.
     child: Child,
     /// Build identifier for logging.
@@ -45,7 +45,7 @@ pub struct BuildExecutor {
 
 /// Errors from build executor operations.
 #[derive(Debug)]
-pub enum ExecutorError {
+pub(crate) enum ExecutorError {
     /// Failed to resolve the wrapper script path.
     WrapperNotFound(PathBuf),
     /// A required config field is missing.
@@ -105,7 +105,7 @@ fn resolve_wrapper_path(config: &ResolvedWorkerConfig) -> PathBuf {
 /// The subprocess runs `python3 <wrapper>` with the build descriptor written
 /// to its stdin as JSON. The process is placed in its own process group via
 /// `setsid()` for clean signal delivery.
-pub async fn spawn_build(
+pub(crate) async fn spawn_build(
     config: &ResolvedWorkerConfig,
     build_id: BuildId,
     descriptor: &BuildDescriptor,
@@ -193,26 +193,26 @@ pub async fn spawn_build(
 
 impl BuildExecutor {
     /// Access the child process (for taking stdout).
-    pub fn child_mut(&mut self) -> &mut Child {
+    pub(crate) fn child_mut(&mut self) -> &mut Child {
         &mut self.child
     }
 
     /// The build identifier.
     #[allow(dead_code)]
-    pub fn build_id(&self) -> BuildId {
+    pub(crate) fn build_id(&self) -> BuildId {
         self.build_id
     }
 
     /// Whether `kill()` has been called.
     #[allow(dead_code)]
-    pub fn is_cancelled(&self) -> bool {
+    pub(crate) fn is_cancelled(&self) -> bool {
         self.cancelled.load(Ordering::Relaxed)
     }
 
     /// Send SIGTERM to the process group. Spawns a background task that
     /// escalates to SIGKILL after `sigkill_timeout` if the process is still
     /// running.
-    pub fn kill(&self) {
+    pub(crate) fn kill(&self) {
         if self.cancelled.swap(true, Ordering::Relaxed) {
             // Already cancelled.
             return;
@@ -251,7 +251,7 @@ impl BuildExecutor {
     }
 
     /// Wait for the child process to exit and return the exit code.
-    pub async fn wait(&mut self) -> Option<i32> {
+    pub(crate) async fn wait(&mut self) -> Option<i32> {
         match self.child.wait().await {
             Ok(status) => status.code(),
             Err(err) => {
@@ -272,7 +272,7 @@ impl BuildExecutor {
 /// - `137` (SIGKILL = 128+9) → `Revoked`
 /// - `143` (SIGTERM = 128+15) → `Revoked`
 /// - Any other code or `None` (signal without code) → `Failure`
-pub fn classify_exit_code(code: Option<i32>) -> BuildFinishedStatus {
+pub(crate) fn classify_exit_code(code: Option<i32>) -> BuildFinishedStatus {
     match code {
         Some(0) => BuildFinishedStatus::Success,
         Some(137) | Some(143) => BuildFinishedStatus::Revoked,

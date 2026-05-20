@@ -43,7 +43,7 @@ struct ActiveBuild {
 ///
 /// Returns `Err` when the connection is lost (triggers reconnect in the
 /// caller). Returns `Ok(())` only on graceful shutdown.
-pub async fn run_connection(
+pub(crate) async fn run_connection(
     stream: WsStream,
     config: &ResolvedWorkerConfig,
     state: Arc<ShutdownState>,
@@ -527,7 +527,7 @@ where
 
 /// Errors during a WebSocket session.
 #[derive(Debug)]
-pub enum HandlerError {
+pub(crate) enum HandlerError {
     Serialize(serde_json::Error),
     Deserialize(serde_json::Error),
     Send(tungstenite::Error),

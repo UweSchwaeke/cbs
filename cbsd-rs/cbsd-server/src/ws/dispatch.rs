@@ -28,7 +28,7 @@ use crate::queue::{ActiveBuild, QueuedBuild};
 
 /// Errors that can occur during dispatch.
 #[derive(Debug)]
-pub enum DispatchError {
+pub(crate) enum DispatchError {
     /// No pending builds or no idle workers — not an error, just nothing to do.
     NothingToDispatch,
     /// Database error during state transition.
@@ -58,7 +58,7 @@ impl std::fmt::Display for DispatchError {
 ///
 /// Returns `Ok(())` if a build was dispatched or there was nothing to do.
 /// Returns `Err` on database/IO/send failures.
-pub async fn try_dispatch(state: &AppState) -> Result<(), DispatchError> {
+pub(crate) async fn try_dispatch(state: &AppState) -> Result<(), DispatchError> {
     // Step 1-4: Under the queue lock, pop a build and find a matching worker.
     let dispatch_info = {
         let mut queue = state.queue.lock().await;
@@ -281,7 +281,7 @@ pub async fn try_dispatch(state: &AppState) -> Result<(), DispatchError> {
 /// Handle a `BuildAccepted` message from a worker.
 ///
 /// Cancels the dispatch ack timeout.
-pub async fn handle_build_accepted(state: &AppState, connection_id: &str, build_id: i64) {
+pub(crate) async fn handle_build_accepted(state: &AppState, connection_id: &str, build_id: i64) {
     let queue = state.queue.lock().await;
     if let Some(active) = queue.active.get(&build_id) {
         active.ack_cancel.cancel();
@@ -302,7 +302,7 @@ pub async fn handle_build_accepted(state: &AppState, connection_id: &str, build_
 /// Handle a `BuildStarted` message from a worker.
 ///
 /// Updates the DB state to "started" and sets `started_at`.
-pub async fn handle_build_started(state: &AppState, build_id: i64) {
+pub(crate) async fn handle_build_started(state: &AppState, build_id: i64) {
     match db::builds::set_build_started(&state.pool, build_id).await {
         Ok(true) => {
             tracing::info!(build_id = build_id, "build started");
@@ -330,7 +330,7 @@ pub async fn handle_build_started(state: &AppState, build_id: i64) {
 ///
 /// `build_report` is the serialized JSON report produced by cbscore. Only
 /// the success path provides a report; all other paths pass `None`.
-pub async fn handle_build_finished(
+pub(crate) async fn handle_build_finished(
     state: &AppState,
     connection_id: &str,
     build_id: i64,
@@ -388,7 +388,7 @@ pub async fn handle_build_finished(
 /// If the reason contains "integrity", the build is marked as FAILURE (bad
 /// tarball, not worth retrying). Otherwise, the build is re-queued at the
 /// front of its priority lane and dispatch is retried with the next worker.
-pub async fn handle_build_rejected(
+pub(crate) async fn handle_build_rejected(
     state: &AppState,
     connection_id: &str,
     build_id: i64,
@@ -474,7 +474,10 @@ pub async fn handle_build_rejected(
 /// Send a `BuildRevoke` message to the worker running a build, transition the
 /// build to "revoking" in the DB, and spawn a timeout task that will mark the
 /// build REVOKED unilaterally if the worker does not acknowledge in time.
-pub async fn send_build_revoke(state: &AppState, build_id: i64) -> Result<(), DispatchError> {
+pub(crate) async fn send_build_revoke(
+    state: &AppState,
+    build_id: i64,
+) -> Result<(), DispatchError> {
     // Find the connection that owns this build.
     let connection_id = {
         let queue = state.queue.lock().await;
@@ -540,7 +543,7 @@ pub async fn send_build_revoke(state: &AppState, build_id: i64) -> Result<(), Di
 
 /// Called when the revoke ack timeout fires. If the build is still in
 /// "revoking" state, marks it REVOKED unilaterally.
-pub async fn handle_revoke_timeout(state: &AppState, build_id: i64) {
+pub(crate) async fn handle_revoke_timeout(state: &AppState, build_id: i64) {
     // Check current DB state.
     let build = match db::builds::get_build(&state.pool, build_id).await {
         Ok(Some(b)) => b,
@@ -598,7 +601,7 @@ pub async fn handle_revoke_timeout(state: &AppState, build_id: i64) {
 ///
 /// Every 30 seconds, if there are pending builds and idle workers, calls
 /// `try_dispatch` until either runs out.
-pub fn start_periodic_sweep(state: &AppState) -> tokio::task::JoinHandle<()> {
+pub(crate) fn start_periodic_sweep(state: &AppState) -> tokio::task::JoinHandle<()> {
     let state = state.clone();
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(30));

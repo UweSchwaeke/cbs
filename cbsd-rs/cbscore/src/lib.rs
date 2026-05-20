@@ -12,6 +12,12 @@
 //! Modules are added incrementally by the seq-002 plan; later phases
 //! extend this crate without revisiting the top-level structure.
 
+#![warn(unreachable_pub)]
+// `pub(crate)` is the workspace-internal visibility standard per
+// CLAUDE.md §Visibility. clippy's `redundant_pub_crate` nags to
+// demote to `pub` inside private modules; CLAUDE.md wins.
+#![allow(clippy::redundant_pub_crate)]
+
 pub mod builder;
 pub mod config;
 pub mod containers;

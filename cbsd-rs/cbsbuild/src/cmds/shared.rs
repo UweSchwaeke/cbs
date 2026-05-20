@@ -21,7 +21,9 @@ const TARGET_CBSBUILD_SHARED: &str = "cbsbuild::shared";
 /// **not** invoked here — M1 ships with the optional-secrets
 /// path; deployments that need vault-ref resolution wire it via
 /// the secrets stage at runtime once the Phase 5 follow-up lands.
-pub async fn load_config_and_secrets(config_path: &Utf8Path) -> Result<(Config, SecretsMgr)> {
+pub(crate) async fn load_config_and_secrets(
+    config_path: &Utf8Path,
+) -> Result<(Config, SecretsMgr)> {
     let cfg = config::load(config_path)
         .await
         .with_context(|| format!("loading config at '{config_path}'"))?;
@@ -40,7 +42,7 @@ pub async fn load_config_and_secrets(config_path: &Utf8Path) -> Result<(Config, 
 /// Emit a one-line "wrote report to <path>" trace at INFO so the
 /// in-container `runner build` flow tells operators where the
 /// artefact landed.
-pub fn dump_yaml_path(path: &Utf8Path) {
+pub(crate) fn dump_yaml_path(path: &Utf8Path) {
     tracing::info!(
         target: TARGET_CBSBUILD_SHARED,
         path = %path,

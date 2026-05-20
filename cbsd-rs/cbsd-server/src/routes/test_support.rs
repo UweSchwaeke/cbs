@@ -43,7 +43,7 @@ use crate::queue::BuildQueue;
 
 /// In-memory shared-cache SQLite pool with all migrations applied. Each
 /// call produces a distinct DB namespace so parallel tests do not collide.
-pub async fn test_pool() -> SqlitePool {
+pub(crate) async fn test_pool() -> SqlitePool {
     static COUNTER: AtomicUsize = AtomicUsize::new(0);
     let id = COUNTER.fetch_add(1, Ordering::SeqCst);
     let url = format!(
@@ -73,7 +73,7 @@ pub async fn test_pool() -> SqlitePool {
 /// Build a fully-populated `AppState` for handler tests. The `pool` is the
 /// only field most handlers actually touch; the rest carry harmless dummy
 /// values (empty queue, empty worker senders, empty log indices, etc.).
-pub fn test_app_state(pool: SqlitePool) -> AppState {
+pub(crate) fn test_app_state(pool: SqlitePool) -> AppState {
     AppState {
         pool,
         config: Arc::new(test_server_config()),
@@ -119,7 +119,7 @@ fn test_server_config() -> ServerConfig {
 /// Construct an `AuthUser` with the requested caps. Does not insert a
 /// corresponding row in the DB — callers that need a real user row must
 /// insert one via `db::users::create_or_update_user` or a seed helper.
-pub fn auth_user(email: &str, name: &str, is_robot: bool, caps: &[&str]) -> AuthUser {
+pub(crate) fn auth_user(email: &str, name: &str, is_robot: bool, caps: &[&str]) -> AuthUser {
     AuthUser {
         email: email.to_string(),
         name: name.to_string(),

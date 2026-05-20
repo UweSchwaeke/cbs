@@ -46,14 +46,14 @@ static DUMMY_ARGON2_HASH: LazyLock<String> = LazyLock::new(|| {
 
 /// Discriminates between the two bearer-token types in the unified cache.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TokenKind {
+pub(crate) enum TokenKind {
     ApiKey,
     RobotToken,
 }
 
 /// Cached token entry (stored after successful verification).
 #[derive(Debug, Clone)]
-pub struct CachedToken {
+pub(crate) struct CachedToken {
     /// Distinguishes API keys from robot tokens; used by token rotation (R2).
     #[allow(dead_code)]
     pub kind: TokenKind,
@@ -68,14 +68,14 @@ pub struct CachedToken {
 ///
 /// Reverse indexes by `owner_email` and `prefix` allow efficient invalidation
 /// after revocation without scanning the whole cache.
-pub struct TokenCache {
+pub(crate) struct TokenCache {
     by_sha256: LruCache<[u8; 32], CachedToken>,
     by_prefix: HashMap<String, HashSet<[u8; 32]>>,
     by_owner: HashMap<String, HashSet<[u8; 32]>>,
 }
 
 impl TokenCache {
-    pub fn new(capacity: usize) -> Arc<Mutex<Self>> {
+    pub(crate) fn new(capacity: usize) -> Arc<Mutex<Self>> {
         let cap = NonZeroUsize::new(capacity).expect("cache capacity must be > 0");
         Arc::new(Mutex::new(Self {
             by_sha256: LruCache::new(cap),
@@ -85,7 +85,7 @@ impl TokenCache {
     }
 
     /// Insert a verified token into the cache. Handles LRU eviction cleanup.
-    pub fn insert(&mut self, sha256: [u8; 32], entry: CachedToken) {
+    pub(crate) fn insert(&mut self, sha256: [u8; 32], entry: CachedToken) {
         // If LRU evicts an old entry, clean up its reverse indexes.
         if let Some((evicted_hash, evicted)) = self.by_sha256.push(sha256, entry.clone())
             && evicted_hash != sha256
@@ -110,12 +110,12 @@ impl TokenCache {
     }
 
     /// Look up a cached token by its SHA-256 hash. Promotes in LRU on hit.
-    pub fn get(&mut self, sha256: &[u8; 32]) -> Option<&CachedToken> {
+    pub(crate) fn get(&mut self, sha256: &[u8; 32]) -> Option<&CachedToken> {
         self.by_sha256.get(sha256)
     }
 
     /// Remove all cached entries matching a prefix (individual revocation).
-    pub fn remove_by_prefix(&mut self, prefix: &str) {
+    pub(crate) fn remove_by_prefix(&mut self, prefix: &str) {
         if let Some(hashes) = self.by_prefix.remove(prefix) {
             for h in &hashes {
                 if let Some(entry) = self.by_sha256.pop(h)
@@ -131,7 +131,7 @@ impl TokenCache {
     }
 
     /// Remove all cached entries for an owner (bulk deactivation / tombstone).
-    pub fn remove_by_owner(&mut self, email: &str) {
+    pub(crate) fn remove_by_owner(&mut self, email: &str) {
         if let Some(hashes) = self.by_owner.remove(email) {
             for h in &hashes {
                 if let Some(entry) = self.by_sha256.pop(h)
@@ -170,7 +170,7 @@ impl TokenCache {
 
 /// Error type for API key / robot token operations.
 #[derive(Debug)]
-pub enum TokenError {
+pub(crate) enum TokenError {
     Db(sqlx::Error),
     InvalidFormat,
     NotFound,
@@ -353,7 +353,7 @@ where
 /// Generate a new API key, hash it, and store it in the database.
 ///
 /// Returns `(plaintext_key, prefix)`. Plaintext is shown once, never stored.
-pub async fn create_api_key(
+pub(crate) async fn create_api_key(
     pool: &SqlitePool,
     name: &str,
     owner_email: &str,
@@ -365,7 +365,7 @@ pub async fn create_api_key(
 
 /// Verify a raw API key. Checks the LRU cache first; falls back to DB lookup
 /// + Argon2id verification on cache miss.
-pub async fn verify_api_key(
+pub(crate) async fn verify_api_key(
     pool: &SqlitePool,
     cache: &Arc<Mutex<TokenCache>>,
     raw_key: &str,
@@ -388,7 +388,7 @@ pub async fn verify_api_key(
 /// Performs Argon2id hashing in a blocking thread. The caller inserts the row
 /// into the DB (via pool or transaction). This keeps Argon2 off the async
 /// executor and out of any open transaction.
-pub async fn generate_api_key_material() -> Result<(String, String, String), TokenError> {
+pub(crate) async fn generate_api_key_material() -> Result<(String, String, String), TokenError> {
     generate_token_material("cbsk_").await
 }
 
@@ -400,13 +400,14 @@ pub async fn generate_api_key_material() -> Result<(String, String, String), Tok
 ///
 /// Format: `cbrk_<64 hex chars>`. Prefix = first 12 hex chars after `cbrk_`.
 /// Caller is responsible for DB insertion (pool or transaction).
-pub async fn generate_robot_token_material() -> Result<(String, String, String), TokenError> {
+pub(crate) async fn generate_robot_token_material() -> Result<(String, String, String), TokenError>
+{
     generate_token_material("cbrk_").await
 }
 
 /// Verify a raw robot token against the `robot_tokens` table.
 /// Checks the LRU cache first; falls back to DB lookup + Argon2id on miss.
-pub async fn verify_robot_token(
+pub(crate) async fn verify_robot_token(
     pool: &SqlitePool,
     cache: &Arc<Mutex<TokenCache>>,
     raw_token: &str,

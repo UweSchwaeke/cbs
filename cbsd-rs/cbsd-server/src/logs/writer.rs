@@ -31,15 +31,15 @@ use crate::app::LogWatchers;
 /// Maps `build_id` to a vector of `(line_seq, file_offset)` pairs,
 /// ordered by seq. This allows binary search to find the file offset
 /// for any given sequence number (used by SSE follow to resume).
-pub struct LogWriterState {
+pub(crate) struct LogWriterState {
     pub(crate) seq_indices: HashMap<i64, Vec<(u64, u64)>>,
 }
 
 /// Thread-safe shared log writer.
-pub type SharedLogWriter = Arc<Mutex<LogWriterState>>;
+pub(crate) type SharedLogWriter = Arc<Mutex<LogWriterState>>;
 
 impl LogWriterState {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             seq_indices: HashMap::new(),
         }
@@ -53,7 +53,7 @@ impl LogWriterState {
 /// - `build_id`: the build whose log file to append to
 /// - `start_seq`: sequence number of the first line in `lines`
 /// - `lines`: output lines (without trailing newlines)
-pub async fn write_build_output(
+pub(crate) async fn write_build_output(
     log_writer: &SharedLogWriter,
     log_watchers: &LogWatchers,
     log_dir: &Path,
@@ -123,7 +123,11 @@ pub async fn write_build_output(
 
 /// Finalize a build's log: drop the in-memory index and mark the log
 /// as finished in the database.
-pub async fn finish_build_log(log_writer: &SharedLogWriter, pool: &SqlitePool, build_id: i64) {
+pub(crate) async fn finish_build_log(
+    log_writer: &SharedLogWriter,
+    pool: &SqlitePool,
+    build_id: i64,
+) {
     // Drop the seq-to-offset index for this build.
     {
         let mut writer = log_writer.lock().await;
@@ -143,7 +147,11 @@ pub async fn finish_build_log(log_writer: &SharedLogWriter, pool: &SqlitePool, b
 ///
 /// Returns `None` if the build is not in the index or the sequence number
 /// has not been written yet.
-pub async fn get_seq_offset(log_writer: &SharedLogWriter, build_id: i64, seq: u64) -> Option<u64> {
+pub(crate) async fn get_seq_offset(
+    log_writer: &SharedLogWriter,
+    build_id: i64,
+    seq: u64,
+) -> Option<u64> {
     let writer = log_writer.lock().await;
     let entries = writer.seq_indices.get(&build_id)?;
 

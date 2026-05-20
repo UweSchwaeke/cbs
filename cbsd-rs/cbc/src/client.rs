@@ -18,7 +18,7 @@ use url::Url;
 
 use crate::error::Error;
 
-pub struct CbcClient {
+pub(crate) struct CbcClient {
     inner: reqwest::Client,
     base_url: Url,
     debug: bool,
@@ -26,7 +26,12 @@ pub struct CbcClient {
 
 impl CbcClient {
     /// Create an authenticated client.
-    pub fn new(host: &str, token: &str, debug: bool, no_tls_verify: bool) -> Result<Self, Error> {
+    pub(crate) fn new(
+        host: &str,
+        token: &str,
+        debug: bool,
+        no_tls_verify: bool,
+    ) -> Result<Self, Error> {
         let base_url = parse_base_url(host)?;
 
         let mut headers = HeaderMap::new();
@@ -51,7 +56,11 @@ impl CbcClient {
     }
 
     /// Create an unauthenticated client (for pre-login health checks).
-    pub fn unauthenticated(host: &str, debug: bool, no_tls_verify: bool) -> Result<Self, Error> {
+    pub(crate) fn unauthenticated(
+        host: &str,
+        debug: bool,
+        no_tls_verify: bool,
+    ) -> Result<Self, Error> {
         let base_url = parse_base_url(host)?;
 
         let inner = reqwest::Client::builder()
@@ -66,7 +75,7 @@ impl CbcClient {
         })
     }
 
-    pub async fn get<T: DeserializeOwned>(&self, path: &str) -> Result<T, Error> {
+    pub(crate) async fn get<T: DeserializeOwned>(&self, path: &str) -> Result<T, Error> {
         self.request::<T>(Method::GET, path, Option::<&()>::None)
             .await
     }
@@ -75,7 +84,7 @@ impl CbcClient {
     ///
     /// Useful when the caller needs to customise the request (e.g. SSE
     /// streaming) instead of going through the generic JSON helpers.
-    pub fn request_builder(
+    pub(crate) fn request_builder(
         &self,
         method: Method,
         path: &str,
@@ -93,7 +102,7 @@ impl CbcClient {
     }
 
     /// Send a GET request and return the raw response for streaming.
-    pub async fn get_stream(&self, path: &str) -> Result<reqwest::Response, Error> {
+    pub(crate) async fn get_stream(&self, path: &str) -> Result<reqwest::Response, Error> {
         let url = self
             .base_url
             .join(path)
@@ -134,7 +143,7 @@ impl CbcClient {
         }
     }
 
-    pub async fn post<B: Serialize + Sync, T: DeserializeOwned>(
+    pub(crate) async fn post<B: Serialize + Sync, T: DeserializeOwned>(
         &self,
         path: &str,
         body: &B,
@@ -142,7 +151,7 @@ impl CbcClient {
         self.request::<T>(Method::POST, path, Some(body)).await
     }
 
-    pub async fn put_json<T: DeserializeOwned>(
+    pub(crate) async fn put_json<T: DeserializeOwned>(
         &self,
         path: &str,
         body: &(impl Serialize + Sync),
@@ -150,12 +159,12 @@ impl CbcClient {
         self.request::<T>(Method::PUT, path, Some(body)).await
     }
 
-    pub async fn put_empty<T: DeserializeOwned>(&self, path: &str) -> Result<T, Error> {
+    pub(crate) async fn put_empty<T: DeserializeOwned>(&self, path: &str) -> Result<T, Error> {
         self.request::<T>(Method::PUT, path, Option::<&()>::None)
             .await
     }
 
-    pub async fn delete<T: DeserializeOwned>(&self, path: &str) -> Result<T, Error> {
+    pub(crate) async fn delete<T: DeserializeOwned>(&self, path: &str) -> Result<T, Error> {
         self.request::<T>(Method::DELETE, path, Option::<&()>::None)
             .await
     }

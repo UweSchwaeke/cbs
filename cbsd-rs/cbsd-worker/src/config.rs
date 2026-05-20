@@ -18,7 +18,7 @@ use serde::Deserialize;
 /// Logging configuration for the worker binary.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub struct LoggingConfig {
+pub(crate) struct LoggingConfig {
     /// Log level (e.g., "info", "debug", "trace").
     #[serde(default = "default_log_level")]
     pub level: String,
@@ -47,7 +47,7 @@ fn default_log_level() -> String {
 /// The `CBSD_WORKER_TOKEN` env var takes highest precedence.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub struct WorkerConfig {
+pub(crate) struct WorkerConfig {
     /// WebSocket endpoint, e.g. `wss://cbsd.clyso.com:8080/api/ws/worker`.
     pub server_url: String,
 
@@ -98,7 +98,7 @@ pub struct WorkerConfig {
 }
 
 /// Resolved worker configuration with all identity fields guaranteed present.
-pub struct ResolvedWorkerConfig {
+pub(crate) struct ResolvedWorkerConfig {
     pub server_url: String,
     pub api_key: String,
     /// For local logging only — not sent over the wire.
@@ -123,14 +123,14 @@ pub struct ResolvedWorkerConfig {
 
 impl ResolvedWorkerConfig {
     /// Backoff ceiling in seconds, defaulting to 30.
-    pub fn backoff_ceiling_secs(&self) -> u64 {
+    pub(crate) fn backoff_ceiling_secs(&self) -> u64 {
         self.reconnect_backoff_ceiling_secs.unwrap_or(30)
     }
 }
 
 impl WorkerConfig {
     /// Load configuration from a YAML file.
-    pub fn load(path: &std::path::Path) -> Result<Self, ConfigError> {
+    pub(crate) fn load(path: &std::path::Path) -> Result<Self, ConfigError> {
         let contents =
             std::fs::read_to_string(path).map_err(|e| ConfigError::Read(path.to_path_buf(), e))?;
         let config: WorkerConfig = serde_saphyr::from_str(&contents)
@@ -142,7 +142,7 @@ impl WorkerConfig {
     ///
     /// Priority: `CBSD_WORKER_TOKEN` env var > `worker_token` config field >
     /// individual `api_key` + `arch` fields.
-    pub fn resolve(self) -> Result<ResolvedWorkerConfig, ConfigError> {
+    pub(crate) fn resolve(self) -> Result<ResolvedWorkerConfig, ConfigError> {
         if self.server_url.is_empty() {
             return Err(ConfigError::Validation(
                 "server_url must not be empty".to_string(),
@@ -273,7 +273,7 @@ fn parse_arch(s: &str) -> Result<cbsd_proto::Arch, ConfigError> {
 
 /// Errors that can occur when loading configuration.
 #[derive(Debug)]
-pub enum ConfigError {
+pub(crate) enum ConfigError {
     Read(PathBuf, std::io::Error),
     Parse(PathBuf, Box<serde_saphyr::Error>),
     Validation(String),

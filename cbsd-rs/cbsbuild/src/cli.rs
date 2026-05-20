@@ -17,7 +17,7 @@ use crate::cmds::{advanced, build, config, runner, versions};
 /// Default value for the `--config` flag — matches the Python
 /// `cbsbuild`'s default (CLAUDE.md Correctness Invariant 2; design
 /// 002 line 1244).
-pub const DEFAULT_CONFIG_PATH: &str = "cbs-build.config.yaml";
+pub(crate) const DEFAULT_CONFIG_PATH: &str = "cbs-build.config.yaml";
 
 /// `cbsbuild` — the build-orchestrator CLI.
 ///
@@ -34,7 +34,7 @@ pub const DEFAULT_CONFIG_PATH: &str = "cbs-build.config.yaml";
 /// - `advanced` — operator-side debug escape hatches.
 #[derive(Debug, Parser)]
 #[command(name = "cbsbuild", about, version)]
-pub struct Cli {
+pub(crate) struct Cli {
     /// Path to the cbsbuild config file.
     #[arg(short = 'c', long = "config", default_value = DEFAULT_CONFIG_PATH)]
     pub config: Utf8PathBuf,
@@ -51,7 +51,7 @@ pub struct Cli {
 
 /// Top-level subcommand enum.
 #[derive(Debug, Subcommand)]
-pub enum Command {
+pub(crate) enum Command {
     /// Run a build against a version descriptor.
     Build(build::BuildArgs),
     /// Host-side container lifecycle + in-container build entry.

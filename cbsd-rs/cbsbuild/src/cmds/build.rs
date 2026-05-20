@@ -14,7 +14,7 @@ use super::runner::{RunArgs, handle_run};
 
 /// `cbsbuild build` argument set.
 #[derive(Debug, Args)]
-pub struct BuildArgs {
+pub(crate) struct BuildArgs {
     /// Path to the version-descriptor JSON.
     pub descriptor: Utf8PathBuf,
     /// Skip the in-container rpmbuild step. Propagates to
@@ -37,7 +37,7 @@ pub struct BuildArgs {
 /// `cbsbuild build` handler — delegates verbatim to
 /// [`super::runner::handle_run`] so the two commands share one
 /// code path (matches the Python alias relationship).
-pub async fn handle(args: BuildArgs, config_path: &Utf8Path) -> Result<()> {
+pub(crate) async fn handle(args: BuildArgs, config_path: &Utf8Path) -> Result<()> {
     let run_args = RunArgs {
         descriptor: args.descriptor,
         skip_build: args.skip_build,

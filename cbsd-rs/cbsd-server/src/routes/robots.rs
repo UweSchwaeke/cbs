@@ -25,7 +25,7 @@ use crate::auth::extractors::{
 use crate::auth::token_cache;
 use crate::db;
 
-pub fn router() -> Router<AppState> {
+pub(crate) fn router() -> Router<AppState> {
     Router::new()
         .route("/", post(create_or_revive_robot))
         .route("/", get(list_robots))

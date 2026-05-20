@@ -21,7 +21,7 @@ use crate::signal::ShutdownState;
 use crate::ws::handler;
 
 /// A WebSocket stream over a TLS or plain TCP connection.
-pub type WsStream =
+pub(crate) type WsStream =
     tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
 // ---------------------------------------------------------------------------
@@ -121,7 +121,7 @@ impl rustls::client::danger::ServerCertVerifier for NoVerifier {
 
 /// Run the worker's main reconnect loop. Returns only when SIGTERM is
 /// received (via `state.is_stopping()`).
-pub async fn reconnect_loop(config: &ResolvedWorkerConfig, state: Arc<ShutdownState>) {
+pub(crate) async fn reconnect_loop(config: &ResolvedWorkerConfig, state: Arc<ShutdownState>) {
     let ceiling = config.backoff_ceiling_secs() as f64;
     let mut backoff = Backoff::new(ceiling);
 
@@ -222,7 +222,7 @@ impl Backoff {
 
 /// Errors from a connection attempt.
 #[derive(Debug)]
-pub enum ConnectionError {
+pub(crate) enum ConnectionError {
     Request(tungstenite::Error),
     InvalidHeader(String),
     WebSocket(tungstenite::Error),

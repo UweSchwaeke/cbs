@@ -36,7 +36,7 @@ use crate::db;
 ///
 /// Rate limiting: `/login` and `/callback` are limited to 10 req/min per IP
 /// via `tower-governor`. Authenticated endpoints are not rate-limited here.
-pub fn router() -> Router<AppState> {
+pub(crate) fn router() -> Router<AppState> {
     // Rate limit: 10 requests per 60 seconds per IP
     let governor_conf = GovernorConfigBuilder::default()
         .per_second(60)
@@ -89,7 +89,7 @@ pub fn router() -> Router<AppState> {
 // ---------------------------------------------------------------------------
 
 #[derive(Deserialize)]
-pub struct LoginQuery {
+pub(crate) struct LoginQuery {
     /// Client type: "cli" or "web".
     #[serde(default = "default_client")]
     client: String,
@@ -100,7 +100,7 @@ fn default_client() -> String {
 }
 
 #[derive(Deserialize)]
-pub struct CallbackQuery {
+pub(crate) struct CallbackQuery {
     code: Option<String>,
     state: String,
     dev_email: Option<String>,

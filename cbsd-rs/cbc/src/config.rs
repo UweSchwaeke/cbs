@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use crate::error::Error;
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Config {
+pub(crate) struct Config {
     pub host: String,
     pub token: String,
 }
@@ -28,7 +28,7 @@ impl Config {
     /// Resolution order:
     /// 1. Explicit `path` argument.
     /// 2. `dirs::config_dir()/cbc/config.json`.
-    pub fn load(path: Option<&Path>) -> Result<Self, Error> {
+    pub(crate) fn load(path: Option<&Path>) -> Result<Self, Error> {
         let p = match path {
             Some(p) => p.to_path_buf(),
             None => Self::default_path()
@@ -46,7 +46,7 @@ impl Config {
     ///
     /// Creates parent directories if needed and restricts file permissions to
     /// 0600 on Unix.
-    pub fn save(&self, path: &Path) -> Result<(), Error> {
+    pub(crate) fn save(&self, path: &Path) -> Result<(), Error> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| {
                 Error::Config(format!("cannot create directory {}: {e}", parent.display()))
@@ -74,7 +74,7 @@ impl Config {
     /// (or platform equivalent via `dirs::config_dir`).
     ///
     /// Returns `None` when the platform config directory cannot be determined.
-    pub fn default_path() -> Option<PathBuf> {
+    pub(crate) fn default_path() -> Option<PathBuf> {
         dirs::config_dir().map(|d| d.join("cbc").join("config.json"))
     }
 }

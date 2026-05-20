@@ -10,6 +10,6 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
 
-pub mod dispatch;
-pub mod handler;
-pub mod liveness;
+pub(crate) mod dispatch;
+pub(crate) mod handler;
+pub(crate) mod liveness;

@@ -25,7 +25,7 @@ use sqlx::SqlitePool;
 ///
 /// Returns a `JoinHandle` that should be stored in `AppState` and aborted
 /// during shutdown. The first tick is delayed by 24 hours (not immediate).
-pub fn start_log_gc(
+pub(crate) fn start_log_gc(
     pool: SqlitePool,
     log_dir: PathBuf,
     retention_days: u32,

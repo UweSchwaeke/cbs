@@ -30,7 +30,7 @@ use crate::queue::QueuedBuild;
 use crate::ws;
 
 /// Build the builds sub-router: `/api/builds/*`.
-pub fn router() -> Router<AppState> {
+pub(crate) fn router() -> Router<AppState> {
     Router::new()
         .route("/", post(submit_build))
         .route("/", get(list_builds))
@@ -186,7 +186,7 @@ async fn submit_build(
 /// Returns `(build_id, pending_queue_count)`. Called by both the REST
 /// `submit_build` handler (with `periodic_task_id = None`) and the
 /// scheduler trigger (with `periodic_task_id = Some(id)`).
-pub async fn insert_build_internal(
+pub(crate) async fn insert_build_internal(
     state: &AppState,
     descriptor: BuildDescriptor,
     user_email: &str,

@@ -122,7 +122,7 @@ struct UpdateTaskBody {
 // ---------------------------------------------------------------------------
 
 /// Build the periodic tasks sub-router: `/api/periodic/*`.
-pub fn router() -> Router<AppState> {
+pub(crate) fn router() -> Router<AppState> {
     Router::new()
         .route("/", post(create_task))
         .route("/", get(list_tasks))

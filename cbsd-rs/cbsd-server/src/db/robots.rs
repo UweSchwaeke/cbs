@@ -16,7 +16,7 @@ use sqlx::{SqliteConnection, SqlitePool};
 
 /// A non-revoked robot token candidate returned by prefix lookup.
 /// The caller must do Argon2id verification on the hash field.
-pub struct TokenCandidate {
+pub(crate) struct TokenCandidate {
     pub id: i64,
     pub token_hash: String,
     pub token_prefix: String,
@@ -29,7 +29,7 @@ pub struct TokenCandidate {
 /// revoked row). Populated by the same CTE used by both `list_robots` and
 /// `get_robot_by_name` so the list and detail views never disagree about
 /// which token row represents a robot's current state.
-pub struct RobotRow {
+pub(crate) struct RobotRow {
     pub email: String,
     /// The display identity stored as `users.name` — e.g. `robot:ci`.
     pub display_name: String,
@@ -50,7 +50,7 @@ pub struct RobotRow {
 /// Outcome of `create_or_revive`: whether a fresh row was inserted or a
 /// tombstoned row was reactivated.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CreateRevivedOutcome {
+pub(crate) enum CreateRevivedOutcome {
     Created,
     Revived,
 }
@@ -58,7 +58,7 @@ pub enum CreateRevivedOutcome {
 /// Error surface of `create_or_revive`. Each variant maps to a distinct
 /// HTTP status code at the route layer.
 #[derive(Debug)]
-pub enum CreateRobotError {
+pub(crate) enum CreateRobotError {
     /// A row exists with `is_robot = 1` and `active = 1`; the caller cannot
     /// create a new robot under this name.
     AlreadyActive,
@@ -100,11 +100,11 @@ impl From<sqlx::Error> for CreateRobotError {
 // Name ↔ email helpers
 // ---------------------------------------------------------------------------
 
-pub fn name_to_synthetic_email(name: &str) -> String {
+pub(crate) fn name_to_synthetic_email(name: &str) -> String {
     format!("robot+{name}@robots")
 }
 
-pub fn synthetic_email_to_name(email: &str) -> Option<&str> {
+pub(crate) fn synthetic_email_to_name(email: &str) -> Option<&str> {
     email.strip_prefix("robot+")?.strip_suffix("@robots")
 }
 
@@ -113,7 +113,7 @@ pub fn synthetic_email_to_name(email: &str) -> Option<&str> {
 /// rather than `str::len()` so a multi-byte non-ASCII input (e.g. "робот")
 /// is classified by character count and then falls through to the
 /// character-class check, rather than indexing past the char slice.
-pub fn validate_robot_name(name: &str) -> Result<(), String> {
+pub(crate) fn validate_robot_name(name: &str) -> Result<(), String> {
     let chars: Vec<char> = name.chars().collect();
     let n = chars.len();
     if !(2..=64).contains(&n) {
@@ -149,7 +149,7 @@ pub fn validate_robot_name(name: &str) -> Result<(), String> {
 
 /// Return all non-revoked robot tokens matching the given prefix.
 /// The caller performs Argon2id hash verification on the results.
-pub async fn find_active_token_by_prefix(
+pub(crate) async fn find_active_token_by_prefix(
     pool: &SqlitePool,
     prefix: &str,
 ) -> Result<Vec<TokenCandidate>, sqlx::Error> {
@@ -180,7 +180,7 @@ pub async fn find_active_token_by_prefix(
 /// connection. Returns the number of rows affected. Callers that run
 /// under `BEGIN IMMEDIATE` use this form; a `_pool` variant wraps it for
 /// callers that don't need an enclosing transaction.
-pub async fn revoke_all_active_tokens_in_conn(
+pub(crate) async fn revoke_all_active_tokens_in_conn(
     conn: &mut SqliteConnection,
     email: &str,
 ) -> Result<u64, sqlx::Error> {
@@ -196,13 +196,16 @@ pub async fn revoke_all_active_tokens_in_conn(
 /// Standalone revoke: acquire a connection, revoke every non-revoked
 /// token for the robot, commit. Unlike tombstone, leaves `users.active`
 /// unchanged so the admin can re-issue a token without a revive cycle.
-pub async fn revoke_all_active_tokens(pool: &SqlitePool, email: &str) -> Result<u64, sqlx::Error> {
+pub(crate) async fn revoke_all_active_tokens(
+    pool: &SqlitePool,
+    email: &str,
+) -> Result<u64, sqlx::Error> {
     let mut conn = pool.acquire().await?;
     revoke_all_active_tokens_in_conn(&mut conn, email).await
 }
 
 /// Fire-and-forget: update `last_used_at` and set `first_used_at` once.
-pub async fn mark_robot_token_used(pool: &SqlitePool, id: i64) -> Result<(), sqlx::Error> {
+pub(crate) async fn mark_robot_token_used(pool: &SqlitePool, id: i64) -> Result<(), sqlx::Error> {
     sqlx::query!(
         "UPDATE robot_tokens
          SET last_used_at = unixepoch(),
@@ -220,7 +223,7 @@ pub async fn mark_robot_token_used(pool: &SqlitePool, id: i64) -> Result<(), sql
 // ---------------------------------------------------------------------------
 
 /// List all robot accounts (active and tombstoned) with token status.
-pub async fn list_robots(pool: &SqlitePool) -> Result<Vec<RobotRow>, sqlx::Error> {
+pub(crate) async fn list_robots(pool: &SqlitePool) -> Result<Vec<RobotRow>, sqlx::Error> {
     let rows = sqlx::query!(
         r#"WITH best_token AS (
                SELECT robot_email, revoked, token_prefix, expires_at,
@@ -273,7 +276,7 @@ pub async fn list_robots(pool: &SqlitePool) -> Result<Vec<RobotRow>, sqlx::Error
 }
 
 /// Fetch a single robot account by name. Returns `None` if not found.
-pub async fn get_robot_by_name(
+pub(crate) async fn get_robot_by_name(
     pool: &SqlitePool,
     name: &str,
 ) -> Result<Option<RobotRow>, sqlx::Error> {
@@ -502,7 +505,7 @@ async fn revive_robot_in_conn(
 /// winner's commit and returns [`CreateRobotError::AlreadyActive`]. Any
 /// residual UNIQUE constraint violation is normalised to
 /// [`CreateRobotError::UniqueViolation`] so callers never surface a raw 500.
-pub async fn create_or_revive(
+pub(crate) async fn create_or_revive(
     pool: &SqlitePool,
     name: &str,
     description: Option<&str>,
@@ -594,7 +597,7 @@ async fn create_or_revive_inner(
 /// Tombstone a robot under `BEGIN IMMEDIATE`: set `users.active = 0` and
 /// revoke every non-revoked robot_tokens row in one serialised transaction.
 /// Returns the number of tokens revoked.
-pub async fn tombstone_robot(pool: &SqlitePool, email: &str) -> Result<u64, sqlx::Error> {
+pub(crate) async fn tombstone_robot(pool: &SqlitePool, email: &str) -> Result<u64, sqlx::Error> {
     let mut conn = pool.acquire().await?;
     sqlx::query("BEGIN IMMEDIATE").execute(&mut *conn).await?;
 
@@ -628,7 +631,7 @@ async fn tombstone_robot_inner(
 /// replaced (`Rotated`, only legal when `renew=true`) or the robot had
 /// no active token and a fresh one was issued (`Issued`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RotateTokenOutcome {
+pub(crate) enum RotateTokenOutcome {
     Issued,
     Rotated,
 }
@@ -637,7 +640,7 @@ pub enum RotateTokenOutcome {
 /// status at the route layer so the caller can surface a clear error
 /// without inspecting `sqlx::Error` strings.
 #[derive(Debug)]
-pub enum RotateTokenError {
+pub(crate) enum RotateTokenError {
     RobotNotFound,
     RobotTombstoned,
     /// A non-revoked row exists and the caller did not pass `renew=true`.
@@ -681,7 +684,7 @@ impl From<sqlx::Error> for RotateTokenError {
 /// renew=true" check is inside the transaction and sees the latest
 /// committed state — a concurrent rotation that committed first will be
 /// observed by the loser and surfaced as 409, never as 500.
-pub async fn rotate_token(
+pub(crate) async fn rotate_token(
     pool: &SqlitePool,
     name: &str,
     renew: bool,
@@ -773,7 +776,7 @@ async fn rotate_token_inner(
 }
 
 /// Update a robot's description.
-pub async fn set_description(
+pub(crate) async fn set_description(
     pool: &SqlitePool,
     robot_email: &str,
     description: Option<&str>,
@@ -791,7 +794,10 @@ pub async fn set_description(
 }
 
 /// Check whether the robot has at least one non-revoked token.
-pub async fn has_non_revoked_token(pool: &SqlitePool, email: &str) -> Result<bool, sqlx::Error> {
+pub(crate) async fn has_non_revoked_token(
+    pool: &SqlitePool,
+    email: &str,
+) -> Result<bool, sqlx::Error> {
     let row = sqlx::query!(
         r#"SELECT COUNT(*) AS "cnt!: i64" FROM robot_tokens
            WHERE robot_email = ? AND revoked = 0"#,

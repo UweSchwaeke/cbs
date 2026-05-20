@@ -20,7 +20,7 @@ use super::shared::load_config_and_secrets;
 
 /// `cbsbuild advanced …` subcommand enum.
 #[derive(Debug, Subcommand)]
-pub enum AdvancedCommand {
+pub(crate) enum AdvancedCommand {
     /// Dump the loaded config — useful for inspecting bypass-mode
     /// outputs and resolved defaults.
     DumpConfig(DumpArgs),
@@ -31,7 +31,7 @@ pub enum AdvancedCommand {
 
 /// Shared shape for the `advanced` dump subcommands.
 #[derive(Debug, Args)]
-pub struct DumpArgs {
+pub(crate) struct DumpArgs {
     /// Emit machine-readable JSON on stdout instead of
     /// human-readable text on stderr.
     #[arg(long = "json")]
@@ -39,7 +39,7 @@ pub struct DumpArgs {
 }
 
 /// `cbsbuild advanced …` handler.
-pub async fn handle(cmd: AdvancedCommand, config_path: &Utf8Path) -> Result<()> {
+pub(crate) async fn handle(cmd: AdvancedCommand, config_path: &Utf8Path) -> Result<()> {
     match cmd {
         AdvancedCommand::DumpConfig(args) => handle_dump_config(args, config_path).await,
         AdvancedCommand::DumpResolvedSecrets(args) => {

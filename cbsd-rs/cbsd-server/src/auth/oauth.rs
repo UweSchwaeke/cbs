@@ -21,7 +21,7 @@ use serde::Deserialize;
 
 /// Google OAuth client configuration loaded from the secrets JSON file.
 #[derive(Debug, Clone)]
-pub struct OAuthState {
+pub(crate) struct OAuthState {
     pub client_id: String,
     pub client_secret: String,
     pub redirect_uri: String,
@@ -30,7 +30,7 @@ pub struct OAuthState {
 impl OAuthState {
     /// Create a dummy OAuthState for dev mode. The values are never
     /// used — dev mode bypasses Google entirely.
-    pub fn dummy() -> Self {
+    pub(crate) fn dummy() -> Self {
         Self {
             client_id: String::new(),
             client_secret: String::new(),
@@ -41,7 +41,7 @@ impl OAuthState {
 
 /// User information returned by Google's userinfo endpoint.
 #[derive(Debug, Clone, Deserialize)]
-pub struct GoogleUserInfo {
+pub(crate) struct GoogleUserInfo {
     pub email: String,
     pub name: String,
 }
@@ -61,7 +61,7 @@ struct GoogleWebSecrets {
 
 /// Error type for OAuth operations.
 #[derive(Debug)]
-pub enum OAuthError {
+pub(crate) enum OAuthError {
     /// Failed to read or parse the secrets file.
     Config(String),
     /// HTTP request to Google failed.
@@ -83,7 +83,7 @@ impl std::fmt::Display for OAuthError {
 impl std::error::Error for OAuthError {}
 
 /// Load Google OAuth configuration from a secrets JSON file.
-pub fn load_oauth_config(path: &Path) -> Result<OAuthState, OAuthError> {
+pub(crate) fn load_oauth_config(path: &Path) -> Result<OAuthState, OAuthError> {
     let contents = std::fs::read_to_string(path)
         .map_err(|e| OAuthError::Config(format!("failed to read {}: {e}", path.display())))?;
 
@@ -108,7 +108,11 @@ pub fn load_oauth_config(path: &Path) -> Result<OAuthState, OAuthError> {
 ///
 /// - `oauth_state`: random nonce for CSRF protection (stored in session).
 /// - `hd`: optional hosted domain hint (restricts account picker).
-pub fn build_google_auth_url(state: &OAuthState, oauth_state: &str, hd: Option<&str>) -> String {
+pub(crate) fn build_google_auth_url(
+    state: &OAuthState,
+    oauth_state: &str,
+    hd: Option<&str>,
+) -> String {
     let mut url = format!(
         "https://accounts.google.com/o/oauth2/v2/auth\
          ?client_id={client_id}\
@@ -133,7 +137,7 @@ pub fn build_google_auth_url(state: &OAuthState, oauth_state: &str, hd: Option<&
 ///
 /// 1. POST to Google's token endpoint to get an access token.
 /// 2. GET Google's userinfo endpoint with the access token.
-pub async fn exchange_code_for_userinfo(
+pub(crate) async fn exchange_code_for_userinfo(
     state: &OAuthState,
     code: &str,
 ) -> Result<GoogleUserInfo, OAuthError> {

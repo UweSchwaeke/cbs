@@ -35,7 +35,7 @@ use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberI
 /// because a global subscriber was already set by another caller —
 /// shouldn't happen under `cbsbuild`'s single-process model, but
 /// surfaced as an error rather than a panic).
-pub fn init_logging(debug: bool) -> Result<WorkerGuard> {
+pub(crate) fn init_logging(debug: bool) -> Result<WorkerGuard> {
     let filter_str = if debug {
         "cbscore=debug"
     } else {

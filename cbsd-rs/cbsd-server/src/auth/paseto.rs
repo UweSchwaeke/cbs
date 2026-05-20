@@ -31,7 +31,7 @@ use sha2::{Digest, Sha256};
 /// Frozen payload schema. Both Python and Rust must produce identical
 /// canonical JSON for the same logical payload.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CbsdTokenPayloadV1 {
+pub(crate) struct CbsdTokenPayloadV1 {
     /// Expiration as Unix epoch seconds. `None` = infinite TTL.
     pub expires: Option<i64>,
     /// User email address.
@@ -45,7 +45,7 @@ pub struct CbsdTokenPayloadV1 {
 /// as a hard ceiling enforced by the `pasetors` library on decrypt.
 ///
 /// Returns `(raw_token_string, sha256_hex_hash)`.
-pub fn token_create(
+pub(crate) fn token_create(
     email: &str,
     max_ttl_secs: u64,
     secret_key_hex: &str,
@@ -84,7 +84,7 @@ pub fn token_create(
 }
 
 /// Decode and validate a PASETO v4.local token.
-pub fn token_decode(
+pub(crate) fn token_decode(
     raw_token: &str,
     secret_key_hex: &str,
 ) -> Result<CbsdTokenPayloadV1, TokenError> {
@@ -123,12 +123,12 @@ pub fn token_decode(
 }
 
 /// Compute SHA-256 hash of a raw PASETO token string.
-pub fn token_hash(raw_token: &str) -> String {
+pub(crate) fn token_hash(raw_token: &str) -> String {
     hex::encode(Sha256::digest(raw_token.as_bytes()))
 }
 
 #[derive(Debug, Clone)]
-pub enum TokenError {
+pub(crate) enum TokenError {
     Serialization,
     InvalidKey,
     Creation,
@@ -153,7 +153,7 @@ impl std::error::Error for TokenError {}
 /// Hex encode/decode utility (avoids external `hex` crate dependency by
 /// using a minimal implementation).
 mod hex {
-    pub fn encode(bytes: impl AsRef<[u8]>) -> String {
+    pub(super) fn encode(bytes: impl AsRef<[u8]>) -> String {
         bytes.as_ref().iter().fold(String::new(), |mut s, b| {
             use std::fmt::Write;
             let _ = write!(s, "{b:02x}");
@@ -161,7 +161,7 @@ mod hex {
         })
     }
 
-    pub fn decode(s: &str) -> Result<Vec<u8>, ()> {
+    pub(super) fn decode(s: &str) -> Result<Vec<u8>, ()> {
         if !s.len().is_multiple_of(2) {
             return Err(());
         }

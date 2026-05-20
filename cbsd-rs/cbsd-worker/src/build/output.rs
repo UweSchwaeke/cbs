@@ -44,7 +44,7 @@ struct WrapperResult {
 
 /// Errors during output streaming.
 #[derive(Debug)]
-pub enum OutputError {
+pub(crate) enum OutputError {
     /// Failed to read from subprocess stdout.
     Read(std::io::Error),
     /// Failed to send a message to the WebSocket sender.
@@ -75,7 +75,7 @@ impl std::error::Error for OutputError {
 /// Returns the final `(status, error, build_report)` extracted from the
 /// wrapper's structured result line if present, or `(Failure, None, None)` if
 /// no result line was found.
-pub async fn stream_output(
+pub(crate) async fn stream_output(
     stdout: ChildStdout,
     build_id: BuildId,
     sender: &mpsc::Sender<WorkerMessage>,

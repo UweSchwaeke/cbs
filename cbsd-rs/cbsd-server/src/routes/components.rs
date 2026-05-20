@@ -22,7 +22,7 @@ use crate::auth::extractors::{AuthUser, ErrorDetail};
 use crate::components::ComponentInfo;
 
 /// Build the components sub-router: `/api/components/*`.
-pub fn router() -> Router<AppState> {
+pub(crate) fn router() -> Router<AppState> {
     Router::new().route("/", get(list_components))
 }
 

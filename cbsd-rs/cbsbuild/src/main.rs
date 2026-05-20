@@ -15,6 +15,12 @@
 //! - `131` (`errno::ENOTRECOVERABLE`) — any other unhandled error.
 
 #![warn(missing_docs)]
+#![warn(unreachable_pub)]
+// `pub(crate)` is the workspace-internal visibility standard per
+// CLAUDE.md §Visibility. clippy's `redundant_pub_crate` lint nags
+// to demote to bare `pub` inside private modules of a binary
+// crate; the team's chosen convention wins.
+#![allow(clippy::redundant_pub_crate)]
 #![recursion_limit = "256"]
 
 mod cli;

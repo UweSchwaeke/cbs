@@ -26,7 +26,7 @@ use crate::db;
 /// 2. If `seed_admin` is configured, create the admin user and assign the
 ///    admin role.
 /// 3. If `dev.enabled`, seed workers with pre-configured API keys.
-pub async fn run_first_startup_seed(
+pub(crate) async fn run_first_startup_seed(
     pool: &SqlitePool,
     config: &ServerConfig,
 ) -> Result<(), SeedError> {
@@ -228,7 +228,7 @@ async fn create_builtin_role(
 
 /// Errors that can occur during first-startup seeding.
 #[derive(Debug)]
-pub enum SeedError {
+pub(crate) enum SeedError {
     /// Database error.
     Db(sqlx::Error),
     /// Argon2 hashing error.

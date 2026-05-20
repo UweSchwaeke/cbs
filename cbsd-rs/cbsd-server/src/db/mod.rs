@@ -10,16 +10,16 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
 
-pub mod api_keys;
-pub mod builds;
-pub mod channels;
-pub mod periodic;
-pub mod robots;
-pub mod roles;
-pub mod seed;
-pub mod tokens;
-pub mod users;
-pub mod workers;
+pub(crate) mod api_keys;
+pub(crate) mod builds;
+pub(crate) mod channels;
+pub(crate) mod periodic;
+pub(crate) mod robots;
+pub(crate) mod roles;
+pub(crate) mod seed;
+pub(crate) mod tokens;
+pub(crate) mod users;
+pub(crate) mod workers;
 
 use sqlx::SqlitePool;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
@@ -35,7 +35,7 @@ use std::str::FromStr;
 ///
 /// Pool sizing: `max_connections = 4` (correctness requirement — prevents
 /// deadlock when the dispatch mutex holds across a SQLite write).
-pub async fn create_pool(db_url: &str) -> SqlitePool {
+pub(crate) async fn create_pool(db_url: &str) -> SqlitePool {
     let options = SqliteConnectOptions::from_str(db_url)
         .expect("invalid database URL")
         .create_if_missing(true)
@@ -52,7 +52,7 @@ pub async fn create_pool(db_url: &str) -> SqlitePool {
 }
 
 /// Run embedded sqlx migrations.
-pub async fn run_migrations(pool: &SqlitePool) {
+pub(crate) async fn run_migrations(pool: &SqlitePool) {
     sqlx::migrate!("../migrations")
         .run(pool)
         .await
@@ -62,6 +62,6 @@ pub async fn run_migrations(pool: &SqlitePool) {
 /// Return true if the error is a SQLite UNIQUE constraint violation.
 ///
 /// SQLite extended result code `2067 = SQLITE_CONSTRAINT_UNIQUE`.
-pub fn is_unique_violation(e: &sqlx::Error) -> bool {
+pub(crate) fn is_unique_violation(e: &sqlx::Error) -> bool {
     matches!(e, sqlx::Error::Database(db_err) if db_err.code().as_deref() == Some("2067"))
 }

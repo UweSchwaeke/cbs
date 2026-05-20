@@ -17,7 +17,7 @@
 /// - `*` matches everything (global wildcard).
 /// - `prefix/*` matches any value starting with `prefix/`.
 /// - Otherwise, exact match.
-pub fn scope_pattern_matches(pattern: &str, value: &str) -> bool {
+pub(crate) fn scope_pattern_matches(pattern: &str, value: &str) -> bool {
     if pattern == "*" {
         return true;
     }
@@ -39,7 +39,7 @@ pub fn scope_pattern_matches(pattern: &str, value: &str) -> bool {
 /// - `pattern == "*"` (global wildcard)
 /// - `pattern` starts with `"{channel_name}/"` (e.g. `ces-devel/dev`)
 /// - `pattern == "{channel_name}/*"` (channel wildcard)
-pub fn scope_covers_channel(pattern: &str, channel_name: &str) -> bool {
+pub(crate) fn scope_covers_channel(pattern: &str, channel_name: &str) -> bool {
     if pattern == "*" {
         return true;
     }

@@ -10,15 +10,15 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
 
-pub mod admin;
-pub mod auth;
-pub mod builds;
-pub mod channels;
-pub mod components;
-pub mod periodic;
-pub mod permissions;
-pub mod robots;
-pub mod workers;
+pub(crate) mod admin;
+pub(crate) mod auth;
+pub(crate) mod builds;
+pub(crate) mod channels;
+pub(crate) mod components;
+pub(crate) mod periodic;
+pub(crate) mod permissions;
+pub(crate) mod robots;
+pub(crate) mod workers;
 
 #[cfg(test)]
 mod audit_identity_lint;

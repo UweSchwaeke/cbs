@@ -13,7 +13,7 @@
 //! Component discovery: scans the components directory for `cbs.component.yaml`
 //! files and enumerates available container versions.
 
-pub mod tarball;
+pub(crate) mod tarball;
 
 use std::path::Path;
 
@@ -27,7 +27,7 @@ struct ComponentYaml {
 
 /// Information about a discovered component.
 #[derive(Debug, Clone, Serialize)]
-pub struct ComponentInfo {
+pub(crate) struct ComponentInfo {
     pub name: String,
     pub versions: Vec<String>,
 }
@@ -35,7 +35,7 @@ pub struct ComponentInfo {
 /// Scan `components_dir` for directories containing `cbs.component.yaml`.
 /// For each, reads the `name` field and enumerates subdirectories under
 /// `containers/` as version strings.
-pub fn load_components(components_dir: &Path) -> Result<Vec<ComponentInfo>, std::io::Error> {
+pub(crate) fn load_components(components_dir: &Path) -> Result<Vec<ComponentInfo>, std::io::Error> {
     let mut components = Vec::new();
 
     let entries = std::fs::read_dir(components_dir)?;
@@ -84,6 +84,6 @@ pub fn load_components(components_dir: &Path) -> Result<Vec<ComponentInfo>, std:
 }
 
 /// Check whether `name` is a known component.
-pub fn validate_component_name(components: &[ComponentInfo], name: &str) -> bool {
+pub(crate) fn validate_component_name(components: &[ComponentInfo], name: &str) -> bool {
     components.iter().any(|c| c.name == name)
 }

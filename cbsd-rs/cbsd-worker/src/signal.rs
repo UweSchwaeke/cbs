@@ -20,7 +20,7 @@ use tokio::task::JoinHandle;
 ///
 /// The signal handler sets `stopping` to true and notifies via `notify`.
 /// The reconnection loop checks `stopping` to decide whether to reconnect.
-pub struct ShutdownState {
+pub(crate) struct ShutdownState {
     /// Set to `true` when SIGTERM is received.
     pub stopping: AtomicBool,
 
@@ -29,7 +29,7 @@ pub struct ShutdownState {
 }
 
 impl ShutdownState {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             stopping: AtomicBool::new(false),
             notify: tokio::sync::Notify::new(),
@@ -37,7 +37,7 @@ impl ShutdownState {
     }
 
     /// Check whether shutdown has been requested.
-    pub fn is_stopping(&self) -> bool {
+    pub(crate) fn is_stopping(&self) -> bool {
         self.stopping.load(Ordering::Relaxed)
     }
 }
@@ -45,7 +45,7 @@ impl ShutdownState {
 /// Install a SIGTERM handler that sets `state.stopping` and notifies waiters.
 ///
 /// Returns the spawned task handle for the signal listener.
-pub fn install_signal_handler(state: Arc<ShutdownState>) -> JoinHandle<()> {
+pub(crate) fn install_signal_handler(state: Arc<ShutdownState>) -> JoinHandle<()> {
     tokio::spawn(async move {
         let mut sigterm =
             signal(SignalKind::terminate()).expect("failed to register SIGTERM handler");

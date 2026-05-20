@@ -15,7 +15,7 @@
 use sqlx::{SqliteConnection, SqlitePool};
 
 /// A role as stored in the database.
-pub struct RoleRecord {
+pub(crate) struct RoleRecord {
     pub name: String,
     pub description: String,
     pub builtin: bool,
@@ -24,27 +24,27 @@ pub struct RoleRecord {
 
 /// A single scope entry (type + glob pattern).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct ScopeEntry {
+pub(crate) struct ScopeEntry {
     pub scope_type: String,
     pub pattern: String,
 }
 
 /// A user's role with its role-level scopes (for listing).
-pub struct UserRoleWithScopes {
+pub(crate) struct UserRoleWithScopes {
     pub role_name: String,
     pub scopes: Vec<ScopeEntry>,
 }
 
 /// Full assignment details: role name, its capabilities, and role-level scopes.
 #[allow(dead_code)]
-pub struct AssignmentWithScopes {
+pub(crate) struct AssignmentWithScopes {
     pub role_name: String,
     pub caps: Vec<String>,
     pub scopes: Vec<ScopeEntry>,
 }
 
 /// Create a new role.
-pub async fn create_role(
+pub(crate) async fn create_role(
     pool: &SqlitePool,
     name: &str,
     description: &str,
@@ -63,7 +63,10 @@ pub async fn create_role(
 }
 
 /// Get a single role by name.
-pub async fn get_role(pool: &SqlitePool, name: &str) -> Result<Option<RoleRecord>, sqlx::Error> {
+pub(crate) async fn get_role(
+    pool: &SqlitePool,
+    name: &str,
+) -> Result<Option<RoleRecord>, sqlx::Error> {
     let row = sqlx::query!(
         r#"SELECT name AS "name!", description AS "description!",
                   builtin, created_at AS "created_at!"
@@ -82,7 +85,7 @@ pub async fn get_role(pool: &SqlitePool, name: &str) -> Result<Option<RoleRecord
 }
 
 /// List all roles.
-pub async fn list_roles(pool: &SqlitePool) -> Result<Vec<RoleRecord>, sqlx::Error> {
+pub(crate) async fn list_roles(pool: &SqlitePool) -> Result<Vec<RoleRecord>, sqlx::Error> {
     let rows = sqlx::query!(
         r#"SELECT name AS "name!", description AS "description!",
                   builtin, created_at AS "created_at!"
@@ -103,7 +106,7 @@ pub async fn list_roles(pool: &SqlitePool) -> Result<Vec<RoleRecord>, sqlx::Erro
 }
 
 /// Delete a role by name. Returns `false` if the role is builtin (not deleted).
-pub async fn delete_role(pool: &SqlitePool, name: &str) -> Result<bool, sqlx::Error> {
+pub(crate) async fn delete_role(pool: &SqlitePool, name: &str) -> Result<bool, sqlx::Error> {
     // Refuse to delete builtin roles
     if is_role_builtin(pool, name).await? {
         return Ok(false);
@@ -117,7 +120,10 @@ pub async fn delete_role(pool: &SqlitePool, name: &str) -> Result<bool, sqlx::Er
 }
 
 /// Get all capabilities for a role.
-pub async fn get_role_caps(pool: &SqlitePool, role_name: &str) -> Result<Vec<String>, sqlx::Error> {
+pub(crate) async fn get_role_caps(
+    pool: &SqlitePool,
+    role_name: &str,
+) -> Result<Vec<String>, sqlx::Error> {
     let rows = sqlx::query!(
         r#"SELECT cap AS "cap!" FROM role_caps WHERE role_name = ? ORDER BY cap"#,
         role_name,
@@ -129,7 +135,7 @@ pub async fn get_role_caps(pool: &SqlitePool, role_name: &str) -> Result<Vec<Str
 }
 
 /// Replace both capabilities and scopes of a role atomically.
-pub async fn set_role_caps_and_scopes(
+pub(crate) async fn set_role_caps_and_scopes(
     pool: &SqlitePool,
     role_name: &str,
     caps: &[&str],
@@ -173,7 +179,7 @@ pub async fn set_role_caps_and_scopes(
 }
 
 /// Set role scopes inside an existing transaction (used by seed).
-pub async fn set_role_scopes_in_tx(
+pub(crate) async fn set_role_scopes_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
     role_name: &str,
     scopes: &[ScopeEntry],
@@ -194,7 +200,7 @@ pub async fn set_role_scopes_in_tx(
 }
 
 /// Get all scopes for a role.
-pub async fn get_role_scopes(
+pub(crate) async fn get_role_scopes(
     pool: &SqlitePool,
     role_name: &str,
 ) -> Result<Vec<ScopeEntry>, sqlx::Error> {
@@ -217,7 +223,7 @@ pub async fn get_role_scopes(
 }
 
 /// Add a single role to a user. Ignores conflicts (idempotent).
-pub async fn add_user_role(
+pub(crate) async fn add_user_role(
     pool: &SqlitePool,
     user_email: &str,
     role_name: &str,
@@ -233,7 +239,7 @@ pub async fn add_user_role(
 }
 
 /// Remove a single role from a user. Returns `true` if a row was removed.
-pub async fn remove_user_role(
+pub(crate) async fn remove_user_role(
     pool: &SqlitePool,
     user_email: &str,
     role_name: &str,
@@ -251,7 +257,7 @@ pub async fn remove_user_role(
 
 /// Replace all role assignments for a user in a single transaction.
 /// Scopes are defined on roles, not per-assignment.
-pub async fn set_user_roles(
+pub(crate) async fn set_user_roles(
     pool: &SqlitePool,
     user_email: &str,
     role_names: &[&str],
@@ -278,7 +284,7 @@ pub async fn set_user_roles(
 
 /// Get all role assignments for a user, including role-level scopes.
 /// Uses a single JOIN query instead of N+1 round trips.
-pub async fn get_user_roles(
+pub(crate) async fn get_user_roles(
     pool: &SqlitePool,
     user_email: &str,
 ) -> Result<Vec<UserRoleWithScopes>, sqlx::Error> {
@@ -321,7 +327,7 @@ pub async fn get_user_roles(
 
 /// Get the deduplicated effective capabilities for a user (union across all
 /// assigned roles).
-pub async fn get_effective_caps(
+pub(crate) async fn get_effective_caps(
     pool: &SqlitePool,
     user_email: &str,
 ) -> Result<Vec<String>, sqlx::Error> {
@@ -341,7 +347,7 @@ pub async fn get_effective_caps(
 
 /// Get all assignments for a user with each role's capabilities and scopes.
 /// Uses two JOIN queries (caps + scopes) instead of 2N+1 round trips.
-pub async fn get_user_assignments_with_scopes(
+pub(crate) async fn get_user_assignments_with_scopes(
     pool: &SqlitePool,
     user_email: &str,
 ) -> Result<Vec<AssignmentWithScopes>, sqlx::Error> {
@@ -419,7 +425,7 @@ pub async fn get_user_assignments_with_scopes(
 
 /// Count active users who hold a role with the `*` capability.
 /// Used for the last-admin guard.
-pub async fn count_active_wildcard_holders(pool: &SqlitePool) -> Result<i64, sqlx::Error> {
+pub(crate) async fn count_active_wildcard_holders(pool: &SqlitePool) -> Result<i64, sqlx::Error> {
     let row = sqlx::query!(
         r#"SELECT COUNT(DISTINCT u.email) AS "cnt!"
            FROM users u
@@ -438,7 +444,7 @@ pub async fn count_active_wildcard_holders(pool: &SqlitePool) -> Result<i64, sql
 /// Used inside an existing transaction (e.g. in `deactivate_entity`) so that
 /// the count reflects the deactivation that was just applied but not yet
 /// committed.
-pub async fn count_active_wildcard_holders_tx(
+pub(crate) async fn count_active_wildcard_holders_tx(
     tx: &mut SqliteConnection,
 ) -> Result<i64, sqlx::Error> {
     let row = sqlx::query!(
@@ -455,7 +461,10 @@ pub async fn count_active_wildcard_holders_tx(
 }
 
 /// Check if a role is builtin.
-pub async fn is_role_builtin(pool: &SqlitePool, role_name: &str) -> Result<bool, sqlx::Error> {
+pub(crate) async fn is_role_builtin(
+    pool: &SqlitePool,
+    role_name: &str,
+) -> Result<bool, sqlx::Error> {
     let row = sqlx::query!("SELECT builtin FROM roles WHERE name = ?", role_name,)
         .fetch_optional(pool)
         .await?;

@@ -10,6 +10,6 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
 
-pub mod component;
-pub mod executor;
-pub mod output;
+pub(crate) mod component;
+pub(crate) mod executor;
+pub(crate) mod output;

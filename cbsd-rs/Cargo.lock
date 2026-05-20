@@ -878,9 +878,11 @@ name = "cbsbuild"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "camino",
  "cbscore",
  "cbscore-types",
  "clap",
+ "serde_json",
  "tokio",
  "tracing",
  "tracing-appender",

@@ -12,7 +12,7 @@
 
 //! In-memory build queue with three priority lanes.
 
-pub mod recovery;
+pub(crate) mod recovery;
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
@@ -24,7 +24,7 @@ use crate::ws::liveness::{ConnectionId, WorkerState};
 
 /// A build that has been dispatched to a worker and is currently active.
 #[allow(dead_code)]
-pub struct ActiveBuild {
+pub(crate) struct ActiveBuild {
     pub build_id: i64,
     pub connection_id: ConnectionId,
     pub dispatched_at: tokio::time::Instant,
@@ -39,7 +39,7 @@ pub struct ActiveBuild {
 /// Summary information about a connected worker (returned by `GET /workers`).
 #[allow(dead_code)]
 #[derive(Debug, Serialize)]
-pub struct WorkerInfo {
+pub(crate) struct WorkerInfo {
     pub connection_id: ConnectionId,
     pub worker_id: String,
     pub worker_name: String,
@@ -50,7 +50,7 @@ pub struct WorkerInfo {
 
 /// A build waiting in the queue.
 #[allow(dead_code)]
-pub struct QueuedBuild {
+pub(crate) struct QueuedBuild {
     pub build_id: BuildId,
     pub priority: Priority,
     pub descriptor: BuildDescriptor,
@@ -61,7 +61,7 @@ pub struct QueuedBuild {
 /// Three-lane priority build queue: high > normal > low.
 ///
 /// Also tracks active builds and connected workers.
-pub struct BuildQueue {
+pub(crate) struct BuildQueue {
     high: VecDeque<QueuedBuild>,
     normal: VecDeque<QueuedBuild>,
     low: VecDeque<QueuedBuild>,
@@ -72,11 +72,11 @@ pub struct BuildQueue {
 }
 
 /// Thread-safe handle to the build queue.
-pub type SharedBuildQueue = Arc<tokio::sync::Mutex<BuildQueue>>;
+pub(crate) type SharedBuildQueue = Arc<tokio::sync::Mutex<BuildQueue>>;
 
 impl BuildQueue {
     /// Create an empty queue with no pending builds.
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             high: VecDeque::new(),
             normal: VecDeque::new(),
@@ -87,18 +87,18 @@ impl BuildQueue {
     }
 
     /// Push a build to the back of the appropriate priority lane.
-    pub fn enqueue(&mut self, build: QueuedBuild) {
+    pub(crate) fn enqueue(&mut self, build: QueuedBuild) {
         self.lane_mut(build.priority).push_back(build);
     }
 
     /// Push a build to the front of the appropriate priority lane.
     /// Used for re-queue after rejection or timeout.
-    pub fn enqueue_front(&mut self, build: QueuedBuild) {
+    pub(crate) fn enqueue_front(&mut self, build: QueuedBuild) {
         self.lane_mut(build.priority).push_front(build);
     }
 
     /// Pop the next pending build from the highest non-empty lane.
-    pub fn next_pending(&mut self) -> Option<QueuedBuild> {
+    pub(crate) fn next_pending(&mut self) -> Option<QueuedBuild> {
         if let Some(build) = self.high.pop_front() {
             return Some(build);
         }
@@ -109,7 +109,7 @@ impl BuildQueue {
     }
 
     /// Search all lanes and remove the build with the given ID.
-    pub fn remove_by_id(&mut self, build_id: BuildId) -> Option<QueuedBuild> {
+    pub(crate) fn remove_by_id(&mut self, build_id: BuildId) -> Option<QueuedBuild> {
         if let Some(build) = remove_from_lane(&mut self.high, build_id) {
             return Some(build);
         }
@@ -120,13 +120,13 @@ impl BuildQueue {
     }
 
     /// Return the number of pending builds per lane: (high, normal, low).
-    pub fn pending_counts(&self) -> (usize, usize, usize) {
+    pub(crate) fn pending_counts(&self) -> (usize, usize, usize) {
         (self.high.len(), self.normal.len(), self.low.len())
     }
 
     /// Check if a build with the given ID is in the queue.
     #[allow(dead_code)]
-    pub fn contains(&self, build_id: BuildId) -> bool {
+    pub(crate) fn contains(&self, build_id: BuildId) -> bool {
         lane_contains(&self.high, build_id)
             || lane_contains(&self.normal, build_id)
             || lane_contains(&self.low, build_id)
@@ -144,42 +144,42 @@ impl BuildQueue {
     // -- Worker management --
 
     /// Register a worker with the given connection ID and state.
-    pub fn register_worker(&mut self, connection_id: ConnectionId, state: WorkerState) {
+    pub(crate) fn register_worker(&mut self, connection_id: ConnectionId, state: WorkerState) {
         self.workers.insert(connection_id, state);
     }
 
     /// Remove a worker by connection ID. Returns the previous state if present.
     #[allow(dead_code)]
-    pub fn remove_worker(&mut self, connection_id: &str) -> Option<WorkerState> {
+    pub(crate) fn remove_worker(&mut self, connection_id: &str) -> Option<WorkerState> {
         self.workers.remove(connection_id)
     }
 
     /// Look up a worker by connection ID.
-    pub fn get_worker(&self, connection_id: &str) -> Option<&WorkerState> {
+    pub(crate) fn get_worker(&self, connection_id: &str) -> Option<&WorkerState> {
         self.workers.get(connection_id)
     }
 
     /// Replace the state of an existing worker.
-    pub fn set_worker_state(&mut self, connection_id: &str, state: WorkerState) {
+    pub(crate) fn set_worker_state(&mut self, connection_id: &str, state: WorkerState) {
         if let Some(entry) = self.workers.get_mut(connection_id) {
             *entry = state;
         }
     }
 
     /// Returns `true` if any priority lane has pending builds.
-    pub fn has_pending(&self) -> bool {
+    pub(crate) fn has_pending(&self) -> bool {
         !self.high.is_empty() || !self.normal.is_empty() || !self.low.is_empty()
     }
 
     /// Returns `true` if any connected worker is idle (has no active build).
-    pub fn has_idle_workers(&self) -> bool {
+    pub(crate) fn has_idle_workers(&self) -> bool {
         self.workers.iter().any(|(cid, ws)| {
             ws.is_dispatch_eligible() && !self.active.values().any(|ab| ab.connection_id == *cid)
         })
     }
 
     /// Return all active builds assigned to a given connection.
-    pub fn active_builds_for_connection(&self, connection_id: &str) -> Vec<i64> {
+    pub(crate) fn active_builds_for_connection(&self, connection_id: &str) -> Vec<i64> {
         self.active
             .values()
             .filter(|ab| ab.connection_id == connection_id)
@@ -189,7 +189,7 @@ impl BuildQueue {
 
     /// Return summary information for all workers (for `GET /api/workers`).
     #[allow(dead_code)]
-    pub fn connected_workers(&self) -> Vec<WorkerInfo> {
+    pub(crate) fn connected_workers(&self) -> Vec<WorkerInfo> {
         self.workers
             .iter()
             .filter_map(|(cid, state)| {

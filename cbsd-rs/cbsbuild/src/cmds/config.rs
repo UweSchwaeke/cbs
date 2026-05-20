@@ -20,7 +20,7 @@ use clap::{Args, Subcommand};
 
 /// `cbsbuild config …` subcommand enum.
 #[derive(Debug, Subcommand)]
-pub enum ConfigCommand {
+pub(crate) enum ConfigCommand {
     /// Initialise a config from a bypass mode + overrides.
     Init(InitArgs),
     /// Pretty-print the loaded config.
@@ -33,7 +33,7 @@ pub enum ConfigCommand {
 /// least one of the `--for-*` mode flags is required (running with
 /// no flags returns an error with a usage hint).
 #[derive(Debug, Args)]
-pub struct InitArgs {
+pub(crate) struct InitArgs {
     /// Pre-fill paths for a systemd-managed deployment.
     #[arg(long = "for-systemd-install")]
     pub for_systemd_install: bool,
@@ -61,7 +61,7 @@ pub struct InitArgs {
 }
 
 /// `cbsbuild config …` handler.
-pub async fn handle(cmd: ConfigCommand, config_path: &Utf8Path) -> Result<()> {
+pub(crate) async fn handle(cmd: ConfigCommand, config_path: &Utf8Path) -> Result<()> {
     match cmd {
         ConfigCommand::Init(args) => handle_init(args, config_path).await,
         ConfigCommand::Show => handle_show(config_path).await,
@@ -177,7 +177,7 @@ fn containerized_run_template() -> Config {
 /// non-empty value. Surfaces a single aggregated error listing
 /// each problem so `cbsbuild config check` prints them all at
 /// once.
-pub fn validate_config(cfg: &Config) -> Result<()> {
+pub(crate) fn validate_config(cfg: &Config) -> Result<()> {
     let mut errors: Vec<String> = Vec::new();
     if cfg.paths.components.is_empty() {
         errors.push("paths.components is empty".into());

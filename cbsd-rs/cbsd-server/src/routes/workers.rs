@@ -28,7 +28,7 @@ use crate::db;
 use crate::ws::liveness::WorkerState;
 
 /// Build the workers sub-router: `/api/workers`.
-pub fn router() -> Router<AppState> {
+pub(crate) fn router() -> Router<AppState> {
     Router::new().route("/", get(list_workers))
 }
 

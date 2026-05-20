@@ -28,7 +28,7 @@ use crate::routes::permissions::ScopeBody;
 use crate::routes::robots;
 
 /// Build the admin sub-router: `/api/admin/*`.
-pub fn router() -> Router<AppState> {
+pub(crate) fn router() -> Router<AppState> {
     let entity_router = Router::new()
         .route("/{email}/deactivate", put(deactivate_entity))
         .route("/{email}/activate", put(activate_entity))

@@ -24,7 +24,7 @@ use sha2::{Digest, Sha256};
 /// Returns `(tar_gz_bytes, sha256_hex)` where `sha256_hex` is the hex-encoded
 /// SHA-256 digest of the final gzip bytes. The archive entries are stored
 /// relative to `component_name/` as the top-level directory.
-pub fn pack_component(
+pub(crate) fn pack_component(
     component_dir: &Path,
     component_name: &str,
 ) -> Result<(Vec<u8>, String), io::Error> {

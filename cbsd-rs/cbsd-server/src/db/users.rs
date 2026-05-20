@@ -12,7 +12,7 @@
 
 use sqlx::SqlitePool;
 
-pub struct UserRecord {
+pub(crate) struct UserRecord {
     pub email: String,
     pub name: String,
     pub active: bool,
@@ -28,7 +28,7 @@ pub struct UserRecord {
 /// this to a 403 so the caller cannot spoof a service identity via the
 /// Google display-name field.
 #[derive(Debug)]
-pub enum CreateOrUpdateUserError {
+pub(crate) enum CreateOrUpdateUserError {
     RobotNamePrefix,
     Db(sqlx::Error),
 }
@@ -56,7 +56,7 @@ impl From<sqlx::Error> for CreateOrUpdateUserError {
 ///
 /// Rejects any `name` starting with the reserved `robot:` prefix; this is
 /// the SSO forgery guard from design § Identity Model.
-pub async fn create_or_update_user(
+pub(crate) async fn create_or_update_user(
     pool: &SqlitePool,
     email: &str,
     name: &str,
@@ -80,7 +80,10 @@ pub async fn create_or_update_user(
 }
 
 /// Get a user by email.
-pub async fn get_user(pool: &SqlitePool, email: &str) -> Result<Option<UserRecord>, sqlx::Error> {
+pub(crate) async fn get_user(
+    pool: &SqlitePool,
+    email: &str,
+) -> Result<Option<UserRecord>, sqlx::Error> {
     let row = sqlx::query!(
         r#"SELECT email AS "email!", name AS "name!", active, default_channel_id, is_robot
          FROM users WHERE email = ?"#,
@@ -99,7 +102,7 @@ pub async fn get_user(pool: &SqlitePool, email: &str) -> Result<Option<UserRecor
 }
 
 /// Check if a user is active.
-pub async fn is_user_active(pool: &SqlitePool, email: &str) -> Result<bool, sqlx::Error> {
+pub(crate) async fn is_user_active(pool: &SqlitePool, email: &str) -> Result<bool, sqlx::Error> {
     let row = sqlx::query!("SELECT active FROM users WHERE email = ?", email)
         .fetch_optional(pool)
         .await?;
@@ -108,14 +111,14 @@ pub async fn is_user_active(pool: &SqlitePool, email: &str) -> Result<bool, sqlx
 }
 
 /// Filter for `list_entities_filtered`.
-pub enum EntityFilter {
+pub(crate) enum EntityFilter {
     User,
     Robot,
     All,
 }
 
 /// A summary row returned by `list_entities_filtered`.
-pub struct EntitySummary {
+pub(crate) struct EntitySummary {
     pub email: String,
     pub name: String,
     pub active: bool,
@@ -124,7 +127,7 @@ pub struct EntitySummary {
 
 /// List entities filtered by kind. Uses three separate compile-time checked
 /// queries because `sqlx::query!` does not support dynamic WHERE clauses.
-pub async fn list_entities_filtered(
+pub(crate) async fn list_entities_filtered(
     pool: &SqlitePool,
     filter: EntityFilter,
 ) -> Result<Vec<EntitySummary>, sqlx::Error> {
@@ -179,7 +182,7 @@ pub async fn list_entities_filtered(
 }
 
 /// Set a user's default channel. Pass `None` to clear.
-pub async fn set_default_channel(
+pub(crate) async fn set_default_channel(
     pool: &SqlitePool,
     email: &str,
     channel_id: Option<i64>,

@@ -27,7 +27,7 @@ use crate::db;
 use crate::db::users::UserRecord;
 
 /// Result of channel/type resolution.
-pub struct ResolvedChannel {
+pub(crate) struct ResolvedChannel {
     pub channel_id: i64,
     pub channel_type_id: i64,
     /// The raw prefix template before variable substitution.
@@ -35,7 +35,7 @@ pub struct ResolvedChannel {
 }
 
 /// Return true if the prefix template contains the `${username}` variable.
-pub fn prefix_template_contains_username(template: &str) -> bool {
+pub(crate) fn prefix_template_contains_username(template: &str) -> bool {
     template.contains("${username}")
 }
 
@@ -76,7 +76,7 @@ mod username_predicate_tests {
 /// 4. Validate the user has a channel scope matching `channel/type`.
 /// 5. Resolve prefix template (`${username}` -> email prefix).
 /// 6. Rewrite `dst_image.name` to `<project>/<prefix>/<image>`.
-pub async fn resolve_and_rewrite(
+pub(crate) async fn resolve_and_rewrite(
     pool: &SqlitePool,
     descriptor: &mut BuildDescriptor,
     user: &UserRecord,

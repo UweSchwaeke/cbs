@@ -30,7 +30,7 @@ use crate::db;
 /// Scope types for per-assignment scope checking.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(dead_code)]
-pub enum ScopeType {
+pub(crate) enum ScopeType {
     Channel,
     Registry,
     Repository,
@@ -38,7 +38,7 @@ pub enum ScopeType {
 
 impl ScopeType {
     /// Convert to the string stored in the database.
-    pub fn as_str(self) -> &'static str {
+    pub(crate) fn as_str(self) -> &'static str {
         match self {
             Self::Channel => "channel",
             Self::Registry => "registry",
@@ -85,7 +85,7 @@ pub(crate) fn first_robot_forbidden_cap(caps: &[String]) -> Option<&'static str>
 /// after user validation. Robot accounts have forbidden caps stripped after
 /// the role-based cap set is computed.
 #[derive(Debug, Clone)]
-pub struct AuthUser {
+pub(crate) struct AuthUser {
     pub email: String,
     pub name: String,
     pub caps: Vec<String>,
@@ -94,19 +94,19 @@ pub struct AuthUser {
 
 impl AuthUser {
     /// Check if the user has a specific capability (or the wildcard `*`).
-    pub fn has_cap(&self, cap: &str) -> bool {
+    pub(crate) fn has_cap(&self, cap: &str) -> bool {
         self.caps.iter().any(|c| c == "*" || c == cap)
     }
 
     /// Check if the user has any of the given capabilities (OR).
     #[allow(dead_code)]
-    pub fn has_any_cap(&self, caps: &[&str]) -> bool {
+    pub(crate) fn has_any_cap(&self, caps: &[&str]) -> bool {
         caps.iter().any(|cap| self.has_cap(cap))
     }
 
     /// The display identity: for robots `name` (e.g. `robot:ci`), for
     /// humans `email`.
-    pub fn display_identity(&self) -> &str {
+    pub(crate) fn display_identity(&self) -> &str {
         if self.is_robot {
             &self.name
         } else {
@@ -116,7 +116,7 @@ impl AuthUser {
 
     /// Check that at least one of the user's assignments satisfies ALL
     /// scope checks. Loads assignments from the database.
-    pub async fn require_scopes_all(
+    pub(crate) async fn require_scopes_all(
         &self,
         pool: &SqlitePool,
         scope_checks: &[(ScopeType, &str)],
@@ -153,13 +153,13 @@ impl AuthUser {
 
 /// Error response body matching FastAPI's `{"detail": "..."}` shape.
 #[derive(serde::Serialize)]
-pub struct ErrorDetail {
+pub(crate) struct ErrorDetail {
     pub detail: String,
 }
 
-pub type AuthError = (StatusCode, Json<ErrorDetail>);
+pub(crate) type AuthError = (StatusCode, Json<ErrorDetail>);
 
-pub fn auth_error(status: StatusCode, msg: &str) -> AuthError {
+pub(crate) fn auth_error(status: StatusCode, msg: &str) -> AuthError {
     (
         status,
         Json(ErrorDetail {

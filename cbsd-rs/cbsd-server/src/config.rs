@@ -20,12 +20,12 @@ use serde::Deserialize;
 /// allowed value for `max_token_ttl_seconds` (a token that expires
 /// before the session idle timeout would produce confusing 401s on an
 /// apparently live session).
-pub const WEB_SESSION_IDLE_SECS: u64 = 7 * 24 * 3600;
+pub(crate) const WEB_SESSION_IDLE_SECS: u64 = 7 * 24 * 3600;
 
 /// Top-level server configuration. Loaded from YAML.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub struct ServerConfig {
+pub(crate) struct ServerConfig {
     /// Listen address (e.g., "0.0.0.0:8080").
     #[serde(default = "default_listen_addr")]
     pub listen_addr: String,
@@ -78,7 +78,7 @@ pub struct ServerConfig {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub struct SecretsConfig {
+pub(crate) struct SecretsConfig {
     /// 64-byte hex key for PASETO tokens and session key derivation (HKDF).
     pub token_secret_key: String,
 
@@ -89,7 +89,7 @@ pub struct SecretsConfig {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub struct OAuthConfig {
+pub(crate) struct OAuthConfig {
     /// Path to Google OAuth2 secrets JSON file.
     pub secrets_file: PathBuf,
 
@@ -107,7 +107,7 @@ pub struct OAuthConfig {
 /// entire section is missing. Per-field defaults are not needed.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub struct TimeoutsConfig {
+pub(crate) struct TimeoutsConfig {
     /// Seconds to wait for build_accepted after build_new.
     pub dispatch_ack_timeout_secs: u64,
 
@@ -139,7 +139,7 @@ impl Default for TimeoutsConfig {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub struct LogRetentionConfig {
+pub(crate) struct LogRetentionConfig {
     /// Days to retain build log files.
     pub log_retention_days: u32,
 }
@@ -154,7 +154,7 @@ impl Default for LogRetentionConfig {
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub struct SeedConfig {
+pub(crate) struct SeedConfig {
     /// Admin email for first-startup seeding.
     pub seed_admin: Option<String>,
 }
@@ -166,7 +166,7 @@ pub struct SeedConfig {
 /// both server and worker configs reference the same key.
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub struct DevConfig {
+pub(crate) struct DevConfig {
     /// Enable development mode. Default: false.
     #[serde(default)]
     pub enabled: bool,
@@ -180,7 +180,7 @@ pub struct DevConfig {
 /// A worker to seed in dev mode, with a pre-configured API key.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub struct DevSeedWorker {
+pub(crate) struct DevSeedWorker {
     pub name: String,
     /// Typed as `Arch` — serde validates at parse time.
     pub arch: cbsd_proto::Arch,
@@ -191,7 +191,7 @@ pub struct DevSeedWorker {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub struct LoggingConfig {
+pub(crate) struct LoggingConfig {
     /// Log level (e.g., "info", "debug", "trace").
     #[serde(default = "default_log_level")]
     pub level: String,
@@ -240,7 +240,7 @@ fn default_max_token_ttl() -> u64 {
 
 impl ServerConfig {
     /// Validate configuration invariants. Panics on invalid config.
-    pub fn validate(&self) {
+    pub(crate) fn validate(&self) {
         // Skip OAuth validation in dev mode — Google is never contacted.
         if !self.dev.enabled
             && self.oauth.allowed_domains.is_empty()
@@ -336,7 +336,7 @@ impl ServerConfig {
 }
 
 /// Load and validate server config from a YAML file.
-pub fn load_config(path: &std::path::Path) -> ServerConfig {
+pub(crate) fn load_config(path: &std::path::Path) -> ServerConfig {
     let contents = std::fs::read_to_string(path)
         .unwrap_or_else(|e| panic!("failed to read config file {}: {e}", path.display()));
     let config: ServerConfig = serde_saphyr::from_str(&contents)

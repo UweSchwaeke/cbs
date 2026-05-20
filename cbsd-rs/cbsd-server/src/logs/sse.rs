@@ -37,7 +37,7 @@ use crate::logs::writer::SharedLogWriter;
 /// - Emits existing lines from the current file position
 /// - Waits on the watch channel for new data notifications
 /// - Emits `event: done` when the build log is marked finished
-pub async fn sse_follow(
+pub(crate) async fn sse_follow(
     state: AppState,
     build_id: i64,
     last_event_id: Option<u64>,
@@ -252,7 +252,7 @@ async fn try_subscribe(
 }
 
 /// Extract the `Last-Event-ID` header from request headers.
-pub fn parse_last_event_id(headers: &HeaderMap) -> Option<u64> {
+pub(crate) fn parse_last_event_id(headers: &HeaderMap) -> Option<u64> {
     headers
         .get("last-event-id")
         .and_then(|v| v.to_str().ok())

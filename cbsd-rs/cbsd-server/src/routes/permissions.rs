@@ -49,7 +49,7 @@ const KNOWN_CAPS: &[&str] = &[
 const SCOPE_DEPENDENT_CAPS: &[&str] = &["builds:create"];
 
 /// Build the permissions sub-router: `/api/permissions/*`.
-pub fn router() -> Router<AppState> {
+pub(crate) fn router() -> Router<AppState> {
     Router::new()
         .route("/roles", get(list_roles))
         .route("/roles", post(create_role))

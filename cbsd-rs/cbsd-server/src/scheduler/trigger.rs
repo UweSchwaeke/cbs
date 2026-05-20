@@ -25,7 +25,7 @@ use crate::scheduler::tag_format;
 use cbsd_proto::{BuildDescriptor, Priority};
 
 /// Errors that can occur when triggering a periodic build.
-pub enum TriggerError {
+pub(crate) enum TriggerError {
     /// The task owner is deactivated or not found.
     UserDeactivated,
     /// A transient error (e.g. database) that may succeed on retry.
@@ -53,7 +53,7 @@ impl std::fmt::Display for TriggerError {
 /// stale permissions from producing builds.
 ///
 /// Returns the new build ID on success.
-pub async fn trigger_periodic_build(
+pub(crate) async fn trigger_periodic_build(
     state: &AppState,
     task: &PeriodicTaskRow,
 ) -> Result<i64, TriggerError> {
