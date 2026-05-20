@@ -69,16 +69,95 @@ async fn main() -> ExitCode {
 /// Map a handler error to an exit code per design 002 lines
 /// 1246–1248.
 ///
-/// "Missing config" failures (anything whose top-level message
-/// starts with `config file not found` — matches
-/// `cbscore_types::config::ConfigError::NotFound`'s pinned
-/// Display text — or that opens with `missing config`) map to
-/// [`EXIT_INVAL`]. Everything else maps to [`EXIT_UNRECOVERABLE`].
+/// Walks the [`anyhow::Error::chain`] looking for a typed
+/// cbscore-types error variant that indicates operator input
+/// pointed at something that does not exist
+/// ([`ConfigError::NotFound`] /
+/// [`VersionError::NoSuchDescriptor`]). Those map to
+/// [`EXIT_INVAL`]; every other error funnels through
+/// [`EXIT_UNRECOVERABLE`].
+///
+/// Walking the chain (rather than only the outermost error) is
+/// load-bearing: subcommand handlers wrap typed errors with
+/// `.with_context("loading config at '/etc/cbsd/...'"`) before
+/// the error reaches `main`, so the outermost `to_string()` is
+/// the context message — the typed-cause downcast is the only
+/// reliable way to recover the original kind across `anyhow`
+/// wrap layers.
+///
+/// [`ConfigError::NotFound`]: cbscore_types::config::ConfigError::NotFound
+/// [`VersionError::NoSuchDescriptor`]:
+///     cbscore_types::versions::VersionError::NoSuchDescriptor
 fn classify_exit(err: &anyhow::Error) -> u8 {
-    let msg = err.to_string();
-    if msg.starts_with("config file not found") || msg.starts_with("missing config") {
-        EXIT_INVAL
-    } else {
-        EXIT_UNRECOVERABLE
+    use cbscore_types::config::ConfigError;
+    use cbscore_types::versions::VersionError;
+
+    for cause in err.chain() {
+        if let Some(cfg) = cause.downcast_ref::<ConfigError>()
+            && matches!(cfg, ConfigError::NotFound { .. })
+        {
+            return EXIT_INVAL;
+        }
+        if let Some(ver) = cause.downcast_ref::<VersionError>()
+            && matches!(ver, VersionError::NoSuchDescriptor { .. })
+        {
+            return EXIT_INVAL;
+        }
+    }
+    EXIT_UNRECOVERABLE
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use camino::Utf8PathBuf;
+    use cbscore_types::config::ConfigError;
+    use cbscore_types::versions::VersionError;
+
+    #[test]
+    fn config_not_found_maps_to_einval() {
+        let err = anyhow::Error::from(ConfigError::NotFound {
+            path: Utf8PathBuf::from("/etc/cbsd/cbs-build.config.yaml"),
+        });
+        assert_eq!(classify_exit(&err), EXIT_INVAL);
+    }
+
+    #[test]
+    fn config_not_found_under_context_wrap_maps_to_einval() {
+        // Subcommand handlers typically wrap typed errors via
+        // .with_context("loading config at '…'"); the chain walk
+        // must still find the ConfigError::NotFound cause.
+        let raw = ConfigError::NotFound {
+            path: Utf8PathBuf::from("/etc/cbsd/cbs-build.config.yaml"),
+        };
+        let err =
+            anyhow::Error::from(raw).context("loading config at '/etc/cbsd/cbs-build.config.yaml'");
+        assert_eq!(classify_exit(&err), EXIT_INVAL);
+    }
+
+    #[test]
+    fn version_no_such_descriptor_maps_to_einval() {
+        let err = anyhow::Error::from(VersionError::NoSuchDescriptor {
+            path: Utf8PathBuf::from("/var/cbs/_versions/dev/missing.json"),
+        });
+        assert_eq!(classify_exit(&err), EXIT_INVAL);
+    }
+
+    #[test]
+    fn other_config_error_maps_to_unrecoverable() {
+        // MissingSchemaVersion is operator-actionable but is NOT
+        // a "missing input" case — the file exists, the wire
+        // format is wrong. Maps to ENOTRECOVERABLE so the two
+        // failure modes stay distinguishable.
+        let err = anyhow::Error::from(ConfigError::MissingSchemaVersion {
+            path: Utf8PathBuf::from("/etc/cbsd/cbs-build.config.yaml"),
+        });
+        assert_eq!(classify_exit(&err), EXIT_UNRECOVERABLE);
+    }
+
+    #[test]
+    fn unrelated_anyhow_error_maps_to_unrecoverable() {
+        let err = anyhow::anyhow!("something else went wrong");
+        assert_eq!(classify_exit(&err), EXIT_UNRECOVERABLE);
     }
 }
