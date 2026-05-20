@@ -107,46 +107,62 @@ pub(crate) struct BuildDispatchLayer {
     sinks: SinkMap,
 }
 
-/// Span-extension marker that pins the `build_id` for events
+/// Span-extension marker that pins the per-build context for events
 /// emitted under this span and its descendants.
-struct BuildIdExt(BuildId);
+///
+/// `trace_id` is captured alongside `build_id` so every formatted
+/// event line carries the trace_id suffix the M2 acceptance gate
+/// (design 002 §M2 criterion 4) requires: a log line emitted by
+/// `cbscore::builder::*` inside the worker process must carry the
+/// same trace_id that the server logged on build dispatch.
+struct BuildCtxExt {
+    build_id: BuildId,
+    trace_id: Option<String>,
+}
 
 impl<S> Layer<S> for BuildDispatchLayer
 where
     S: Subscriber + for<'a> LookupSpan<'a>,
 {
     fn on_new_span(&self, attrs: &Attributes<'_>, id: &Id, ctx: Context<'_, S>) {
-        let mut visitor = BuildIdVisitor(None);
+        let mut visitor = BuildCtxVisitor::default();
         attrs.record(&mut visitor);
-        if let Some(build_id) = visitor.0
+        if let Some(build_id) = visitor.build_id
             && let Some(span) = ctx.span(id)
         {
-            span.extensions_mut().insert(BuildIdExt(build_id));
+            span.extensions_mut().insert(BuildCtxExt {
+                build_id,
+                trace_id: visitor.trace_id,
+            });
         }
     }
 
     fn on_event(&self, event: &Event<'_>, ctx: Context<'_, S>) {
-        // Walk the event's span chain looking for a BuildIdExt.
+        // Walk the event's span chain looking for a BuildCtxExt.
         let Some(scope) = ctx.event_scope(event) else {
             return;
         };
-        let mut build_id: Option<BuildId> = None;
+        let mut ctx_data: Option<(BuildId, Option<String>)> = None;
         for span in scope {
-            if let Some(ext) = span.extensions().get::<BuildIdExt>() {
-                build_id = Some(ext.0);
+            if let Some(ext) = span.extensions().get::<BuildCtxExt>() {
+                ctx_data = Some((ext.build_id, ext.trace_id.clone()));
                 break;
             }
         }
-        let Some(bid) = build_id else { return };
+        let Some((bid, trace_id)) = ctx_data else {
+            return;
+        };
 
         // Format the event into a single line.
+        // Shape: "LEVEL:target:message field1=v1 …[ trace_id=…]"
         let meta = event.metadata();
         let mut line = String::new();
-        // Match the Python wrapper's format ("LEVEL:target:message")
-        // so operators tailing the build log see continuity.
         let _ = write!(line, "{}:{}:", meta.level(), meta.target());
         let mut visitor = EventLineFormatter(&mut line);
         event.record(&mut visitor);
+        if let Some(trace_id) = trace_id.as_deref() {
+            let _ = write!(line, " trace_id={trace_id}");
+        }
 
         // Lock + send. send() on an UnboundedSender doesn't block,
         // so this is bounded by the lock acquisition time only.
@@ -162,14 +178,18 @@ where
     }
 }
 
-/// Visitor that pulls the `build_id` field out of a span's
-/// attributes (or an event's fields).
-struct BuildIdVisitor(Option<BuildId>);
+/// Visitor that pulls the `build_id` and `trace_id` fields out of
+/// a span's attributes.
+#[derive(Default)]
+struct BuildCtxVisitor {
+    build_id: Option<BuildId>,
+    trace_id: Option<String>,
+}
 
-impl Visit for BuildIdVisitor {
+impl Visit for BuildCtxVisitor {
     fn record_i64(&mut self, field: &Field, value: i64) {
         if field.name() == "build_id" {
-            self.0 = Some(BuildId(value));
+            self.build_id = Some(BuildId(value));
         }
     }
     fn record_u64(&mut self, field: &Field, value: u64) {
@@ -178,30 +198,51 @@ impl Visit for BuildIdVisitor {
             // BuildIds are positive monotonic integers from the
             // server's database autoincrement, so the cast is
             // safe across the cbsd-proto domain.
-            self.0 = Some(BuildId(value as i64));
+            self.build_id = Some(BuildId(value as i64));
         }
     }
     fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
         // `build_id = %build_id` formats via Display which often
         // round-trips through Debug here. Parse "BuildId(N)" or
         // a bare "N" out of the debug repr.
-        if field.name() == "build_id" {
-            let rendered = format!("{value:?}");
-            // Strip "BuildId(" / ")" if present.
-            let trimmed = rendered
-                .strip_prefix("BuildId(")
-                .and_then(|s| s.strip_suffix(')'))
-                .unwrap_or(rendered.as_str());
-            if let Ok(n) = trimmed.parse::<i64>() {
-                self.0 = Some(BuildId(n));
+        match field.name() {
+            "build_id" => {
+                let rendered = format!("{value:?}");
+                let trimmed = rendered
+                    .strip_prefix("BuildId(")
+                    .and_then(|s| s.strip_suffix(')'))
+                    .unwrap_or(rendered.as_str());
+                if let Ok(n) = trimmed.parse::<i64>() {
+                    self.build_id = Some(BuildId(n));
+                }
             }
+            "trace_id" => {
+                // tracing's Debug formatter for a &str adds quotes
+                // around the rendered value; strip them so the line
+                // suffix is `trace_id=abc-123`, not
+                // `trace_id="abc-123"`.
+                let rendered = format!("{value:?}");
+                let trimmed = rendered
+                    .strip_prefix('"')
+                    .and_then(|s| s.strip_suffix('"'))
+                    .unwrap_or(rendered.as_str())
+                    .to_owned();
+                self.trace_id = Some(trimmed);
+            }
+            _ => {}
         }
     }
     fn record_str(&mut self, field: &Field, value: &str) {
-        if field.name() == "build_id"
-            && let Ok(n) = value.parse::<i64>()
-        {
-            self.0 = Some(BuildId(n));
+        match field.name() {
+            "build_id" => {
+                if let Ok(n) = value.parse::<i64>() {
+                    self.build_id = Some(BuildId(n));
+                }
+            }
+            "trace_id" => {
+                self.trace_id = Some(value.to_owned());
+            }
+            _ => {}
         }
     }
 }
@@ -264,12 +305,66 @@ mod tests {
     }
 
     /// Extracted parsing helper for test coverage — mirrors the
-    /// arm inside `BuildIdVisitor::record_debug`.
+    /// arm inside `BuildCtxVisitor::record_debug`.
     fn parse_build_id_debug(rendered: &str) -> Option<BuildId> {
         let trimmed = rendered
             .strip_prefix("BuildId(")
             .and_then(|s| s.strip_suffix(')'))
             .unwrap_or(rendered);
         trimmed.parse::<i64>().ok().map(BuildId)
+    }
+
+    /// M2 acceptance gate (design 002 §M2 criterion 4): a tracing
+    /// event emitted inside the worker's per-build instrumented
+    /// span must reach the per-build sink with both the `build_id`
+    /// route key and the `trace_id` suffix on the captured line.
+    ///
+    /// This is the in-process equivalent of the operator-facing
+    /// "drive a build through the worker and grep the log for
+    /// trace_id" check, and exercises the full dispatch flow:
+    /// `on_new_span` (captures build_id + trace_id into the span
+    /// extension) → `on_event` (looks up the per-build sink, formats
+    /// the line, appends the `trace_id=…` suffix) → `BuildDispatch`
+    /// sink → `UnboundedReceiver`.
+    #[tokio::test]
+    async fn trace_id_propagates_through_dispatch_layer_to_sink() {
+        use tracing_subscriber::layer::SubscriberExt;
+
+        let (dispatch, layer) = BuildDispatch::new();
+        let build_id = BuildId(7);
+        let mut rx = dispatch.register(build_id);
+
+        let subscriber = tracing_subscriber::registry().with(layer);
+        let trace_id_value = "11112222-3333-4444-5555-666677778888";
+
+        tracing::subscriber::with_default(subscriber, || {
+            // Mirrors the shape `executor::run_in_process` produces.
+            let span = tracing::info_span!(
+                target: "cbscore",
+                "cbsd_build",
+                build_id = build_id.0,
+                trace_id = trace_id_value,
+            );
+            let _enter = span.enter();
+            tracing::info!(target: "cbscore::runner", "starting pipeline");
+        });
+
+        // Drop the per-build sender so rx.recv() doesn't block
+        // forever if the layer failed to capture anything.
+        dispatch.unregister(build_id);
+
+        let line = rx.recv().await.expect("event was captured");
+        assert!(
+            line.contains("starting pipeline"),
+            "expected message in captured line, got: {line}",
+        );
+        assert!(
+            line.ends_with(&format!(" trace_id={trace_id_value}")),
+            "expected trace_id suffix in captured line, got: {line}",
+        );
+        assert!(
+            line.starts_with("INFO:cbscore::runner:"),
+            "expected level+target prefix in captured line, got: {line}",
+        );
     }
 }
