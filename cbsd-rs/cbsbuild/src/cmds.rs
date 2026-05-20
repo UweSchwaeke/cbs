@@ -17,6 +17,7 @@ pub mod advanced;
 pub mod build;
 pub mod config;
 pub mod runner;
+pub mod shared;
 pub mod versions;
 
 use anyhow::Result;

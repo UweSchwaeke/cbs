@@ -15,6 +15,7 @@
 //! - `131` (`errno::ENOTRECOVERABLE`) — any other unhandled error.
 
 #![warn(missing_docs)]
+#![recursion_limit = "256"]
 
 mod cli;
 mod cmds;
