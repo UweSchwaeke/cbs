@@ -994,6 +994,9 @@ name = "cbsd-worker"
 version = "0.1.0"
 dependencies = [
  "base64",
+ "camino",
+ "cbscore",
+ "cbscore-types",
  "cbsd-proto",
  "clap",
  "flate2",

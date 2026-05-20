@@ -8,6 +8,9 @@ description = "CBS build service daemon — worker binary"
 
 [dependencies]
 cbsd-proto = { path = "../cbsd-proto" }
+cbscore = { path = "../cbscore" }
+cbscore-types = { path = "../cbscore-types" }
+camino = "1"
 base64 = "0.22"
 clap = { version = "4", features = ["derive"] }
 flate2 = "1"

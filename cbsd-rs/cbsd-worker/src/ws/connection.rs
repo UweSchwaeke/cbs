@@ -16,6 +16,7 @@ use rand::Rng;
 use tokio_tungstenite::tungstenite;
 use tungstenite::client::IntoClientRequest;
 
+use crate::build::dispatch::BuildDispatch;
 use crate::config::ResolvedWorkerConfig;
 use crate::signal::ShutdownState;
 use crate::ws::handler;
@@ -121,7 +122,16 @@ impl rustls::client::danger::ServerCertVerifier for NoVerifier {
 
 /// Run the worker's main reconnect loop. Returns only when SIGTERM is
 /// received (via `state.is_stopping()`).
-pub(crate) async fn reconnect_loop(config: &ResolvedWorkerConfig, state: Arc<ShutdownState>) {
+///
+/// `dispatch` is the per-build event sink registry installed at
+/// startup. It is `Clone` (shared `Arc`), so each reconnect-cycle
+/// can hand a fresh clone to `run_connection` and the per-build
+/// register/unregister calls flow back to the same map.
+pub(crate) async fn reconnect_loop(
+    config: &ResolvedWorkerConfig,
+    state: Arc<ShutdownState>,
+    dispatch: BuildDispatch,
+) {
     let ceiling = config.backoff_ceiling_secs() as f64;
     let mut backoff = Backoff::new(ceiling);
 
@@ -139,7 +149,9 @@ pub(crate) async fn reconnect_loop(config: &ResolvedWorkerConfig, state: Arc<Shu
                 backoff.reset();
                 tracing::info!("connected to server");
 
-                if let Err(err) = handler::run_connection(stream, config, Arc::clone(&state)).await
+                if let Err(err) =
+                    handler::run_connection(stream, config, Arc::clone(&state), dispatch.clone())
+                        .await
                 {
                     tracing::warn!(%err, "connection closed");
                 }

@@ -15,11 +15,13 @@ use std::sync::Arc;
 
 use futures_util::{SinkExt, StreamExt};
 use tokio::sync::mpsc;
+use tokio::task::JoinHandle;
 use tokio_tungstenite::tungstenite;
 
 use cbsd_proto::build::BuildId;
 use cbsd_proto::ws::{BuildFinishedStatus, ServerMessage, WorkerMessage, WorkerReportedState};
 
+use crate::build::dispatch::BuildDispatch;
 use crate::build::{component, executor, output};
 use crate::config::ResolvedWorkerConfig;
 use crate::signal::ShutdownState;
@@ -32,9 +34,15 @@ const PROTOCOL_VERSION: u32 = 2;
 const OUTPUT_CHANNEL_CAPACITY: usize = 64;
 
 /// State tracking for an active build.
+///
+/// Post-Phase-7 (in-process executor): `build_task` owns the
+/// in-process `cbscore::runner::run` future. Aborting the handle
+/// drops the future, triggering Phase 4 Commit 3's RAII drop
+/// guards for synchronous best-effort cleanup. No SIGTERM →
+/// SIGKILL escalation is required because there is no subprocess.
 struct ActiveBuild {
     build_id: BuildId,
-    executor: executor::BuildExecutor,
+    build_task: JoinHandle<()>,
     component_dir: PathBuf,
 }
 
@@ -47,6 +55,7 @@ pub(crate) async fn run_connection(
     stream: WsStream,
     config: &ResolvedWorkerConfig,
     state: Arc<ShutdownState>,
+    dispatch: BuildDispatch,
 ) -> Result<(), HandlerError> {
     let (mut sender, mut receiver) = stream.split();
 
@@ -288,100 +297,105 @@ pub(crate) async fn run_connection(
                         ).await?;
                         tracing::info!(%build_id, "build accepted");
 
-                        // Spawn the build executor.
-                        let mut exec = match executor::spawn_build(
-                            config,
-                            build_id,
-                            &descriptor,
-                            &component_dir,
-                            &trace_id,
-                        ).await {
-                            Ok(e) => e,
-                            Err(err) => {
-                                tracing::error!(%build_id, %err, "failed to spawn build");
-                                component::cleanup(&component_dir);
-                                send_msg(
-                                    &mut sender,
-                                    &WorkerMessage::BuildFinished {
-                                        build_id,
-                                        status: BuildFinishedStatus::Failure,
-                                        error: Some(format!("spawn failed: {err}")),
-                                        build_report: None,
-                                    },
-                                ).await?;
-                                continue;
-                            }
-                        };
-
-                        // Send BuildStarted.
+                        // Send BuildStarted *before* dispatch — matches
+                        // the pre-cutover ordering where BuildStarted
+                        // was sent immediately after spawn.
                         send_msg(
                             &mut sender,
                             &WorkerMessage::BuildStarted { build_id },
                         ).await?;
                         tracing::info!(%build_id, "build started");
 
-                        // Take stdout for the output streamer.
-                        let stdout = exec.child_mut().stdout.take();
+                        // Wire up per-build tracing → output channel.
+                        // `dispatch.register` returns the receiver the
+                        // batcher drains; the batcher's lifetime is
+                        // tied to the build_task below via the await
+                        // inside that task.
+                        let per_build_rx = dispatch.register(build_id);
+                        let batcher_tx = output_tx.clone();
+                        let batcher_handle = tokio::spawn(output::run_batcher(
+                            per_build_rx,
+                            build_id,
+                            batcher_tx,
+                        ));
 
-                        // Spawn background output streaming task.
-                        let bg_tx = output_tx.clone();
-                        tokio::spawn(async move {
-                            if let Some(stdout) = stdout {
-                                match output::stream_output(stdout, build_id, &bg_tx).await {
-                                    Ok((status, error, build_report)) => {
-                                        if let Some(ref err_msg) = error {
-                                            tracing::warn!(
-                                                %build_id,
-                                                error = %err_msg,
-                                                ?status,
-                                                "build wrapper reported error"
-                                            );
-                                        } else if status == BuildFinishedStatus::Success {
-                                            let has_report = build_report.is_some();
-                                            tracing::info!(
-                                                %build_id,
-                                                has_report,
-                                                "build completed successfully"
-                                            );
-                                        }
-                                        let _ = bg_tx.send(WorkerMessage::BuildFinished {
-                                            build_id,
-                                            status,
-                                            error,
-                                            build_report,
-                                        }).await;
-                                    }
-                                    Err(err) => {
-                                        tracing::error!(
-                                            %build_id,
-                                            %err,
-                                            "output streaming failed"
+                        // Spawn the in-process build task. On
+                        // completion: drop the per-build sink so the
+                        // batcher's recv() returns None (final flush),
+                        // await the batcher (so all BuildOutput frames
+                        // hit output_tx before BuildFinished), then
+                        // emit BuildFinished into output_tx.
+                        let cfg_for_task = config.clone();
+                        let descriptor_for_task = descriptor.clone();
+                        let component_dir_for_task = component_dir.clone();
+                        let trace_id_for_task = trace_id.clone();
+                        let dispatch_for_task = dispatch.clone();
+                        let output_tx_for_task = output_tx.clone();
+                        let build_task = tokio::spawn(async move {
+                            let outcome = executor::run_in_process(
+                                &cfg_for_task,
+                                build_id,
+                                &descriptor_for_task,
+                                &component_dir_for_task,
+                                &trace_id_for_task,
+                            ).await;
+
+                            // Close the per-build sink (triggers
+                            // batcher's final flush + exit).
+                            dispatch_for_task.unregister(build_id);
+
+                            // Wait for the batcher to drain so its
+                            // final BuildOutput frame lands in
+                            // output_tx before our BuildFinished.
+                            if let Err(err) = batcher_handle.await {
+                                tracing::warn!(
+                                    %build_id, %err,
+                                    "batcher task panicked or was cancelled"
+                                );
+                            }
+
+                            let msg = match outcome {
+                                Ok(report) => {
+                                    if let Some(ref e) = report.error {
+                                        tracing::warn!(
+                                            %build_id, error = %e, ?report.status,
+                                            "build reported error"
                                         );
-                                        let _ = bg_tx.send(WorkerMessage::BuildFinished {
-                                            build_id,
-                                            status: BuildFinishedStatus::Failure,
-                                            error: Some(format!("output streaming error: {err}")),
-                                            build_report: None,
-                                        }).await;
+                                    } else if report.status
+                                        == BuildFinishedStatus::Success
+                                    {
+                                        let has_report = report.build_report.is_some();
+                                        tracing::info!(
+                                            %build_id, has_report,
+                                            "build completed successfully"
+                                        );
+                                    }
+                                    WorkerMessage::BuildFinished {
+                                        build_id,
+                                        status: report.status,
+                                        error: report.error,
+                                        build_report: report.build_report,
                                     }
                                 }
-                            } else {
-                                tracing::error!(
-                                    %build_id,
-                                    "no stdout on build subprocess"
-                                );
-                                let _ = bg_tx.send(WorkerMessage::BuildFinished {
-                                    build_id,
-                                    status: BuildFinishedStatus::Failure,
-                                    error: Some("no stdout on subprocess".to_string()),
-                                    build_report: None,
-                                }).await;
-                            }
+                                Err(err) => {
+                                    tracing::error!(
+                                        %build_id, %err,
+                                        "build failed before runner returned"
+                                    );
+                                    WorkerMessage::BuildFinished {
+                                        build_id,
+                                        status: BuildFinishedStatus::Failure,
+                                        error: Some(err.to_string()),
+                                        build_report: None,
+                                    }
+                                }
+                            };
+                            let _ = output_tx_for_task.send(msg).await;
                         });
 
                         active_build = Some(ActiveBuild {
                             build_id,
-                            executor: exec,
+                            build_task,
                             component_dir,
                         });
                     }
@@ -389,22 +403,51 @@ pub(crate) async fn run_connection(
                     ServerMessage::BuildRevoke { build_id } => {
                         tracing::info!(%build_id, "build revoke received");
 
-                        if let Some(ref ab) = active_build {
-                            if ab.build_id == build_id {
-                                tracing::info!(
-                                    %build_id,
-                                    "killing active build process"
-                                );
-                                ab.executor.kill();
-                                // The output streamer will detect the exit and
-                                // send BuildFinished(revoked) via the channel.
-                            } else {
-                                tracing::warn!(
-                                    %build_id,
-                                    active = %ab.build_id,
-                                    "revoke for non-active build, ignoring"
-                                );
-                            }
+                        let matches_active = active_build
+                            .as_ref()
+                            .map(|ab| ab.build_id == build_id)
+                            .unwrap_or(false);
+
+                        if matches_active {
+                            // Take ownership so we can clean up + drop
+                            // the build_task handle below.
+                            let ab = active_build.take().expect("matches_active");
+                            tracing::info!(
+                                %build_id,
+                                "aborting in-process build task"
+                            );
+                            // Abort the in-process executor task. Drops
+                            // the runner::run future → RAII guards fire
+                            // for synchronous best-effort cleanup of
+                            // podman/buildah resources (Phase 4 Commit 3).
+                            ab.build_task.abort();
+                            // Drop the per-build tracing sink so the
+                            // batcher exits cleanly (recv() → None).
+                            // Any remaining batched lines will flush
+                            // through output_tx as the batcher drains
+                            // — they may arrive AFTER the Revoked
+                            // BuildFinished sent directly below; this
+                            // is acceptable noise on a terminal state
+                            // and matches the pre-cutover behaviour
+                            // where SIGKILL also raced with the final
+                            // pipe-read.
+                            dispatch.unregister(build_id);
+                            send_msg(
+                                &mut sender,
+                                &WorkerMessage::BuildFinished {
+                                    build_id,
+                                    status: BuildFinishedStatus::Revoked,
+                                    error: None,
+                                    build_report: None,
+                                },
+                            ).await?;
+                            component::cleanup(&ab.component_dir);
+                        } else if let Some(ref ab) = active_build {
+                            tracing::warn!(
+                                %build_id,
+                                active = %ab.build_id,
+                                "revoke for non-active build, ignoring"
+                            );
                         } else {
                             // No active build — pre-accept revoke.
                             tracing::info!(
@@ -433,24 +476,25 @@ pub(crate) async fn run_connection(
                 }
             }
 
-            // Forward output messages from the background streaming task.
+            // Forward output messages from the build task and batcher.
             Some(output_msg) = output_rx.recv() => {
                 let is_finished = matches!(output_msg, WorkerMessage::BuildFinished { .. });
 
                 send_msg(&mut sender, &output_msg).await?;
 
                 if is_finished {
-                    // Clean up the active build.
-                    if let Some(mut ab) = active_build.take() {
-                        // Wait for the subprocess to fully exit.
-                        let exit_code = ab.executor.wait().await;
-                        let status = executor::classify_exit_code(exit_code);
-                        tracing::info!(
-                            build_id = %ab.build_id,
-                            ?exit_code,
-                            ?status,
-                            "build subprocess exited"
-                        );
+                    // Clean up the active build. The build_task has
+                    // already finished (it sent the BuildFinished
+                    // message we just forwarded), so awaiting its
+                    // JoinHandle completes immediately.
+                    if let Some(ab) = active_build.take() {
+                        if let Err(err) = ab.build_task.await {
+                            tracing::warn!(
+                                build_id = %ab.build_id,
+                                %err,
+                                "build task did not exit cleanly"
+                            );
+                        }
                         component::cleanup(&ab.component_dir);
                     }
                 }
@@ -465,9 +509,13 @@ pub(crate) async fn run_connection(
                 if let Ok(json) = serde_json::to_string(&stopping) {
                     let _ = sender.send(tungstenite::Message::Text(json)).await;
                 }
-                // Kill any active build before returning.
-                if let Some(ref ab) = active_build {
-                    ab.executor.kill();
+                // Abort any active build before returning. Aborting
+                // drops the run_in_process future → Phase 4 Commit 3
+                // RAII guards run synchronously.
+                if let Some(ab) = active_build.take() {
+                    ab.build_task.abort();
+                    dispatch.unregister(ab.build_id);
+                    component::cleanup(&ab.component_dir);
                 }
                 return Ok(());
             }

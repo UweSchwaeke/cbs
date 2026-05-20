@@ -10,18 +10,27 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
 
-//! Output streaming from the build subprocess with batching.
+//! Per-build output batcher.
 //!
-//! Reads stdout line-by-line, batching lines for efficiency (up to 50 lines
-//! or 200ms, whichever comes first). Detects the structured `{"type":"result"}`
-//! line emitted by the wrapper to extract the final exit status.
+//! Drains the [`mpsc::UnboundedReceiver<String>`] populated by the
+//! [`super::dispatch::BuildDispatchLayer`] and emits
+//! `WorkerMessage::BuildOutput` frames over the existing
+//! handler-side `mpsc::Sender<WorkerMessage>` queue.
+//!
+//! Batching contract — preserved bit-for-bit from the pre-cutover
+//! `stream_output` implementation: flush every 50 lines OR every
+//! 200 ms, whichever fires first. The final-flush-on-channel-close
+//! rule (per the plan §"Subscriber layer design") is **load-
+//! bearing**: when the per-build `UnboundedSender` is dropped (the
+//! WS handler calls `BuildDispatch::unregister` after the
+//! `runner::run` future returns), `recv().await` returns `None`;
+//! the batcher MUST flush any pending partial batch before exiting
+//! so no log lines are silently lost on build completion.
 
 use std::time::Duration;
 
 use cbsd_proto::build::BuildId;
-use cbsd_proto::ws::{BuildFinishedStatus, WorkerMessage};
-use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::process::ChildStdout;
+use cbsd_proto::ws::WorkerMessage;
 use tokio::sync::mpsc;
 
 /// Maximum lines per batch before flushing.
@@ -30,212 +39,177 @@ const BATCH_MAX_LINES: usize = 50;
 /// Maximum time to accumulate lines before flushing.
 const BATCH_FLUSH_INTERVAL: Duration = Duration::from_millis(200);
 
-/// Maximum size (in bytes) of the serialized `build_report` JSON.
-/// Reports exceeding this limit are logged and discarded.
-const MAX_REPORT_SIZE: usize = 65_536;
-
-/// Parsed result from the wrapper's structured output line.
+/// Errors emitted by [`run_batcher`].
 #[derive(Debug)]
-struct WrapperResult {
-    exit_code: i32,
-    error: Option<String>,
-    build_report: Option<serde_json::Value>,
-}
-
-/// Errors during output streaming.
-#[derive(Debug)]
-pub(crate) enum OutputError {
-    /// Failed to read from subprocess stdout.
-    Read(std::io::Error),
-    /// Failed to send a message to the WebSocket sender.
+pub(crate) enum BatcherError {
+    /// Failed to send a `BuildOutput` message via the handler's
+    /// `mpsc::Sender<WorkerMessage>` queue.
     Send(mpsc::error::SendError<WorkerMessage>),
 }
 
-impl std::fmt::Display for OutputError {
+impl std::fmt::Display for BatcherError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Read(err) => write!(f, "failed to read subprocess output: {err}"),
             Self::Send(err) => write!(f, "failed to send output message: {err}"),
         }
     }
 }
 
-impl std::error::Error for OutputError {
+impl std::error::Error for BatcherError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            Self::Read(err) => Some(err),
             Self::Send(err) => Some(err),
         }
     }
 }
 
-/// Stream output from the build subprocess stdout, batching lines for
-/// efficiency.
+/// Drain per-build event lines from `rx`, batch them, and forward
+/// as `WorkerMessage::BuildOutput` frames via `sender`.
 ///
-/// Returns the final `(status, error, build_report)` extracted from the
-/// wrapper's structured result line if present, or `(Failure, None, None)` if
-/// no result line was found.
-pub(crate) async fn stream_output(
-    stdout: ChildStdout,
+/// Returns when `rx` is closed (the dispatch handle dropped the
+/// per-build sender). On exit, any pending partial batch is
+/// flushed first.
+pub(crate) async fn run_batcher(
+    mut rx: mpsc::UnboundedReceiver<String>,
     build_id: BuildId,
-    sender: &mpsc::Sender<WorkerMessage>,
-) -> Result<
-    (
-        BuildFinishedStatus,
-        Option<String>,
-        Option<serde_json::Value>,
-    ),
-    OutputError,
-> {
-    let reader = BufReader::new(stdout);
-    let mut lines_iter = reader.lines();
-
+    sender: mpsc::Sender<WorkerMessage>,
+) -> Result<(), BatcherError> {
     let mut line_count: u64 = 0;
     let mut batch: Vec<String> = Vec::with_capacity(BATCH_MAX_LINES);
     let mut batch_start_seq: u64 = 0;
-    let mut wrapper_result: Option<WrapperResult> = None;
 
     let flush_timer = tokio::time::sleep(BATCH_FLUSH_INTERVAL);
     tokio::pin!(flush_timer);
 
     loop {
         tokio::select! {
-            result = lines_iter.next_line() => {
-                match result {
-                    Ok(Some(line)) => {
-                        // Check for the structured result line.
-                        if line.starts_with(r#"{"type":"result""#)
-                            || line.starts_with(r#"{"type": "result""#)
-                        {
-                            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&line) {
-                                let mut report = parsed
-                                    .get("build_report")
-                                    .cloned();
-
-                                // Enforce 64 KB size limit on build_report.
-                                if let Some(ref r) = report {
-                                    let size = serde_json::to_string(r)
-                                        .map(|s| s.len())
-                                        .unwrap_or(0);
-                                    if size > MAX_REPORT_SIZE {
-                                        tracing::warn!(
-                                            %build_id,
-                                            size,
-                                            "build report exceeds 64 KB, discarding"
-                                        );
-                                        report = None;
-                                    }
-                                }
-
-                                // Filter out JSON null — treat as absent.
-                                if report.as_ref().is_some_and(serde_json::Value::is_null) {
-                                    report = None;
-                                }
-
-                                let error = parsed
-                                    .get("error")
-                                    .and_then(|v| v.as_str())
-                                    .map(String::from);
-
-                                // Write the error to the build log so it
-                                // appears when tailing the log file.
-                                if let Some(ref err) = error
-                                    && !err.is_empty() {
-                                        if batch.is_empty() {
-                                            batch_start_seq = line_count;
-                                        }
-                                        batch.push(
-                                            format!("[cbsd] build failed: {err}"),
-                                        );
-                                        line_count += 1;
-                                    }
-
-                                wrapper_result = Some(WrapperResult {
-                                    exit_code: parsed
-                                        .get("exit_code")
-                                        .and_then(|v| v.as_i64())
-                                        .unwrap_or(-1) as i32,
-                                    error,
-                                    build_report: report,
-                                });
-                            }
-                            // Don't include the raw result JSON in output.
-                            continue;
-                        }
-
+            line = rx.recv() => {
+                match line {
+                    Some(line) => {
                         if batch.is_empty() {
                             batch_start_seq = line_count;
-                            // Reset the flush timer when starting a new batch.
                             flush_timer.as_mut().reset(
                                 tokio::time::Instant::now() + BATCH_FLUSH_INTERVAL,
                             );
                         }
                         batch.push(line);
                         line_count += 1;
-
-                        // Flush if batch is full.
                         if batch.len() >= BATCH_MAX_LINES {
-                            flush_batch(build_id, &mut batch, batch_start_seq, sender).await?;
+                            flush_batch(build_id, &mut batch, batch_start_seq, &sender).await?;
                         }
                     }
-                    Ok(None) => {
-                        // EOF — flush remaining lines and exit.
+                    None => {
+                        // Channel closed — flush remaining and exit.
                         if !batch.is_empty() {
-                            flush_batch(build_id, &mut batch, batch_start_seq, sender).await?;
+                            flush_batch(build_id, &mut batch, batch_start_seq, &sender).await?;
                         }
-                        break;
-                    }
-                    Err(err) => {
-                        // Flush what we have, then return error.
-                        if !batch.is_empty() {
-                            let _ = flush_batch(
-                                build_id, &mut batch, batch_start_seq, sender,
-                            ).await;
-                        }
-                        return Err(OutputError::Read(err));
+                        return Ok(());
                     }
                 }
             }
             () = &mut flush_timer, if !batch.is_empty() => {
-                flush_batch(build_id, &mut batch, batch_start_seq, sender).await?;
-                // Reset timer (will be properly set when next batch starts).
+                flush_batch(build_id, &mut batch, batch_start_seq, &sender).await?;
                 flush_timer.as_mut().reset(
                     tokio::time::Instant::now() + BATCH_FLUSH_INTERVAL,
                 );
             }
         }
     }
-
-    // Determine final status from the wrapper result.
-    match wrapper_result {
-        Some(wr) => {
-            let status = super::executor::classify_exit_code(Some(wr.exit_code));
-            Ok((status, wr.error, wr.build_report))
-        }
-        None => {
-            // No structured result line — the wrapper crashed or was
-            // killed before emitting its protocol terminator.
-            tracing::warn!(
-                %build_id,
-                "no result line from wrapper — subprocess may have \
-                 crashed or been OOM-killed"
-            );
-            Ok((BuildFinishedStatus::Failure, None, None))
-        }
-    }
 }
 
-/// Flush the current batch as a `BuildOutput` message.
+/// Emit the current batch as a `BuildOutput` frame.
 async fn flush_batch(
     build_id: BuildId,
     batch: &mut Vec<String>,
     start_seq: u64,
     sender: &mpsc::Sender<WorkerMessage>,
-) -> Result<(), OutputError> {
+) -> Result<(), BatcherError> {
     let msg = WorkerMessage::BuildOutput {
         build_id,
         start_seq,
         lines: std::mem::take(batch),
     };
-    sender.send(msg).await.map_err(OutputError::Send)
+    sender.send(msg).await.map_err(BatcherError::Send)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn batcher_flushes_partial_batch_on_channel_close() {
+        let (tx, rx) = mpsc::unbounded_channel::<String>();
+        let (out_tx, mut out_rx) = mpsc::channel::<WorkerMessage>(8);
+        let build_id = BuildId(42);
+
+        // Push 3 lines (less than BATCH_MAX_LINES); close.
+        tx.send("line 1".into()).unwrap();
+        tx.send("line 2".into()).unwrap();
+        tx.send("line 3".into()).unwrap();
+        drop(tx);
+
+        let task = tokio::spawn(run_batcher(rx, build_id, out_tx));
+
+        // The batcher's 200ms timer would also flush; assert we
+        // get one BuildOutput with all 3 lines (either via the
+        // timer or via the channel-close arm).
+        let msg = out_rx.recv().await.expect("batcher emits one frame");
+        match msg {
+            WorkerMessage::BuildOutput {
+                build_id: bid,
+                start_seq,
+                lines,
+            } => {
+                assert_eq!(bid, build_id);
+                assert_eq!(start_seq, 0);
+                assert_eq!(lines, vec!["line 1", "line 2", "line 3"]);
+            }
+            other => panic!("expected BuildOutput, got {other:?}"),
+        }
+
+        task.await.unwrap().expect("batcher returns Ok on close");
+        // No further messages after close.
+        assert!(out_rx.recv().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn batcher_flushes_at_max_lines() {
+        let (tx, rx) = mpsc::unbounded_channel::<String>();
+        let (out_tx, mut out_rx) = mpsc::channel::<WorkerMessage>(8);
+        let build_id = BuildId(7);
+
+        // Push exactly BATCH_MAX_LINES lines.
+        for i in 0..BATCH_MAX_LINES {
+            tx.send(format!("line {i}")).unwrap();
+        }
+
+        let task = tokio::spawn(run_batcher(rx, build_id, out_tx));
+
+        let msg = out_rx.recv().await.expect("first batch flushed");
+        match msg {
+            WorkerMessage::BuildOutput {
+                start_seq, lines, ..
+            } => {
+                assert_eq!(start_seq, 0);
+                assert_eq!(lines.len(), BATCH_MAX_LINES);
+            }
+            other => panic!("expected BuildOutput, got {other:?}"),
+        }
+
+        // Close, ensure no additional messages and the batcher exits.
+        drop(tx);
+        task.await.unwrap().expect("batcher returns Ok");
+        assert!(out_rx.recv().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn batcher_exits_cleanly_on_empty_channel_close() {
+        let (tx, rx) = mpsc::unbounded_channel::<String>();
+        let (out_tx, mut out_rx) = mpsc::channel::<WorkerMessage>(8);
+        drop(tx);
+        let task = tokio::spawn(run_batcher(rx, BuildId(1), out_tx));
+        task.await.unwrap().expect("clean exit");
+        // No messages emitted.
+        assert!(out_rx.recv().await.is_none());
+    }
 }

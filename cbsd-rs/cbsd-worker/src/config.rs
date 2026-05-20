@@ -94,6 +94,11 @@ pub(crate) struct WorkerConfig {
 }
 
 /// Resolved worker configuration with all identity fields guaranteed present.
+///
+/// `Clone` is required so the WS handler can hand a copy to each per-build
+/// task spawned via `tokio::spawn`. Deliberately does **not** derive Debug
+/// — `api_key` is a credential. (CLAUDE.md correctness invariant 5.)
+#[derive(Clone)]
 pub(crate) struct ResolvedWorkerConfig {
     pub server_url: String,
     pub api_key: String,
@@ -110,6 +115,12 @@ pub(crate) struct ResolvedWorkerConfig {
     #[allow(dead_code)]
     pub tls_ca_bundle_path: Option<PathBuf>,
     pub cbscore_config_path: Option<PathBuf>,
+    /// Reserved: per-build wall-clock timeout. Currently unread —
+    /// Phase 7 Commit 1b dropped the subprocess and with it the
+    /// previous timeout enforcement point. A future commit will
+    /// wire this into a `tokio::time::timeout` around the
+    /// `executor::run_in_process` future.
+    #[allow(dead_code)]
     pub build_timeout_secs: Option<u64>,
     pub component_temp_dir: Option<PathBuf>,
     pub reconnect_backoff_ceiling_secs: Option<u64>,

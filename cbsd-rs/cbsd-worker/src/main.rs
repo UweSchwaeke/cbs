@@ -22,6 +22,7 @@ use clap::Parser;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::{EnvFilter, fmt};
 
+use crate::build::dispatch::{BuildDispatch, BuildDispatchLayer};
 use crate::config::WorkerConfig;
 use crate::signal::{ShutdownState, install_signal_handler};
 use crate::ws::connection::reconnect_loop;
@@ -47,6 +48,7 @@ struct Cli {
 fn setup_tracing(
     level: &str,
     log_file: Option<&std::path::Path>,
+    dispatch_layer: BuildDispatchLayer,
 ) -> Option<tracing_appender::non_blocking::WorkerGuard> {
     let is_dev = std::env::var("CBSD_DEV")
         .map(|v| !v.is_empty())
@@ -88,6 +90,7 @@ fn setup_tracing(
         .with(filter)
         .with(console_layer)
         .with(file_layer)
+        .with(dispatch_layer)
         .init();
 
     guard
@@ -106,12 +109,19 @@ async fn main() {
         }
     };
 
+    // Construct the BuildDispatch + Layer. The Layer registers
+    // with the global subscriber; the Dispatch handle is threaded
+    // into the WS handler so it can `register` / `unregister`
+    // per-build sinks at build dispatch time.
+    let (dispatch, dispatch_layer) = BuildDispatch::new();
+
     // Set up tracing — hold the guard for the process lifetime.
     // Uses raw_config.logging before resolve() consumes it,
     // so that token warnings from resolve() are captured.
     let _guard = setup_tracing(
         &raw_config.logging.level,
         raw_config.logging.log_file.as_deref(),
+        dispatch_layer,
     );
 
     let config = match raw_config.resolve() {
@@ -142,7 +152,7 @@ async fn main() {
     let _signal_handle = install_signal_handler(Arc::clone(&state));
 
     // Run the reconnection loop (returns on SIGTERM).
-    reconnect_loop(&config, state).await;
+    reconnect_loop(&config, state, dispatch).await;
 
     tracing::info!("cbsd-worker stopped");
 }

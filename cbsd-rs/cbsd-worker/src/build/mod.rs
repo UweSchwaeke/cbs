@@ -11,5 +11,6 @@
 // GNU Affero General Public License for more details.
 
 pub(crate) mod component;
+pub(crate) mod dispatch;
 pub(crate) mod executor;
 pub(crate) mod output;
