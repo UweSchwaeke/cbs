@@ -17,6 +17,7 @@ pub mod config;
 pub mod containers;
 pub mod core;
 pub mod images;
+pub mod releases;
 pub mod runner;
 pub mod secrets;
 pub mod utils;
