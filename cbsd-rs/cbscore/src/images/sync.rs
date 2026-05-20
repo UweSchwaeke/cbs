@@ -17,6 +17,7 @@ use cbscore_types::config::Config;
 use cbscore_types::images::ImageDescriptorError;
 use cbscore_types::utils::secrets::RegistryCreds;
 
+use crate::images::signing::sign_manifest;
 use crate::images::skopeo::{SkopeoOpts, skopeo_copy};
 use crate::secrets::SecretsMgr;
 
@@ -43,12 +44,17 @@ pub struct ImageRef {
 /// Copy `src.url` → `dst.url` via `skopeo copy`, applying the
 /// per-side TLS / creds configuration from each [`ImageRef`].
 ///
-/// When `config.signing.is_some()`, Commit 5 will chain a
-/// `super::signing::sign_manifest` call between
-/// `inspect(src) -> get digest` and `skopeo copy`. Until that
-/// commit lands, `sync_image` always takes the plain-copy path
-/// regardless of `config.signing`'s state, matching the
-/// "no signing configured" semantics.
+/// **Sign-before-push invariant** (per design 002 §Image Sign &
+/// Sync). When `config.signing.transit.is_some()`,
+/// [`super::signing::sign_manifest`] fires BEFORE
+/// [`skopeo_copy`] so downstream registry tooling sees the
+/// signature land first. The current digest passed to
+/// `sign_manifest` is the source-side image identity — Phase 6's
+/// follow-up plumbs the resolved sha256 from a `skopeo inspect
+/// src` call once that helper is wired; M1 ships the order
+/// guarantee with a placeholder digest string. When
+/// `config.signing` or `config.signing.transit` is `None`, the
+/// sign step is skipped entirely (matches the no-signing path).
 ///
 /// # Errors
 ///
@@ -82,20 +88,35 @@ pub struct ImageRef {
 #[tracing::instrument(
     level = "info",
     target = "cbscore::images::sync",
-    skip(src, dst, _config, _secrets),
+    skip(src, dst, config, secrets),
     fields(src_url = %src.url, dst_url = %dst.url),
 )]
 pub async fn sync_image(
     src: &ImageRef,
     dst: &ImageRef,
-    _config: &Config,
-    _secrets: &SecretsMgr,
+    config: &Config,
+    secrets: &SecretsMgr,
 ) -> Result<(), ImageDescriptorError> {
+    if let Some(signing) = config.signing.as_ref()
+        && signing.transit.is_some()
+    {
+        // Sign-before-push: invoke sign_manifest before skopeo_copy
+        // when a transit signing key is configured. The digest used
+        // here is the source-image URL — Phase 6's follow-up
+        // replaces this with the resolved sha256 from
+        // skopeo inspect src.
+        let _sig = sign_manifest(&src.url, config, secrets).await?;
+        tracing::info!(
+            target: TARGET_IMAGES_SYNC,
+            src = %src.url,
+            "sign_manifest fired before skopeo copy",
+        );
+    }
     tracing::info!(
         target: TARGET_IMAGES_SYNC,
         src = %src.url,
         dst = %dst.url,
-        "sync_image: skopeo copy (sign step lands in Commit 5)",
+        "sync_image: skopeo copy",
     );
     let opts = SkopeoOpts {
         src_tls_verify: true,

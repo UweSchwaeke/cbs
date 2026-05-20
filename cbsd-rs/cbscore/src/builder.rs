@@ -11,6 +11,7 @@
 
 pub mod prepare;
 pub mod rpmbuild;
+pub mod signing;
 pub mod utils;
 
 /// Caller-supplied options for [`run_build`](self::run_build) and

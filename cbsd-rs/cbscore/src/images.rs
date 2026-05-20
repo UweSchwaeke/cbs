@@ -4,5 +4,6 @@
 //! Container-image utilities — skopeo driver here in Phase 2; Phase 5
 //! Commits 4–5 add `images::signing` and `images::sync` on top.
 
+pub mod signing;
 pub mod skopeo;
 pub mod sync;
