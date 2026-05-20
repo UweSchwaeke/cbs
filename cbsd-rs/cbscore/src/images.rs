@@ -5,3 +5,4 @@
 //! Commits 4–5 add `images::signing` and `images::sync` on top.
 
 pub mod skopeo;
+pub mod sync;
