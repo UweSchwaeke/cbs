@@ -10,7 +10,7 @@ use cbscore_types::releases::desc::ReleaseDesc;
 
 use super::utils::release_desc_key;
 use crate::builder::rpmbuild::RpmArtifact;
-use crate::utils::s3::{S3Error, release_desc_upload, s3_upload_rpms};
+use crate::utils::s3::{self as utils_s3, S3Error, release_desc_upload, s3_upload_rpms};
 
 const TARGET_RELEASES_S3: &str = "cbscore::releases::s3";
 
@@ -103,6 +103,80 @@ fn wrap_s3(e: &S3Error) -> ReleaseError {
 // module's public surface without picking up a separate utils
 // import.
 pub use super::utils::rpm_key as derive_rpm_key;
+
+// ---------------------------------------------------------------------
+// Read ops — deferred from Phase 5 per V11-N2; Phase 6 Commit 2
+// adds them when their first consumer (`cbsbuild versions list`)
+// lands.
+// ---------------------------------------------------------------------
+
+/// `HEAD` the release-descriptor key for `version` under `loc` and
+/// return `Ok(true)` when it exists, `Ok(false)` on 404.
+///
+/// Thin wrap around [`crate::utils::s3::check_release_exists`] —
+/// lifts its [`S3Error`] into the release-domain
+/// [`ReleaseError::Invalid`] message so Phase 6 callers don't
+/// need to import both error types.
+///
+/// # Errors
+///
+/// Returns [`ReleaseError::Invalid`] wrapping any non-404 S3
+/// failure.
+///
+/// # Examples
+///
+/// ```no_run
+/// use cbscore::releases::s3::check_release_exists;
+///
+/// # async fn demo() -> Result<(), cbscore_types::releases::ReleaseError> {
+/// if check_release_exists("releases-bucket", "ceph/dev", "19.2.3").await? {
+///     eprintln!("release already published");
+/// }
+/// # Ok(()) }
+/// ```
+#[tracing::instrument(level = "debug", target = "cbscore::releases::s3")]
+pub async fn check_release_exists(
+    bucket: &str,
+    loc: &str,
+    version: &str,
+) -> Result<bool, ReleaseError> {
+    utils_s3::check_release_exists(bucket, loc, version)
+        .await
+        .map_err(|e| wrap_s3(&e))
+}
+
+/// List S3 object keys under `prefix` in `bucket`. Used by the
+/// `cbsbuild versions list` CLI surface to enumerate published
+/// release descriptors.
+///
+/// Thin wrap around [`crate::utils::s3::check_released_components`]
+/// — lifts [`S3Error`] into [`ReleaseError::Invalid`] for the same
+/// reason as [`check_release_exists`].
+///
+/// # Errors
+///
+/// Returns [`ReleaseError::Invalid`] wrapping any
+/// `ListObjectsV2` failure.
+///
+/// # Examples
+///
+/// ```no_run
+/// use cbscore::releases::s3::check_released_components;
+///
+/// # async fn demo() -> Result<(), cbscore_types::releases::ReleaseError> {
+/// let keys = check_released_components("releases-bucket", "ceph/dev/").await?;
+/// for k in &keys { println!("{k}"); }
+/// # Ok(()) }
+/// ```
+#[tracing::instrument(level = "debug", target = "cbscore::releases::s3")]
+pub async fn check_released_components(
+    bucket: &str,
+    prefix: &str,
+) -> Result<Vec<String>, ReleaseError> {
+    utils_s3::check_released_components(bucket, prefix)
+        .await
+        .map_err(|e| wrap_s3(&e))
+}
 
 #[cfg(test)]
 mod tests {
