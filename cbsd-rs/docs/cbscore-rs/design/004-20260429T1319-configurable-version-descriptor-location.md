@@ -2,16 +2,26 @@
 
 ## Status
 
-**Approved, ready for M1 implementation.** All seven Open Questions (OQ1–OQ7)
-are resolved (see § Resolved Decisions). The § Design Sketch and § Migration
-sections describe the concrete shape of the change. This design refines the
-storage location of version descriptors written by `cbsbuild versions create`
-and read by the rest of cbscore-rs. It exists because the Python implementation
-hardcodes the path `<git-repo-root>/_versions/<type>/<VERSION>.json` and carries
-a `# FIXME: make this configurable` comment
+**Approved, lands post-M2 as a 1.x.0 backwards-compatible minor add.** All seven
+Open Questions (OQ1–OQ7) are resolved (see § Resolved Decisions). The § Design
+Sketch and § Migration sections describe the concrete shape of the change. This
+design refines the storage location of version descriptors written by
+`cbsbuild versions create` and read by the rest of cbscore-rs. It exists because
+the Python implementation hardcodes the path
+`<git-repo-root>/_versions/<type>/<VERSION>.json` and carries a
+`# FIXME: make this configurable` comment
 (`cbscore/src/cbscore/cmds/versions.py:88`). The Rust port is a natural moment
 to fix it; design 002 § Version Descriptors & Creation references this
 follow-up.
+
+**Sequencing note (2026-05-21).** This design was originally drafted as a pre-M1
+change interleaved into seq-002 Phase 6. That interleave slipped: Phase 6 landed
+end-to-end (M1 cut at 1.0.0) and Phase 7 followed (M2 cut), both without
+seq-004. The design now lands post-M2 as a backwards-compatible additive minor
+add — operator configs that omit `paths.versions` keep working unchanged via the
+`<git-root>/_versions` fallback, so no migration step is required for the
+existing operator population. The OQ6 schema-version rationale is updated below
+to reflect this.
 
 ## Context
 
@@ -172,25 +182,30 @@ error: cannot resolve descriptor store location.
 ### OQ6 — Schema-version implications
 
 **Resolved: no bump.** The `Config`'s schema-version marker stays at 1 when this
-design lands. Design 004 is a pre-M1 change; cbscore-rs is in its 0.x
-development phase, where the schema is still being defined and accumulates
-additions into `schema-version: 1` (kebab key — `Config` is a kebab-case struct
-per design 002 §Wire-Format Versioning) until M1 1.0.0 ships. Design 002
-§Wire-Format Versioning makes this qualifier explicit ("every change bumps"
-applies from M1 onward; pre-M1 the schema is mutable).
+design lands. The new `paths.versions` field is an optional, additive extension
+marked `#[serde(default)]`, so:
+
+- Operator YAML files written before this design lands (and omitting the field)
+  deserialise unchanged on a binary that includes the new field.
+- Files written by the new binary that leave the field unset round-trip
+  byte-identically through the old binary (the field serialises to absent or
+  null depending on the `skip_serializing_if = "Option::is_none"` rule applied
+  consistently with the sibling path fields).
+
+This satisfies CLAUDE.md correctness invariant 1 (round-trip wire-format
+stability) without a version bump. Design 002 §Wire-Format Versioning's "every
+change bumps" rule applies to changes that alter the _interpretation_ of
+existing fields; pure additive optional fields with default `None` do not
+qualify.
 
 Concrete consequences:
 
-- The `Config` struct grows a `paths.versions: Option<Utf8PathBuf>` field in the
-  M1 1.0.0 release. Files written by cbscore-rs M1 carry `schema-version: 1`
-  (kebab) as today; the field is just there in the schema.
+- The `Config` struct grows a `paths.versions: Option<Utf8PathBuf>` field at the
+  next 1.x.0 minor release after M2. Files written by either side carry
+  `schema-version: 1` (kebab) unchanged.
 - No transform code, no deprecation warning, no operator manual edit.
-- The first post-1.0 change to `Config` (whatever it is) bumps the kebab
-  `schema-version` to `2` per the standing rule.
-
-This decision applies the same way to any other wire-format file extended during
-M0–M1 development: extensions accumulate into v1 and the first bump comes after
-the M1 cut.
+- The first change to `Config` that alters existing field semantics (not this
+  one) bumps the kebab `schema-version` to `2` per the standing rule.
 
 ### OQ7 — CLI-flag bypass interactions
 
@@ -227,7 +242,8 @@ Both edits land in design 003 in the same commit as this resolution.
 
 The change consists of one new config field, one new CLI flag, one resolver, one
 path-builder, and a small set of edits at the existing write site. All pieces
-land in M1 1.0.0; nothing is staged separately.
+land in the same post-M2 1.x.0 minor release (seq-004); nothing is staged
+separately.
 
 ### Config schema
 
@@ -435,15 +451,16 @@ Listed in design 003 §Bypass Behaviour for completeness.
 
 ### Code
 
-| Step | Where                                                    | What                                                                                                                                                                                                                                 |
-| ---- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 1    | `cbscore-types/src/config/paths.rs`                      | Add `versions: Option<Utf8PathBuf>` field with `#[serde(default)]`.                                                                                                                                                                  |
-| 2    | `cbscore-types/src/versions/desc.rs`                     | Add `descriptor_path()` helper with absolute-root doc contract and a `debug_assert!(root.is_absolute())` guard. Add `VersionType::as_dir_name()` if not already present.                                                             |
-| 3    | `cbscore/src/versions/mod.rs`                            | Add `resolve_root()` and its `canonicalize_root()` helper. Add three `VersionError` variants: `NoDescriptorRoot` (OQ5 text), `DescriptorRootResolve { path, source: std::io::Error }`, and `DescriptorRootNotUtf8 { path: String }`. |
-| 4    | `cbsbuild/src/cmds/versions.rs`                          | Add `--versions-dir` flag. Call `resolve_root()` then `descriptor_path()`. Drop the old hardcoded `repo_root.join("_versions").join(type).join(...)` chain.                                                                          |
-| 5    | `cbsbuild/src/cmds/config/init.rs` (post-M1, design 003) | Add the optional "Versions path" prompt. Add `versions = "/cbs/_versions"` to the bypass-mode pre-fill set.                                                                                                                          |
+| Step | Where                                              | What                                                                                                                                                                                                                                 |
+| ---- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1    | `cbscore-types/src/config/paths.rs`                | Add `versions: Option<Utf8PathBuf>` field with `#[serde(default)]`.                                                                                                                                                                  |
+| 2    | `cbscore-types/src/versions/desc.rs`               | Add `descriptor_path()` helper with absolute-root doc contract and a `debug_assert!(root.is_absolute())` guard. Add `VersionType::as_dir_name()` if not already present.                                                             |
+| 3    | `cbscore/src/versions/mod.rs`                      | Add `resolve_root()` and its `canonicalize_root()` helper. Add three `VersionError` variants: `NoDescriptorRoot` (OQ5 text), `DescriptorRootResolve { path, source: std::io::Error }`, and `DescriptorRootNotUtf8 { path: String }`. |
+| 4    | `cbsbuild/src/cmds/versions.rs`                    | Add `--versions-dir` flag. Call `resolve_root()` then `descriptor_path()`. Drop the old hardcoded `repo_root.join("_versions").join(type).join(...)` chain.                                                                          |
+| 5    | `cbsbuild/src/cmds/config/init.rs` (later seq-003) | Add the optional "Versions path" prompt. Add `versions = "/cbs/_versions"` to the bypass-mode pre-fill set.                                                                                                                          |
 
-Steps 1–4 land in M1. Step 5 lands when design 003 is implemented post-M1.
+Steps 1–4 land in the seq-004 post-M2 minor release. Step 5 lands when design
+003 (interactive `config init`) is implemented under seq-003.
 
 ### Operator-side
 
@@ -454,5 +471,7 @@ Steps 1–4 land in M1. Step 5 lands when design 003 is implemented post-M1.
 | Operator using `--for-systemd-install` / `--for-containerized-run`      | Re-run `cbsbuild config init --for-systemd-install` (or equivalent) on the bypass-pre-fill side; the regenerated `cbscore.config.yaml` will include `paths.versions: /cbs/_versions`. Alternatively, manually add the field to the existing config.                                                                         |
 | Operator on a worker host without a git checkout (today: blocked)       | Set `paths.versions` in config or pass `--versions-dir`. The blocking constraint is removed.                                                                                                                                                                                                                                |
 
-No Python-side patches; no schema-version bump (per OQ6, design 004 is a pre-M1
-change, the rule applies post-1.0).
+No Python-side patches; no schema-version bump (per OQ6, the new field is an
+optional additive extension that round-trips through both old and new binaries —
+the "every change bumps" rule applies only to changes that alter the
+interpretation of existing fields).

@@ -46,12 +46,13 @@ The following are tracked under their own design seq, not folded into this plan:
 - **seq-003** — interactive `cbsbuild config init` (post-M1, lands as a 1.x.0
   minor add after Phase 6).
 - **seq-004** — configurable `VersionDescriptor` location
-  (`Config.paths.versions` + `--versions-dir`). M1-scope; interleaves between
-  seq-002 Phase 6 Commit 4 and Commit 5 (the visibility audit), so the
-  visibility audit covers seq-004's items too and the M1 smoke gate (Phase 6
-  Commit 6) exercises the final M1 CLI surface. Plan:
+  (`Config.paths.versions` + `--versions-dir`). Originally drafted to interleave
+  into M1; that interleave slipped (Phase 6 landed without it, Phase 7
+  followed). seq-004 now lands as a backwards-compatible additive change on top
+  of the M2 release — existing operator configs keep working unchanged via the
+  `<git-root>/_versions` fallback. Plan:
   [`004-20260513T0900-configurable-version-descriptor-location.md`](004-20260513T0900-configurable-version-descriptor-location.md)
-  (3 commits, ~500 LOC).
+  (3 commits, ~500 LOC; `Status: Pending`).
 - **seq-005** — optional positional VERSION on `cbsbuild versions create`
   (post-M1, lands as a 1.x.0 minor add).
 

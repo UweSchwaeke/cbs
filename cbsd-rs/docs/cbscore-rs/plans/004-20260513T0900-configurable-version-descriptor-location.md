@@ -2,12 +2,24 @@
 
 ## Status
 
-**Approved — finalized and ready for M1 implementation.** Audited at v2
+**Approved — lands post-M2 as a 1.x.0 backwards-compatible minor add.** Audited
+at v2
 (`reviews/004-20260513T1003-plan-configurable-version-descriptor-location-v2.md`,
 verdict `49d6f78`); zero findings across CRITICAL / MAJOR / MINOR / SUGGESTION /
 OPEN QUESTION. Implements design 004 Migration table steps 1–4 (step 5 is
-post-M1, deferred to seq-003). Interleaves between seq-002 Phase 6 Commit 4 and
-Commit 5.
+post-M1, owned by seq-003).
+
+**Repositioning note (post-M2 reframe).** The plan was originally drafted to
+interleave between seq-002 Phase 6 Commit 4 and Commit 5 so the M1 visibility
+audit (Phase 6 Commit 5) and the M1 smoke gate (Phase 6 Commit 6) would
+naturally cover seq-004's surface. That interleave did not happen: Phase 6
+landed end-to-end without seq-004, and Phase 7 (M2 cut) followed. seq-004 now
+lands on top of the M2 release as a backwards-compatible additive change —
+existing operator configs (without `paths.versions`) keep working byte-
+identically via the `<git-root>/_versions` fallback. The implementer owns
+visibility decisions for the newly-added symbols at the point of introduction
+(no separate post-hoc audit), and Commit 3's M1-smoke-gate fixture extension is
+a one-line addition to the already-landed `cbsbuild/tests/m1_smoke.rs`.
 
 **Review trail:**
 
@@ -17,6 +29,8 @@ Commit 5.
 - Focused v1 `c197927` — 2 MINORs (N1 §Depends on misattribution, N2 surviving
   hedges in Commit 3 §Files) → closed in `b595554` → v2 `49d6f78` confirmation,
   clean.
+- Repositioning sweep (2026-05-21) — interleave language replaced with post-M2
+  framing; no semantic change to the three commits or their files.
 
 ## Progress
 
@@ -75,22 +89,39 @@ Design references: design 004 (this plan implements its Migration table steps
 
 ## Sequencing
 
-seq-004 interleaves between **seq-002 Phase 6 Commit 4 and Commit 5**.
+seq-004 lands **on top of the M2 release**, after every seq-002 phase (M0 / M1 /
+M2) is on `main`. The original "interleave between seq-002 Phase 6 Commits 4 and
+5" plan slipped — Phase 6 landed end-to-end without seq-004 — so the work now
+happens in a straight three-commit sequence with no remaining dependency on the
+seq-002 phase order.
 
-The recommended order is: land Phase 6 Commits 1–4, then this plan's three
-commits, then Phase 6 Commits 5–6 (visibility audit + M1 smoke gate). This way
-the smoke gate exercises the configurable resolver instead of the transitional
-hardcoded path, and the visibility audit (Commit 5) covers seq-004's newly-added
-items too. The Phase 6 plan's §Out of scope block records this interleave point
-and the slip-handling fallback explicitly (lines 67–77 of
-`002-20260508T1558-06-cbsbuild-cli.md`); if seq-004 slips, the M1 smoke gate
-(Commit 6) runs against the hardcoded path with a note that `--versions-dir` is
-not yet exercised, and re-runs after seq-004 lands.
+What this implies in practice:
+
+- The three commits land in order (Commit 1 → 2 → 3) and the workspace gate
+  (`cargo fmt --all --check`, `cargo clippy --workspace`,
+  `cargo test --workspace`) runs after each one.
+- Visibility decisions for the new symbols are made by the implementer at the
+  point of introduction (per CLAUDE.md §Visibility — `pub(crate)` until a
+  concrete cross-crate caller exists, `pub` otherwise). There is no post-hoc
+  workspace-wide visibility audit; that was Phase 6 Commit 5 and already ran.
+  Symbol-by-symbol notes:
+  - `Config.paths.versions` — `pub` field on a `pub struct`; required by the
+    serde-driven on-disk wire shape.
+  - `VersionType::as_dir_name` and `descriptor_path` — `pub` because
+    `cbsbuild::cmds::versions` (a sibling crate) reads them through the
+    `cbscore-types` boundary.
+  - `cbscore::versions::resolve_root` — `pub` for the same reason; the
+    `cbsbuild` CLI is the immediate cross-crate caller.
+  - `VersionError::{NoDescriptorRoot, DescriptorRootResolve, DescriptorRootNotUtf8}`
+    — `pub` variants on an already-`pub` error type.
+- Commit 3's "include `--versions-dir` in the M1 smoke gate" fixture extension
+  is a one-line addition to the already-landed
+  `cbsd-rs/cbsbuild/tests/m1_smoke.rs`. It does not reopen Phase 6.
 
 Step 5 of design 004's Migration table — the interactive `config init` "Versions
 path" prompt and the bypass-mode pre-fill — is **deliberately out of scope**
-here. It lives under design 003 (interactive config init), which is post-M1 /
-seq-003.
+here. It lives under design 003 (interactive config init), which is the seq-003
+post-M1 minor add.
 
 ## Out of scope
 
@@ -103,9 +134,13 @@ seq-003.
   nothing keep working via the fallback; operators relocating the root run their
   own `cp -r`.
 - **`config init` versions prompt + systemd / containerized bypass pre-fill
-  (`/cbs/_versions`).** Owned by design 003 / seq-003; lands post-M1.
-- **Wire-format schema bump.** OQ6 — `Config.schema_version` stays at 1 because
-  this is a pre-M1 0.x change; the schema is mutable until M1 ships.
+  (`/cbs/_versions`).** Owned by design 003 / seq-003; post-M1 minor add.
+- **Wire-format schema bump.** `Config.schema_version` stays at 1 because the
+  change is a backwards-compatible additive optional field: existing operator
+  YAML files that omit `paths.versions` deserialise unchanged (the field is
+  `#[serde(default)]`), so old and new files round-trip through the M2 binary
+  without any migration step. CLAUDE.md correctness invariant 1 (round-trip
+  wire-format stability) holds without a version bump.
 
 ## Commit 1 — `cbscore-types`: paths field, `VersionType::as_dir_name`, `descriptor_path`
 
@@ -136,8 +171,10 @@ pieces are testable in isolation via doctests and round-trip serde tests on
 
 **Design constraints:**
 
-- **No schema-version bump.** Per design 004 OQ6, this is a pre-M1 0.x schema
-  extension; `Config.schema_version` stays at 1.
+- **No schema-version bump.** The new `versions` field is optional and
+  `#[serde(default)]`; pre-existing YAML files keep parsing unchanged.
+  `Config.schema_version` stays at 1 — see §Out of scope for the round-trip
+  argument.
 - **Wire-key casing** (CLAUDE.md correctness invariant 4):
   `rename_all = "kebab-case"` is already on `PathsConfig`, so the `versions`
   Rust identifier auto-maps to the YAML key `versions`. No explicit
@@ -360,15 +397,18 @@ that Phase 6 Commit 2 landed.
 - Unit test: with both unset and the test cwd outside any git repo, the command
   exits non-zero with the OQ5 error text on stderr (no panic, no
   `std::io::Error` leaked through).
-- Integration test slot for the Phase 6 Commit 6 M1 smoke gate: add
-  `--versions-dir <tempdir>` to one invocation so the gate exercises the
-  resolved-CLI-flag path end-to-end. (This is a one-line addition to the
-  existing test fixture; the gate itself is Phase 6's responsibility.)
+- One-line extension to the already-landed M1 smoke gate
+  (`cbsd-rs/cbsbuild/tests/m1_smoke.rs`): add `--versions-dir <tempdir>` to the
+  existing `cbsbuild build` invocation so the gate exercises the
+  resolved-CLI-flag path end-to-end. The smoke gate is operator-environment-
+  gated (`CBSCORE_TEST_SMOKE=1`) and the new flag is a no-op for the build
+  subcommand itself; the assertion is that the test still passes when the flag
+  is in the argv. Lands in this Commit 3 — keeps the smoke gate's M1-cut fixture
+  and seq-004's new flag in lockstep.
 
-## End-of-feature acceptance (interleave gate)
+## End-of-feature acceptance
 
-After all three commits land, before seq-002 Phase 6 Commits 5–6 (visibility
-audit + M1 smoke gate) run:
+After all three commits land:
 
 - `cargo build --workspace`, `cargo test --workspace`,
   `cargo clippy --workspace`, `cargo fmt --all --check` all pass with zero
@@ -380,11 +420,18 @@ audit + M1 smoke gate) run:
 - `cbsbuild versions create -t dev v0.0.1` outside any git checkout, with no
   flag and no `paths.versions` set, exits non-zero with the OQ5 four-line error
   message — fallback-failure check.
-- README `Related plans › seq-004` bullet updated to link this plan file
-  (`004-20260513T0900-configurable-version-descriptor-location.md`) and to mark
-  the seq as **Landed** (or whichever status keyword matches the README's
-  existing usage when the work completes).
-
-When this gate is green, seq-002 Phase 6 Commits 5–6 run and include
-`--versions-dir` in the M1 smoke gate's fixtures (Commit 6) so the gate
-certifies the final M1-1.0.0 CLI surface.
+- The five forward-pointing comments scattered across the workspace that
+  reference seq-004 as future work resolve to real symbols and the comments
+  themselves are deleted by the commit that introduces the referenced symbol. As
+  of 2026-05-21 the inventory is:
+  - `cbsd-rs/cbscore-types/src/versions/utils.rs` (line 22) — resolves in
+    Commit 1.
+  - `cbsd-rs/cbscore-types/src/versions/errors.rs` (line 19) — resolves in
+    Commit 2.
+  - `cbsd-rs/cbscore/src/versions.rs` (line 10) — resolves in Commit 2.
+  - `cbsd-rs/cbscore/src/utils/git.rs` (lines 231–232) — resolves in Commit 2.
+  - `cbsd-rs/cbsbuild/src/cmds/versions.rs` (line 166) — resolves in Commit 3.
+- Plans README progress table updates: the §"Related plans › seq-004" bullet
+  drops the "Pending" framing, the plan's own progress table flips all three
+  rows to `Done`. (Same commit boundary as Commit 3 so the README state matches
+  the on-disk reality.)
