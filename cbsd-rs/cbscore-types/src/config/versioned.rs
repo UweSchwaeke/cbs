@@ -35,6 +35,7 @@ const KEBAB_TAG: &str = "schema-version";
 ///         scratch: "/scratch".into(),
 ///         scratch_containers: "/scratch/containers".into(),
 ///         ccache: None,
+///         versions: None,
 ///     },
 ///     storage: None,
 ///     signing: None,

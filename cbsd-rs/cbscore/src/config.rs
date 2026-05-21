@@ -214,6 +214,7 @@ mod tests {
                 scratch: camino::Utf8PathBuf::from("/srv/scratch"),
                 scratch_containers: camino::Utf8PathBuf::from("/srv/scratch-containers"),
                 ccache: None,
+                versions: None,
             },
             storage: None,
             signing: None,

@@ -61,6 +61,7 @@ const REPORT_SCHEMA_VERSION: u64 = 1;
 ///         scratch: "/srv/scratch".into(),
 ///         scratch_containers: "/srv/sc".into(),
 ///         ccache: None,
+///         versions: None,
 ///     },
 ///     storage: None,
 ///     signing: None,
@@ -221,6 +222,7 @@ mod tests {
                 scratch: "/srv/scratch".into(),
                 scratch_containers: "/srv/sc".into(),
                 ccache: None,
+                versions: None,
             },
             storage: Some(StorageConfig {
                 s3: Some(S3StorageConfig {

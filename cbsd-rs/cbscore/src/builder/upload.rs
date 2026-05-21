@@ -212,6 +212,7 @@ mod tests {
                 scratch: "/srv/scratch".into(),
                 scratch_containers: "/srv/scratch-containers".into(),
                 ccache: None,
+                versions: None,
             },
             storage,
             signing: None,

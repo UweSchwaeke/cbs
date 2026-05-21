@@ -7,7 +7,10 @@
 //! descriptors keep serde's default Rust-identifier-as-wire-key per
 //! design 002 §Wire-Format Versioning).
 
+use camino::{Utf8Path, Utf8PathBuf};
 use serde::{Deserialize, Serialize};
+
+use crate::versions::utils::VersionType;
 
 /// Author identity recorded on a version descriptor.
 ///
@@ -141,4 +144,110 @@ pub struct VersionDescriptor {
     pub distro: String,
     /// Target distro major version (e.g., `9` for el9).
     pub el_version: u32,
+}
+
+/// Build the on-disk path of a version descriptor under the configured
+/// descriptor-store root.
+///
+/// The layout is `<root>/<type>/<VERSION>.json` (design 004 OQ3, locked
+/// in by Python parity and the type-encoded-in-directory invariant).
+/// This is the single source of truth for the layout — every other
+/// code path that needs it imports this helper.
+///
+/// `root` must be **absolute**. The caller (typically the resolver in
+/// `cbscore::versions::resolve_root`) is expected to canonicalise the
+/// root before calling here; a relative root would silently produce a
+/// path relative to the process cwd, which is almost never what an
+/// operator means. The debug-assert below catches accidental
+/// relative-root passes in test builds.
+///
+/// # Panics
+///
+/// Debug builds `debug_assert!` that `root.is_absolute()`. Release
+/// builds skip the check and return whatever the join produces (per
+/// `camino::Utf8Path::join` semantics — a relative root just yields
+/// a relative result).
+///
+/// # Examples
+///
+/// ```
+/// use camino::{Utf8Path, Utf8PathBuf};
+/// use cbscore_types::versions::VersionType;
+/// use cbscore_types::versions::desc::descriptor_path;
+///
+/// let path = descriptor_path(
+///     Utf8Path::new("/srv/cbs/_versions"),
+///     VersionType::Dev,
+///     "19.2.3-dev1",
+/// );
+/// assert_eq!(
+///     path,
+///     Utf8PathBuf::from("/srv/cbs/_versions/dev/19.2.3-dev1.json"),
+/// );
+/// ```
+#[must_use]
+pub fn descriptor_path(root: &Utf8Path, ty: VersionType, version: &str) -> Utf8PathBuf {
+    debug_assert!(
+        root.is_absolute(),
+        "descriptor_path expects an absolute root; got {root}",
+    );
+    root.join(ty.as_dir_name()).join(format!("{version}.json"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Locks the layout for every `VersionType` variant. Any future
+    /// change to either `VersionType::as_dir_name` or the chain inside
+    /// `descriptor_path` would surface here.
+    #[test]
+    fn descriptor_path_layout_per_variant() {
+        let root = Utf8Path::new("/r");
+        assert_eq!(
+            descriptor_path(root, VersionType::Release, "19.2.3"),
+            Utf8PathBuf::from("/r/release/19.2.3.json"),
+        );
+        assert_eq!(
+            descriptor_path(root, VersionType::Dev, "19.2.3-dev1"),
+            Utf8PathBuf::from("/r/dev/19.2.3-dev1.json"),
+        );
+        assert_eq!(
+            descriptor_path(root, VersionType::Test, "1.0.0-test"),
+            Utf8PathBuf::from("/r/test/1.0.0-test.json"),
+        );
+        assert_eq!(
+            descriptor_path(root, VersionType::Ci, "ci-abc123"),
+            Utf8PathBuf::from("/r/ci/ci-abc123.json"),
+        );
+    }
+
+    /// `UUIDv7` version strings (seq-005's planned shape — no in-tree
+    /// callers yet, but the layout helper must already handle the
+    /// opaque case unchanged).
+    #[test]
+    fn descriptor_path_accepts_opaque_version_string() {
+        let root = Utf8Path::new("/r");
+        let path = descriptor_path(
+            root,
+            VersionType::Dev,
+            "0190b6a7-8d61-7000-8000-aabbccddeeff",
+        );
+        assert_eq!(
+            path,
+            Utf8PathBuf::from("/r/dev/0190b6a7-8d61-7000-8000-aabbccddeeff.json",),
+        );
+    }
+
+    /// `descriptor_path` panics on a relative root in debug builds.
+    /// The runtime guard catches the common operator-mistake of
+    /// passing a relative path through `--versions-dir` (the resolver
+    /// canonicalises before calling here, so this only fires if a
+    /// caller bypasses the resolver).
+    #[test]
+    #[should_panic(expected = "descriptor_path expects an absolute root")]
+    #[cfg(debug_assertions)]
+    fn descriptor_path_rejects_relative_root_in_debug() {
+        let _ = descriptor_path(Utf8Path::new("relative/root"), VersionType::Dev, "1.0.0");
+    }
 }

@@ -146,6 +146,11 @@ fn systemd_install_template() -> Config {
             scratch: "/var/lib/cbsd/scratch".into(),
             scratch_containers: "/var/lib/cbsd/scratch-containers".into(),
             ccache: Some("/var/lib/cbsd/ccache".into()),
+            // Pre-fill of `versions` (design 004 OQ7) is owned by
+            // seq-003, which adds the interactive prompt + the
+            // bypass-mode pre-fill in lockstep. seq-004 keeps the
+            // template structurally valid with `None`.
+            versions: None,
         },
         storage: None,
         signing: None,
@@ -164,6 +169,8 @@ fn containerized_run_template() -> Config {
             scratch: "/cbs/scratch".into(),
             scratch_containers: "/cbs/scratch-containers".into(),
             ccache: Some("/cbs/ccache".into()),
+            // See note in systemd_install_template.
+            versions: None,
         },
         storage: None,
         signing: None,

@@ -43,6 +43,7 @@ use serde::{Deserialize, Serialize};
 ///         scratch: Utf8PathBuf::from("/scratch"),
 ///         scratch_containers: Utf8PathBuf::from("/scratch/containers"),
 ///         ccache: None,
+///         versions: None,
 ///     },
 ///     storage: None,
 ///     signing: None,
