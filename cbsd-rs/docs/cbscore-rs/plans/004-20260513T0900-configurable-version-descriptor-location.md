@@ -47,6 +47,11 @@ coverage lives in Commit 3's unit tests.
   §Migration table Step 1 entry; neutralised the §OQ6 "expected outcome"
   speculation about future bump-policy resolution. Plan was clean; no plan edits
   in this pass.
+- v5 confirmation pass (2026-05-21) — plan only: forward-pointer inventory in
+  §End-of-feature acceptance promoted from "five" to "six" entries; missing
+  entry added for `cbsbuild/src/cmds/versions.rs:9` (the module-level doc that
+  says "Python-parity hardcoded path; seq-004 makes it configurable" — Commit 3
+  rewrites the bullet). v4 findings all confirmed closed.
 
 ## Progress
 
@@ -451,10 +456,11 @@ After all three commits land:
 - `cbsbuild versions create -t dev v0.0.1` outside any git checkout, with no
   flag and no `paths.versions` set, exits non-zero with the OQ5 four-line error
   message — fallback-failure check.
-- The five forward-pointing comments scattered across the workspace that
+- The six forward-pointing comments scattered across the workspace that
   reference seq-004 as future work resolve to real symbols and the comments
-  themselves are deleted by the commit that introduces the referenced symbol. As
-  of 2026-05-21 the inventory is:
+  themselves are deleted (or rewritten, where they sit inside permanent doc
+  blocks) by the commit that introduces the referenced symbol. As of 2026-05-21
+  the inventory is:
   - `cbsd-rs/cbscore-types/src/versions/utils.rs` (line 22) — resolves in
     Commit 1.
   - `cbsd-rs/cbscore-types/src/versions/errors.rs` (line 19) — resolves in
@@ -464,7 +470,14 @@ After all three commits land:
     `pub mod resolve;` and `pub use resolve::resolve_root;`. The implementer
     updates the doc-block prose rather than deleting a single TODO line.
   - `cbsd-rs/cbscore/src/utils/git.rs` (lines 231–232) — resolves in Commit 2.
-  - `cbsd-rs/cbsbuild/src/cmds/versions.rs` (line 166) — resolves in Commit 3.
+  - `cbsd-rs/cbsbuild/src/cmds/versions.rs` (line 9, inside the crate-level
+    `//!` module doc — "Python-parity hardcoded path; seq-004 makes it
+    configurable") — Commit 3 rewrites the bullet to describe the configurable
+    shape (CLI flag, config field, fallback) rather than deleting it; the module
+    doc remains as permanent documentation.
+  - `cbsd-rs/cbsbuild/src/cmds/versions.rs` (line 166, inside the `create`
+    handler) — resolves in Commit 3 as the handler's write-path block is
+    replaced by the `resolve_root` + `descriptor_path` chain.
 - Plans README progress table updates: the §"Related plans › seq-004" bullet
   drops the "Pending" framing, the plan's own progress table flips all three
   rows to `Done`. (Same commit boundary as Commit 3 so the README state matches
