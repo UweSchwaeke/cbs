@@ -181,31 +181,39 @@ error: cannot resolve descriptor store location.
 
 ### OQ6 — Schema-version implications
 
-**Resolved: no bump.** The `Config`'s schema-version marker stays at 1 when this
-design lands. The new `paths.versions` field is an optional, additive extension
-marked `#[serde(default)]`, so:
+**Resolved: no bump.** The `Config`'s `schema-version` marker stays at 1 when
+this design lands. The rationale is operational, not derived from design 002's
+versioning rule:
 
-- Operator YAML files written before this design lands (and omitting the field)
-  deserialise unchanged on a binary that includes the new field.
-- Files written by the new binary that leave the field unset round-trip
-  byte-identically through the old binary (the field serialises to absent or
-  null depending on the `skip_serializing_if = "Option::is_none"` rule applied
-  consistently with the sibling path fields).
-
-This satisfies CLAUDE.md correctness invariant 1 (round-trip wire-format
-stability) without a version bump. Design 002 §Wire-Format Versioning's "every
-change bumps" rule applies to changes that alter the _interpretation_ of
-existing fields; pure additive optional fields with default `None` do not
-qualify.
+- The schema-version bump policy in design 002 §Wire-Format Versioning ("every
+  change bumps; additive changes are not exempt") has been deferred across every
+  design currently in flight (seq-002 through seq-005). No design in the current
+  corpus bumps `schema-version`, and no plan currently mandates a bump-policy
+  enforcement pass. seq-004 follows the same posture: leave `schema-version` at
+  the value on HEAD (`1`, confirmed at
+  `cbscore-types/src/config/versioned.rs:65`) and let the bump policy be
+  revisited under its own future design.
+- Operationally, the new field is additive and optional
+  (`paths.versions: Option<Utf8PathBuf>` with `#[serde(default)]` +
+  `#[serde(skip_serializing_if = "Option::is_none")]`), so operator YAML files
+  that omit it deserialise unchanged on a new binary, and files written by a new
+  binary with the field unset serialise as absent — round-trip stable in both
+  directions against existing binaries. No operator action is required at the
+  seq-004 cutover.
 
 Concrete consequences:
 
 - The `Config` struct grows a `paths.versions: Option<Utf8PathBuf>` field at the
-  next 1.x.0 minor release after M2. Files written by either side carry
-  `schema-version: 1` (kebab) unchanged.
+  seq-004 cutover. Files written by either side carry `schema-version: 1`
+  (kebab) unchanged.
 - No transform code, no deprecation warning, no operator manual edit.
-- The first change to `Config` that alters existing field semantics (not this
-  one) bumps the kebab `schema-version` to `2` per the standing rule.
+- When the schema-version bump policy is brought back into scope (in some future
+  design that is out of scope here), seq-004's no-bump landing will be reviewed
+  alongside every other deferred-bump change. The expected outcome is either a
+  one-shot retroactive bump of all deferred additive changes together, or a
+  carve-out in the bump rule for `Option<T>` with `#[serde(default)]` +
+  `#[serde(skip_serializing_if)]`; either resolution is compatible with
+  seq-004's current shape.
 
 ### OQ7 — CLI-flag bypass interactions
 

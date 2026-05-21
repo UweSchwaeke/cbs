@@ -6,8 +6,8 @@
 at v2
 (`reviews/004-20260513T1003-plan-configurable-version-descriptor-location-v2.md`,
 verdict `49d6f78`); zero findings across CRITICAL / MAJOR / MINOR / SUGGESTION /
-OPEN QUESTION. Implements design 004 Migration table steps 1–4 (step 5 is
-post-M1, owned by seq-003).
+OPEN QUESTION. Implements design 004 Migration table steps 1–4. Step 5 is owned
+by seq-003 (the interactive `cbsbuild config init` minor add).
 
 **Repositioning note (post-M2 reframe).** The plan was originally drafted to
 interleave between seq-002 Phase 6 Commit 4 and Commit 5 so the M1 visibility
@@ -18,8 +18,9 @@ lands on top of the M2 release as a backwards-compatible additive change —
 existing operator configs (without `paths.versions`) keep working byte-
 identically via the `<git-root>/_versions` fallback. The implementer owns
 visibility decisions for the newly-added symbols at the point of introduction
-(no separate post-hoc audit), and Commit 3's M1-smoke-gate fixture extension is
-a one-line addition to the already-landed `cbsbuild/tests/m1_smoke.rs`.
+(no separate post-hoc audit). The M1 smoke gate is not extended —
+`cbsbuild build` is a read site and does not accept `--versions-dir`; resolver
+coverage lives in Commit 3's unit tests.
 
 **Review trail:**
 
@@ -31,6 +32,14 @@ a one-line addition to the already-landed `cbsbuild/tests/m1_smoke.rs`.
   clean.
 - Repositioning sweep (2026-05-21) — interleave language replaced with post-M2
   framing; no semantic change to the three commits or their files.
+- Post-review sweep (2026-05-21) — addressed v3 design-review findings: reframed
+  OQ6 schema-version rationale on "bump policy deferred across all designs"
+  basis (no longer asserts a carve-out in design 002); dropped the M1 smoke-gate
+  fixture extension claim (the flag is not on `cbsbuild build`); made
+  `#[serde(skip_serializing_if = "Option::is_none")]` mandatory; closed OQ-A
+  (`Config.schema_version = 1` on HEAD) and OQ-B (`VersionType` already uses
+  `rename_all = "lowercase"`, so `as_dir_name` strings match the serde wire);
+  cited the visibility-audit commit by hash.
 
 ## Progress
 
@@ -103,8 +112,9 @@ What this implies in practice:
 - Visibility decisions for the new symbols are made by the implementer at the
   point of introduction (per CLAUDE.md §Visibility — `pub(crate)` until a
   concrete cross-crate caller exists, `pub` otherwise). There is no post-hoc
-  workspace-wide visibility audit; that was Phase 6 Commit 5 and already ran.
-  Symbol-by-symbol notes:
+  workspace-wide visibility audit; that was Phase 6 Commit 5
+  (`1e68afb cbsd-rs: visibility audit (demote pub → pub(crate) workspace-wide)`)
+  and already ran. Symbol-by-symbol notes:
   - `Config.paths.versions` — `pub` field on a `pub struct`; required by the
     serde-driven on-disk wire shape.
   - `VersionType::as_dir_name` and `descriptor_path` — `pub` because
@@ -114,9 +124,13 @@ What this implies in practice:
     `cbsbuild` CLI is the immediate cross-crate caller.
   - `VersionError::{NoDescriptorRoot, DescriptorRootResolve, DescriptorRootNotUtf8}`
     — `pub` variants on an already-`pub` error type.
-- Commit 3's "include `--versions-dir` in the M1 smoke gate" fixture extension
-  is a one-line addition to the already-landed
-  `cbsd-rs/cbsbuild/tests/m1_smoke.rs`. It does not reopen Phase 6.
+- The M1 smoke gate (`cbsd-rs/cbsbuild/tests/m1_smoke.rs`) is **not** extended
+  by seq-004. The gate invokes `cbsbuild build`, which is a read site and per
+  design 004 §OQ4 takes the descriptor path as an explicit argument — it never
+  calls `resolve_root` and `--versions-dir` is not a `cbsbuild build` flag (it's
+  only on `cbsbuild versions create`). Coverage of the resolver and the
+  `--versions-dir` flag lives entirely in Commit 3 §Testable's unit tests, which
+  exercise the precedence ladder and the OQ5 error-text path end-to-end.
 
 Step 5 of design 004's Migration table — the interactive `config init` "Versions
 path" prompt and the bypass-mode pre-fill — is **deliberately out of scope**
@@ -135,12 +149,14 @@ post-M1 minor add.
   own `cp -r`.
 - **`config init` versions prompt + systemd / containerized bypass pre-fill
   (`/cbs/_versions`).** Owned by design 003 / seq-003; post-M1 minor add.
-- **Wire-format schema bump.** `Config.schema_version` stays at 1 because the
-  change is a backwards-compatible additive optional field: existing operator
-  YAML files that omit `paths.versions` deserialise unchanged (the field is
-  `#[serde(default)]`), so old and new files round-trip through the M2 binary
-  without any migration step. CLAUDE.md correctness invariant 1 (round-trip
-  wire-format stability) holds without a version bump.
+- **Wire-format schema bump.** `Config.schema_version` stays at 1 — see design
+  004 §OQ6 for the rationale. Short version: the schema-version bump policy in
+  design 002 §Wire-Format Versioning is deferred across every design currently
+  in flight (no design in the corpus bumps `schema-version`); seq-004 adopts the
+  same posture and leaves the marker at 1. Operationally the new field is
+  additive and optional (`#[serde(default)]` +
+  `#[serde(skip_serializing_if = "Option::is_none")]`) so files round-trip
+  through both old and new binaries without operator action.
 
 ## Commit 1 — `cbscore-types`: paths field, `VersionType::as_dir_name`, `descriptor_path`
 
@@ -151,18 +167,26 @@ pieces are testable in isolation via doctests and round-trip serde tests on
 **Files:**
 
 - `cbsd-rs/cbscore-types/src/config/paths.rs` — append
-  `versions: Option<Utf8PathBuf>` to `PathsConfig`, marked `#[serde(default)]`
-  so existing YAML files (which omit the field) parse cleanly. Keep the existing
-  field ordering and the `#[serde(rename_all = "kebab-case")]` attribute on the
-  struct. The YAML key resolves to `versions` (a single word; kebab-case is a
-  no-op).
+  `versions: Option<Utf8PathBuf>` to `PathsConfig`, marked
+  `#[serde(default, skip_serializing_if = "Option::is_none")]`. Both attributes
+  are mandatory, not consistency-with-siblings: `default` lets existing YAML
+  files (which omit the field) parse cleanly, and `skip_serializing_if` lets
+  files written by a new binary with the field unset serialise as absent so they
+  round-trip through both old and new binaries (the round-trip claim in §OQ6 /
+  design 004 §OQ6 depends on this attribute being present, not optional). The
+  existing `ccache` field on HEAD uses exactly this pair (`paths.rs:42`); mirror
+  that. Keep the existing field ordering and the
+  `#[serde(rename_all = "kebab-case")]` attribute on the struct. The YAML key
+  resolves to `versions` (a single word; kebab-case is a no-op).
 - `cbsd-rs/cbscore-types/src/versions/utils.rs` — add
   `impl VersionType { pub fn as_dir_name(&self) -> &'static str }` returning
-  `"release"`, `"dev"`, `"test"`, `"ci"`. The strings match Python's
-  `cbscore/versions/utils.py:VersionType` serde value names (snake_case per
-  CLAUDE.md correctness invariant 4) and are the filesystem directory
-  components, locked in by design 004 OQ3 and the type-encoded-in-layout
-  invariant.
+  `"release"`, `"dev"`, `"test"`, `"ci"`. These match the serde wire strings
+  produced by `#[serde(rename_all = "lowercase")]` on `VersionType` (verified on
+  HEAD at `utils.rs:36`) and Python's `cbscore/versions/utils.py:VersionType`
+  serde value names, locked in by design 004 OQ3 and the type-encoded-in-layout
+  invariant. The doctest asserts the consistency between `as_dir_name()` and
+  `serde_json::to_string(&v).unwrap().trim_matches('"')` for all four variants,
+  so a future change to either side surfaces immediately.
 - `cbsd-rs/cbscore-types/src/versions/desc.rs` — add
   `pub fn descriptor_path(root: &Utf8Path, ty: VersionType, version: &str) -> Utf8PathBuf`,
   implemented as `root.join(ty.as_dir_name()).join(format!("{version}.json"))`.
@@ -171,10 +195,11 @@ pieces are testable in isolation via doctests and round-trip serde tests on
 
 **Design constraints:**
 
-- **No schema-version bump.** The new `versions` field is optional and
-  `#[serde(default)]`; pre-existing YAML files keep parsing unchanged.
-  `Config.schema_version` stays at 1 — see §Out of scope for the round-trip
-  argument.
+- **No schema-version bump.** `Config.schema_version` stays at 1 (the value on
+  HEAD at `cbscore-types/src/config/versioned.rs:65`). See §Out of scope for the
+  rationale and design 004 §OQ6 for the full argument — short version: bump
+  policy is deferred across every design currently in flight, and the new field
+  is additive optional so round-trip stability holds in the meantime.
 - **Wire-key casing** (CLAUDE.md correctness invariant 4):
   `rename_all = "kebab-case"` is already on `PathsConfig`, so the `versions`
   Rust identifier auto-maps to the YAML key `versions`. No explicit
@@ -195,9 +220,11 @@ pieces are testable in isolation via doctests and round-trip serde tests on
   `paths.versions = Some("/srv/cbs/versions")` round-trips through YAML and JSON
   byte-stable.
 - Round-trip serde test with `paths.versions` **absent** in the input YAML:
-  parses as `None`, re-serialises with the field present-but-null or omitted
-  depending on `#[serde(skip_serializing_if = "Option::is_none")]` (apply that
-  attribute if existing path fields use it, for consistency).
+  parses as `None`, re-serialises with the field omitted (not present-but- null)
+  — `#[serde(skip_serializing_if = "Option::is_none")]` is mandatory on the
+  field per §Files. Without it, the round-trip claim in §OQ6 breaks; with it,
+  asserting that the re-serialised YAML does not contain the substring
+  `versions:` is the right shape for the test.
 - Unit test in `versions/desc.rs`:
   `descriptor_path(Utf8Path::new("/r"), VersionType::Dev, "19.2.3")` returns
   `Utf8PathBuf::from("/r/dev/19.2.3.json")`. Repeat for all four variants of
@@ -396,15 +423,12 @@ that Phase 6 Commit 2 landed.
   lands under `<tempdir>/_versions/<type>/` — byte-identical to Python parity.
 - Unit test: with both unset and the test cwd outside any git repo, the command
   exits non-zero with the OQ5 error text on stderr (no panic, no
-  `std::io::Error` leaked through).
-- One-line extension to the already-landed M1 smoke gate
-  (`cbsd-rs/cbsbuild/tests/m1_smoke.rs`): add `--versions-dir <tempdir>` to the
-  existing `cbsbuild build` invocation so the gate exercises the
-  resolved-CLI-flag path end-to-end. The smoke gate is operator-environment-
-  gated (`CBSCORE_TEST_SMOKE=1`) and the new flag is a no-op for the build
-  subcommand itself; the assertion is that the test still passes when the flag
-  is in the argv. Lands in this Commit 3 — keeps the smoke gate's M1-cut fixture
-  and seq-004's new flag in lockstep.
+  `std::io::Error` leaked through). No M1 smoke-gate extension in this commit —
+  `cbsbuild build` does not accept `--versions-dir` (per design 004 §OQ4 the
+  build subcommand is a read site that takes the descriptor path as an explicit
+  argument), so adding the flag to the gate's existing invocation would produce
+  a clap parse error. The resolver itself is fully covered by the four unit
+  tests above.
 
 ## End-of-feature acceptance
 
@@ -428,7 +452,10 @@ After all three commits land:
     Commit 1.
   - `cbsd-rs/cbscore-types/src/versions/errors.rs` (line 19) — resolves in
     Commit 2.
-  - `cbsd-rs/cbscore/src/versions.rs` (line 10) — resolves in Commit 2.
+  - `cbsd-rs/cbscore/src/versions.rs` (line 10, inside the crate-level `//!`
+    module doc) — Commit 2 rewrites the module doc when it adds
+    `pub mod resolve;` and `pub use resolve::resolve_root;`. The implementer
+    updates the doc-block prose rather than deleting a single TODO line.
   - `cbsd-rs/cbscore/src/utils/git.rs` (lines 231–232) — resolves in Commit 2.
   - `cbsd-rs/cbsbuild/src/cmds/versions.rs` (line 166) — resolves in Commit 3.
 - Plans README progress table updates: the §"Related plans › seq-004" bullet
