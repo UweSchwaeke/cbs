@@ -5,8 +5,10 @@
 //!
 //! - `versions create <VERSION>` — resolve component refs via
 //!   `git ls-remote`, build a `VersionDescriptor`, write to
-//!   `<git-root>/_versions/<type>/<VERSION>.json` (Python-parity
-//!   hardcoded path; seq-004 makes it configurable).
+//!   `<root>/<type>/<VERSION>.json` where `<root>` is resolved by
+//!   [`cbscore::versions::resolve_root`] from the CLI flag
+//!   `--versions-dir`, the config field `paths.versions`, or the
+//!   `<git-root>/_versions` Python-parity fallback (design 004).
 //! - `versions list [--path DIR]` — list known releases from S3
 //!   via [`cbscore::releases::s3::check_released_components`].
 //! - `versions show <descriptor.json>` — pretty-print a descriptor.
@@ -83,6 +85,12 @@ pub(crate) struct CreateArgs {
     /// absent.
     #[arg(long = "image-tag")]
     pub image_tag: Option<String>,
+    /// Override the descriptor store root for this invocation.
+    /// Precedence: this flag, then `Config.paths.versions` in
+    /// cbs-build.config.yaml, then `<git-root>/_versions` if invoked
+    /// inside a git checkout.
+    #[arg(long = "versions-dir", value_name = "PATH")]
+    pub versions_dir: Option<Utf8PathBuf>,
 }
 
 /// `cbsbuild versions list` arguments.
@@ -161,23 +169,48 @@ async fn handle_create(args: CreateArgs, config_path: &Utf8Path) -> Result<()> {
         .await
         .with_context(|| format!("creating descriptor for '{}'", args.version))?;
 
-    // Python-parity output path: <cwd>/_versions/<type>/<VERSION>.json.
-    // seq-004 (post-M1) swaps the hardcoded shape for a configurable
-    // resolver via Config.paths.versions + --versions-dir.
-    let cwd = camino::Utf8PathBuf::from_path_buf(
-        std::env::current_dir().context("current_dir() failed")?,
+    let dst = write_resolved_descriptor(
+        args.versions_dir.as_deref(),
+        &cfg,
+        version_type,
+        &args.version,
+        &desc,
     )
-    .map_err(|p| anyhow::anyhow!("non-UTF8 cwd: {}", p.display()))?;
-    let dst = cwd
-        .join("_versions")
-        .join(&args.version_type)
-        .join(format!("{}.json", args.version));
-
-    write_descriptor(&desc, &dst)
-        .await
-        .with_context(|| format!("writing descriptor to '{dst}'"))?;
+    .await?;
     println!("{dst}");
     Ok(())
+}
+
+/// Resolve the descriptor-store root via
+/// [`cbscore::versions::resolve_root`], compute the descriptor's
+/// on-disk path via
+/// [`cbscore_types::versions::desc::descriptor_path`], refuse to
+/// overwrite an existing file, and write `desc` as JSON. Returns the
+/// path written, so the caller can echo it.
+///
+/// Extracted from `handle_create` so the four plan-mandated
+/// integration tests for `versions create`'s write-path behaviour
+/// (precedence ladder + EEXIST + OQ5 error text) can drive it
+/// without the surrounding component-loading / git-ls-remote /
+/// `version_create_helper` machinery.
+async fn write_resolved_descriptor(
+    cli_versions_dir: Option<&Utf8Path>,
+    cfg: &cbscore_types::config::Config,
+    version_type: cbscore_types::versions::VersionType,
+    version: &str,
+    desc: &cbscore_types::versions::desc::VersionDescriptor,
+) -> Result<Utf8PathBuf> {
+    let root = cbscore::versions::resolve_root(cli_versions_dir, cfg)
+        .await
+        .context("resolving descriptor store root")?;
+    let dst = cbscore_types::versions::desc::descriptor_path(&root, version_type, version);
+    if dst.exists() {
+        return Err(cbscore_types::versions::VersionError::AlreadyExists { path: dst }.into());
+    }
+    write_descriptor(desc, &dst)
+        .await
+        .with_context(|| format!("writing descriptor to '{dst}'"))?;
+    Ok(dst)
 }
 
 async fn handle_list(args: ListArgs, config_path: &Utf8Path) -> Result<()> {
@@ -246,6 +279,13 @@ fn parse_component_refs(raw: &[String]) -> Result<Vec<(String, String)>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cbscore_types::config::{Config, PathsConfig};
+    use cbscore_types::versions::{
+        VersionError, VersionType,
+        desc::{VersionComponent, VersionDescriptor, VersionImage, VersionSignedOffBy},
+    };
+    use std::process::Command;
+    use std::sync::Mutex;
 
     #[test]
     fn parse_component_refs_basic() {
@@ -268,5 +308,219 @@ mod tests {
     fn parse_component_refs_rejects_empty_parts() {
         assert!(parse_component_refs(&["@main".into()]).is_err());
         assert!(parse_component_refs(&["ceph@".into()]).is_err());
+    }
+
+    // ----- write_resolved_descriptor: plan-mandated integration tests -----
+
+    /// Shared mutex for tests that mutate the process cwd; matches the
+    /// pattern in `cbscore::versions::resolve::tests` for the same
+    /// reason (tokio's multi-threaded test runtime can interleave cwd
+    /// mutations across `#[tokio::test]` tasks).
+    static CWD_LOCK: Mutex<()> = Mutex::new(());
+
+    fn stub_config(override_versions: Option<&str>) -> Config {
+        Config {
+            paths: PathsConfig {
+                components: vec!["/c".into()],
+                scratch: "/s".into(),
+                scratch_containers: "/s/c".into(),
+                ccache: None,
+                versions: override_versions.map(Utf8PathBuf::from),
+            },
+            storage: None,
+            signing: None,
+            logging: None,
+            secrets: vec![],
+            vault: None,
+        }
+    }
+
+    /// Builds a minimal `VersionDescriptor` that round-trips through
+    /// `write_descriptor` / `read_descriptor`; the field values are
+    /// content-irrelevant to the tests below — only the on-disk path
+    /// is asserted.
+    fn stub_descriptor(version: &str) -> VersionDescriptor {
+        VersionDescriptor {
+            version: version.into(),
+            title: format!("Release {version}"),
+            signed_off_by: VersionSignedOffBy {
+                user: "ops".into(),
+                email: "ops@cbs.invalid".into(),
+            },
+            image: VersionImage {
+                registry: "quay.io".into(),
+                name: "ces-builder".into(),
+                tag: version.into(),
+            },
+            components: vec![VersionComponent {
+                name: "ceph".into(),
+                repo: "https://github.com/ceph/ceph.git".into(),
+                ref_: "abcdef1234".into(),
+            }],
+            distro: "centos".into(),
+            el_version: 9,
+        }
+    }
+
+    /// `--versions-dir <PATH>` wins: descriptor lands under
+    /// `<PATH>/<type>/<VERSION>.json` even when `paths.versions` and
+    /// the git fallback would point elsewhere.
+    #[tokio::test]
+    async fn cli_versions_dir_wins_and_writes_under_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let dir_path = Utf8PathBuf::try_from(dir.path().to_owned()).unwrap();
+        let cfg = stub_config(Some("/should-be-ignored"));
+        let desc = stub_descriptor("19.2.3-dev1");
+
+        let written = write_resolved_descriptor(
+            Some(dir_path.as_path()),
+            &cfg,
+            VersionType::Dev,
+            "19.2.3-dev1",
+            &desc,
+        )
+        .await
+        .expect("write");
+
+        let expected = dir_path
+            .canonicalize_utf8()
+            .unwrap()
+            .join("dev")
+            .join("19.2.3-dev1.json");
+        assert_eq!(written, expected);
+        assert!(
+            written.exists(),
+            "descriptor file should exist at {written}"
+        );
+    }
+
+    /// Config-field path wins when `--versions-dir` is unset.
+    #[tokio::test]
+    async fn config_versions_path_wins_when_cli_unset() {
+        let dir = tempfile::tempdir().unwrap();
+        let dir_path = Utf8PathBuf::try_from(dir.path().to_owned()).unwrap();
+        let cfg = stub_config(Some(dir_path.as_str()));
+        let desc = stub_descriptor("19.2.3");
+
+        let written = write_resolved_descriptor(None, &cfg, VersionType::Release, "19.2.3", &desc)
+            .await
+            .expect("write");
+
+        let expected = dir_path
+            .canonicalize_utf8()
+            .unwrap()
+            .join("release")
+            .join("19.2.3.json");
+        assert_eq!(written, expected);
+        assert!(written.exists());
+    }
+
+    /// With both overrides unset, the resolver falls back to the
+    /// current git checkout — descriptor lands under
+    /// `<git-root>/_versions/<type>/<VERSION>.json`, byte-identical
+    /// to the Python implementation.
+    ///
+    /// `await_holding_lock` is allowed: `CWD_LOCK` is the right
+    /// serialisation primitive because the process cwd is shared
+    /// across all tokio tasks; an async-aware mutex would solve the
+    /// same problem at higher cost.
+    #[allow(clippy::await_holding_lock)]
+    #[tokio::test]
+    async fn fallback_lands_under_git_root_versions_subdir() {
+        let repo = tempfile::tempdir().unwrap();
+        let status = Command::new("git")
+            .arg("init")
+            .arg("-q")
+            .current_dir(repo.path())
+            .status()
+            .expect("git init");
+        assert!(status.success(), "git init failed");
+
+        let _guard = CWD_LOCK.lock().expect("cwd lock");
+        let prev_cwd = std::env::current_dir().expect("cwd");
+        std::env::set_current_dir(repo.path()).expect("cd repo");
+        let cfg = stub_config(None);
+        let desc = stub_descriptor("19.2.3-dev1");
+        let written =
+            write_resolved_descriptor(None, &cfg, VersionType::Dev, "19.2.3-dev1", &desc).await;
+        std::env::set_current_dir(&prev_cwd).expect("restore cwd");
+        let written = written.expect("write");
+
+        let expected = Utf8PathBuf::try_from(repo.path().canonicalize().expect("canon"))
+            .unwrap()
+            .join("_versions")
+            .join("dev")
+            .join("19.2.3-dev1.json");
+        assert_eq!(written, expected);
+        assert!(written.exists());
+    }
+
+    /// With both overrides unset and the cwd outside any git
+    /// checkout, the command surfaces `VersionError::NoDescriptorRoot`
+    /// (rendered by the caller as the OQ5 four-line operator-
+    /// actionable text). The test asserts the typed error rather than
+    /// the rendered text — the rendering is already snapshot-tested
+    /// in `cbscore::versions::resolve::tests`.
+    #[allow(clippy::await_holding_lock)]
+    #[tokio::test]
+    async fn no_overrides_outside_git_returns_no_descriptor_root() {
+        let outside = tempfile::tempdir().unwrap();
+
+        let _guard = CWD_LOCK.lock().expect("cwd lock");
+        let prev_cwd = std::env::current_dir().expect("cwd");
+        std::env::set_current_dir(outside.path()).expect("cd outside");
+        let cfg = stub_config(None);
+        let desc = stub_descriptor("19.2.3");
+        let result = write_resolved_descriptor(None, &cfg, VersionType::Dev, "19.2.3", &desc).await;
+        std::env::set_current_dir(&prev_cwd).expect("restore cwd");
+
+        let err = result.expect_err("must fail");
+        let typed = err
+            .downcast_ref::<VersionError>()
+            .expect("expected VersionError");
+        assert!(
+            matches!(typed, VersionError::NoDescriptorRoot { .. }),
+            "expected NoDescriptorRoot, got {typed:?}",
+        );
+    }
+
+    /// Re-running `versions create` against an existing descriptor
+    /// file refuses to overwrite (Python EEXIST parity); surfaces
+    /// `VersionError::AlreadyExists`.
+    #[tokio::test]
+    async fn refuses_to_overwrite_existing_descriptor() {
+        let dir = tempfile::tempdir().unwrap();
+        let dir_path = Utf8PathBuf::try_from(dir.path().to_owned()).unwrap();
+        let cfg = stub_config(None);
+        let desc = stub_descriptor("19.2.3-dev1");
+
+        // First call writes successfully.
+        write_resolved_descriptor(
+            Some(dir_path.as_path()),
+            &cfg,
+            VersionType::Dev,
+            "19.2.3-dev1",
+            &desc,
+        )
+        .await
+        .expect("first write");
+
+        // Second call refuses.
+        let err = write_resolved_descriptor(
+            Some(dir_path.as_path()),
+            &cfg,
+            VersionType::Dev,
+            "19.2.3-dev1",
+            &desc,
+        )
+        .await
+        .expect_err("must refuse");
+        let typed = err
+            .downcast_ref::<VersionError>()
+            .expect("expected VersionError");
+        assert!(
+            matches!(typed, VersionError::AlreadyExists { .. }),
+            "expected AlreadyExists, got {typed:?}",
+        );
     }
 }

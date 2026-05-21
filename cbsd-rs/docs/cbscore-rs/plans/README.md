@@ -48,11 +48,11 @@ The following are tracked under their own design seq, not folded into this plan:
 - **seq-004** — configurable `VersionDescriptor` location
   (`Config.paths.versions` + `--versions-dir`). Originally drafted to interleave
   into M1; that interleave slipped (Phase 6 landed without it, Phase 7
-  followed). seq-004 now lands as a backwards-compatible additive change on top
-  of the M2 release — existing operator configs keep working unchanged via the
+  followed). seq-004 landed on top of the M2 release as a backwards-compatible
+  additive change — existing operator configs keep working unchanged via the
   `<git-root>/_versions` fallback. Plan:
   [`004-20260513T0900-configurable-version-descriptor-location.md`](004-20260513T0900-configurable-version-descriptor-location.md)
-  (3 commits, ~500 LOC; `Status: Pending`).
+  (3 commits; `Status: Done`).
 - **seq-005** — optional positional VERSION on `cbsbuild versions create`
   (post-M1, lands as a 1.x.0 minor add).
 

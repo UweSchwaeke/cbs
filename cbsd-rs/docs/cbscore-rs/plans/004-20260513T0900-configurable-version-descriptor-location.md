@@ -55,11 +55,11 @@ coverage lives in Commit 3's unit tests.
 
 ## Progress
 
-| #   | Commit                                                                                | ~LOC | Status  |
-| --- | ------------------------------------------------------------------------------------- | ---- | ------- |
-| 1   | `cbscore-types: add Config.paths.versions, VersionType::as_dir_name, descriptor_path` | ~120 | Pending |
-| 2   | `cbscore: add versions::resolve_root + VersionError::NoDescriptorRoot`                | ~200 | Pending |
-| 3   | `cbsbuild: --versions-dir flag + versions create write-path cutover`                  | ~180 | Pending |
+| #   | Commit                                                                                | ~LOC | Status |
+| --- | ------------------------------------------------------------------------------------- | ---- | ------ |
+| 1   | `cbscore-types: add Config.paths.versions, VersionType::as_dir_name, descriptor_path` | ~290 | Done   |
+| 2   | `cbscore: add versions::resolve_root + VersionError::NoDescriptorRoot`                | ~390 | Done   |
+| 3   | `cbsbuild: --versions-dir flag + versions create write-path cutover`                  | ~270 | Done   |
 
 **Estimate:** ~500 LOC, 3 commits.
 
