@@ -40,6 +40,13 @@ coverage lives in Commit 3's unit tests.
   (`Config.schema_version = 1` on HEAD) and OQ-B (`VersionType` already uses
   `rename_all = "lowercase"`, so `as_dir_name` strings match the serde wire);
   cited the visibility-audit commit by hash.
+- v4 review sweep (2026-05-21) — design 004 only: removed a residual carve-out
+  claim in §Migration tail ("every change bumps' rule applies only to changes
+  that alter the interpretation of existing fields"); added the mandatory
+  `skip_serializing_if` to the §Design Sketch §Config schema code block and the
+  §Migration table Step 1 entry; neutralised the §OQ6 "expected outcome"
+  speculation about future bump-policy resolution. Plan was clean; no plan edits
+  in this pass.
 
 ## Progress
 

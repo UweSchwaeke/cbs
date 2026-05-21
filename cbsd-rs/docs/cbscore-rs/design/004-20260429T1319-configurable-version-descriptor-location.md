@@ -209,11 +209,10 @@ Concrete consequences:
 - No transform code, no deprecation warning, no operator manual edit.
 - When the schema-version bump policy is brought back into scope (in some future
   design that is out of scope here), seq-004's no-bump landing will be reviewed
-  alongside every other deferred-bump change. The expected outcome is either a
-  one-shot retroactive bump of all deferred additive changes together, or a
-  carve-out in the bump rule for `Option<T>` with `#[serde(default)]` +
-  `#[serde(skip_serializing_if)]`; either resolution is compatible with
-  seq-004's current shape.
+  alongside every other deferred-bump change. Which resolution that future
+  policy design picks is its own decision; seq-004's current shape (additive
+  optional field with `#[serde(default)]` + `#[serde(skip_serializing_if)]`) is
+  compatible with any of the plausible resolutions.
 
 ### OQ7 — CLI-flag bypass interactions
 
@@ -264,9 +263,9 @@ pub struct PathsConfig {
     pub components:         Vec<Utf8PathBuf>,
     pub scratch:            Utf8PathBuf,
     pub scratch_containers: Utf8PathBuf,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ccache:             Option<Utf8PathBuf>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub versions:           Option<Utf8PathBuf>,   // NEW (design 004)
 }
 ```
@@ -461,7 +460,7 @@ Listed in design 003 §Bypass Behaviour for completeness.
 
 | Step | Where                                              | What                                                                                                                                                                                                                                 |
 | ---- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 1    | `cbscore-types/src/config/paths.rs`                | Add `versions: Option<Utf8PathBuf>` field with `#[serde(default)]`.                                                                                                                                                                  |
+| 1    | `cbscore-types/src/config/paths.rs`                | Add `versions: Option<Utf8PathBuf>` field with `#[serde(default, skip_serializing_if = "Option::is_none")]` (both attributes mandatory — see §OQ6 for the round-trip dependency).                                                    |
 | 2    | `cbscore-types/src/versions/desc.rs`               | Add `descriptor_path()` helper with absolute-root doc contract and a `debug_assert!(root.is_absolute())` guard. Add `VersionType::as_dir_name()` if not already present.                                                             |
 | 3    | `cbscore/src/versions/mod.rs`                      | Add `resolve_root()` and its `canonicalize_root()` helper. Add three `VersionError` variants: `NoDescriptorRoot` (OQ5 text), `DescriptorRootResolve { path, source: std::io::Error }`, and `DescriptorRootNotUtf8 { path: String }`. |
 | 4    | `cbsbuild/src/cmds/versions.rs`                    | Add `--versions-dir` flag. Call `resolve_root()` then `descriptor_path()`. Drop the old hardcoded `repo_root.join("_versions").join(type).join(...)` chain.                                                                          |
@@ -479,7 +478,6 @@ Steps 1–4 land in the seq-004 post-M2 minor release. Step 5 lands when design
 | Operator using `--for-systemd-install` / `--for-containerized-run`      | Re-run `cbsbuild config init --for-systemd-install` (or equivalent) on the bypass-pre-fill side; the regenerated `cbscore.config.yaml` will include `paths.versions: /cbs/_versions`. Alternatively, manually add the field to the existing config.                                                                         |
 | Operator on a worker host without a git checkout (today: blocked)       | Set `paths.versions` in config or pass `--versions-dir`. The blocking constraint is removed.                                                                                                                                                                                                                                |
 
-No Python-side patches; no schema-version bump (per OQ6, the new field is an
-optional additive extension that round-trips through both old and new binaries —
-the "every change bumps" rule applies only to changes that alter the
-interpretation of existing fields).
+No Python-side patches; no schema-version bump (per OQ6, bump policy is
+currently deferred across every design in the corpus — see §OQ6 for the full
+rationale).
