@@ -228,9 +228,10 @@ pub async fn git_rev_parse(repo_path: &Utf8Path, ref_: &str) -> Result<String, G
 /// Returns the absolute path of the git checkout's top-level
 /// directory.
 ///
-/// Used by seq-004 Commit 2's `resolve_root` as the fallback when no
-/// `--versions-dir` / `paths.versions` is supplied — the function
-/// signature is pinned across phases.
+/// Used by [`crate::versions::resolve_root`] as the third-precedence
+/// fallback when neither `--versions-dir` nor `Config.paths.versions`
+/// is set; `NotInRepo` distinguishes the operator-actionable
+/// "outside a git checkout" case from other rev-parse failures.
 ///
 /// # Errors
 ///
