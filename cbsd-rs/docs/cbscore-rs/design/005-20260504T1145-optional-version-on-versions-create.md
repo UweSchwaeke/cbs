@@ -2,17 +2,35 @@
 
 ## Status
 
-**Complete — ready for review.** This design refines the CLI surface of
+**Approved for seq-005 implementation.** This design refines the CLI surface of
 `cbsbuild versions create`: making the VERSION positional argument optional and
 generating a UUIDv7 string when the operator omits it. It exists as a follow-up
 to design 002 (which preserves Python parity — VERSION required) and design 004
 (which made the descriptor-store location configurable).
 
+The seq-005 plan's drafting sweep flagged two design–code mismatches that were
+resolved during the planning phase:
+
+- **OQ-A resolved 2026-05-21** — design 005 §Resolver previously claimed
+  `validate_version` already existed in the Rust port. It doesn't; the Rust port
+  shipped permissive at M1 cut. Resolution: **match Python regex behaviour,
+  accept UUIDv7 as an explicit exception** — `validate_version` is added as a
+  new helper and called unconditionally. §Resolver and §Migration table below
+  reflect this.
+- **OQ-B resolved 2026-05-22** — design 005 §Patch walker previously showed a
+  per-skipped-subdir warn loop with UUIDv7-specific wording. The Rust port
+  already implements warn-and-skip with a per-walk warn and generic wording
+  (seq-002 Phase 5 Commit 1). Resolution: **keep the shipped per-walk shape;
+  design 005 §Patch walker is rewritten to match, and §Migration table step 4 is
+  marked already-complete pre-seq-005**.
+
 This design is intentionally **out of M1 scope**. M1 ships with VERSION
 required, matching Python parity. Once M1 is stable, 005's implementation lands
-as a 1.x.0 minor add. All eight Open Questions are resolved (see § Resolved
-Decisions); the per-affected-area analysis lives under § Effects of UUIDv7
-VERSIONs; the §Design Sketch and §Migration sections are populated.
+as a backwards-compatible additive change against the M1-1.0.0 baseline (no
+crate-version bump; cbscore-rs stays at 1.0.0). All eight Open Questions are
+resolved (see § Resolved Decisions); the per-affected-area analysis lives under
+§ Effects of UUIDv7 VERSIONs; the §Design Sketch and §Migration sections are
+populated.
 
 ## Context
 
@@ -84,7 +102,8 @@ it on every invocation is the design goal.
 - Python-side changes. `cbscore/` (the Python package) keeps the
   VERSION-required CLI. This design lands only in the Rust `cbsbuild` /
   `cbscore` crates.
-- M1 scope. The design ships post-M1 as a 1.x.0 minor add. M1 itself ships with
+- M1 scope. The design ships post-M1 as a backwards-compatible additive change
+  on top of the 1.0.0 baseline; no crate-version bump. M1 itself ships with
   VERSION required, matching Python parity.
 
 ## Open Questions
@@ -390,7 +409,7 @@ clap parses an absent positional as `None`. The handler keeps every other flag �
 ### Resolver
 
 `cbscore::versions::resolve_version` (alongside `resolve_root` from design 004,
-in `cbscore/src/versions/mod.rs`):
+in `cbscore/src/versions/resolve.rs`):
 
 ```rust
 pub fn resolve_version(cli: Option<&str>) -> String {
@@ -405,55 +424,94 @@ The function is sync and infallible. `Uuid::now_v7()` reads the system clock
 internally; no IO, no errors to propagate. Returns the canonical hyphenated
 36-char form.
 
-The supplied-VERSION path keeps the existing regex validation by calling the
-equivalent of `_validate_version()` after resolution but only when the caller
-passed an explicit value:
+Validation runs **unconditionally** against the resolved value (operator-
+supplied or resolver-generated UUIDv7). The validator accepts either a parseable
+`[prefix-]vM.m.p[-suffix]` string (matching Python's `_validate_version` in
+`cbscore/versions/create.py:37–42` — regex match plus minor+patch both present)
+or any UUIDv7. The two paths look like this from the CLI handler:
 
 ```rust
 let version = resolve_version(args.version.as_deref());
-if args.version.is_some() {
-    validate_version(&version)?;   // existing [prefix-]vM.m.p[-suffix] check
+validate_version(&version)?;   // accepts [prefix-]vM.m.p[-suffix] OR UUIDv7
+```
+
+The validator itself:
+
+```rust
+pub fn validate_version(v: &str) -> Result<(), CbsError> {
+    // UUIDv7 fast path — accepts resolver-generated and operator-typed v7s.
+    if let Ok(uuid) = uuid::Uuid::parse_str(v)
+        && uuid.get_version() == Some(uuid::Version::SortRand)
+    {
+        return Ok(());
+    }
+    // Otherwise: Python parity — regex match + minor + patch.
+    let parsed = parse_version(v)?;
+    if parsed.minor.is_some() && parsed.patch.is_some() {
+        Ok(())
+    } else {
+        Err(CbsError::MalformedVersion(v.to_owned()))
+    }
 }
 ```
 
-A UUIDv7 deliberately bypasses validation — it does not match the regex by
-construction.
+The unconditional call is simpler than gating on `args.version.is_some()` and
+the UUIDv7 carve-out also accepts operator-typed UUIDv7 strings (uncommon — the
+no-VERSION shortcut already gives operators UUIDv7s — but not actively
+rejected).
+
+**Behaviour change relative to the pre-seq-005 Rust port.** The Rust port has
+been accepting any string verbatim into `desc.version` since M1 cut (no
+validation surface). seq-005's `validate_version` closes the gap with Python:
+previously-accepted strings like `19`, `19.2`, or `foobar` now fail with
+`MalformedVersion(<the-string>)` and no descriptor file is written. The seq-005
+CHANGELOG entry names this behaviour change explicitly.
 
 ### Title generator
 
-`cbscore::versions::create::do_version_title` (port of
-`cbscore/versions/create.py:_do_version_title`) branches on whether the version
-is a UUIDv7:
+`cbscore::versions::create::make_title` (the existing private helper at
+`cbscore/src/versions/create.rs:209`) gains a UUIDv7 detection branch. Today's
+shape is `fn make_title(version: &str, version_type: VersionType) -> String`
+(private to `create.rs`, infallible). seq-005 keeps that signature unchanged and
+adds the branch:
 
 ```rust
-pub fn do_version_title(
-    version: &str,
-    version_type: VersionType,
-) -> Result<String, VersionError> {
-    let type_desc = version_type.get_desc();   // "Development" / "General Availability" / ...
-    if let Ok(uuid) = uuid::Uuid::parse_str(version) {
-        if uuid.get_version() == Some(uuid::Version::SortRand) {
-            let ts = uuid_v7_timestamp(&uuid);     // chrono::DateTime<Utc>
-            return Ok(format!(
-                "Release {type_desc} version created at {}",
-                ts.format("%Y-%m-%dT%H:%M:%SZ"),
-            ));
-        }
+fn make_title(version: &str, version_type: VersionType) -> String {
+    let type_desc = match version_type {
+        VersionType::Dev => "Development",
+        VersionType::Test => "Test",
+        VersionType::Ci => "CI",
+        VersionType::Release => "Release",
+    };
+    if let Ok(uuid) = uuid::Uuid::parse_str(version)
+        && uuid.get_version() == Some(uuid::Version::SortRand)
+        && let Some(ts) = crate::versions::resolve::uuid_v7_timestamp(&uuid)
+    {
+        let formatted = ts.format("%Y-%m-%dT%H:%M:%SZ");
+        return format!("Release {type_desc} version created at {formatted}");
     }
-    // Supplied-VERSION path: existing parse_version + format.
-    let parsed = parse_version(version)?;        // -> MalformedVersion on regex miss
-    Ok(format!("Release {type_desc} {}", parsed.title()))
+    format!("Release {type_desc} version {version}")
 }
 ```
 
-The return type is `Result<String, VersionError>` because the supplied- VERSION
-branch's `parse_version()` is fallible. In practice the error is unreachable:
-`cbsbuild versions create` calls `validate_version` (the same regex) earlier in
-the handler, so a malformed VERSION fails before `do_version_title` runs. The
-`?` therefore never fires on the live path — but the type signature stays honest
-about the failure mode rather than relying on a structural "this can't happen"
-assumption. Callsite is
-`let title = do_version_title(&version, version_type)?;`.
+The function stays **infallible**. The supplied-VERSION branch is a literal
+format string with the unmodified VERSION embedded — no `parse_version` call, no
+`Result` return — because the Rust port's `make_title` does not parse the
+version (it diverges from Python's `_do_version_title` here, which the existing
+`cbscore/src/versions/create.rs:209` already established at M1 cut). The UUIDv7
+branch fires only when `Uuid::parse_str` succeeds AND `get_version()` returns
+`Some(Version::SortRand)` AND the timestamp extraction yields `Some(_)`; if any
+of the three fails, the function falls through to the existing format string.
+
+`uuid_v7_timestamp` returning `None` is defensive: per design 005 §Resolver and
+the validator, a `validate_version`-passed UUIDv7 always has a valid timestamp
+on a sane host, so the `None` arm is a defensive fallthrough rather than a
+live-path branch.
+
+`validate_version` runs upfront in `cbsbuild versions create` so a malformed
+VERSION never reaches `make_title` on the live path. The `Uuid::parse_str`
+fallthrough still handles the off-path case (a test that calls `make_title`
+directly with `"foobar"`).
 
 `uuid_v7_timestamp()` extracts the leading 48 bits as milliseconds since the
 Unix epoch (per RFC 9562 §5.7) and converts to `chrono::DateTime<Utc>`. The
@@ -477,63 +535,48 @@ positives.
 
 ### Patch walker
 
-The Rust port of `cbscore/builder/prepare.py:_get_patches_by_prio` adds a guard
-around the major/minor extractors so that a UUIDv7 input does not propagate a
-`MalformedVersion` error, and emits a `tracing::warn!` per skipped version-keyed
-subdirectory so the omission is visible in the build log. Schematically:
+**Already implemented pre-seq-005.** The Rust port of
+`cbscore/builder/prepare.py:_get_patches_by_prio` (at
+`cbscore/src/builder/prepare.rs:255–284`, landed in seq-002 Phase 5 Commit 1)
+already handles the malformed-VERSION case as warn-and-skip:
 
 ```rust
-// Cache the malformed-version signal once per walk; both extractors fail
-// uniformly on the same input, so this avoids duplicate warns from the
-// per-subdir matching below.
-let minor = get_minor_version(filter_version); // Result<Option<String>, MalformedVersion>
-let major = get_major_version(filter_version); // Result<String,         MalformedVersion>
-let version_is_malformed = minor.is_err() && major.is_err();
-
-for subdir in version_keyed_subdirs(patches_dir)? {
-    let name = subdir.file_name();
-    let matches_minor = matches!(&minor, Ok(Some(mv)) if name == mv.as_str());
-    let matches_major = matches!(&major, Ok(mv)       if name == mv.as_str());
-
-    if matches_minor || matches_major {
-        // descend into the matched subdir (priority logic per Python source)
-    } else if version_is_malformed {
-        // UUIDv7 case — surface the skip so an expected patch that does not
-        // apply is not a silent omission. One warn per skipped subdir per walk.
-        tracing::warn!(
-            target: "cbscore::builder::prepare",
-            "skipping version-keyed patch subdir '{}' — VERSION is a UUIDv7, \
-             no version match possible",
-            name,
-        );
-        // skip this subdirectory
-    } else {
-        // parseable VERSION + name mismatch — silently skip (existing behaviour)
-    }
+let major = get_major_version(version).ok();
+let minor = get_minor_version(version).ok().flatten();
+if major.is_none() {
+    tracing::warn!(
+        target: TARGET_BUILDER_PREPARE,
+        version,
+        "version-keyed patch subdirs skipped — VERSION does not parse \
+         as `[prefix-]vM.m[.p][-suffix]`; only top-level patches apply",
+    );
 }
+// … walker descends only into name-matching subdirs; with major=None,
+// no version-keyed subdir matches, so only top-level patches apply.
 ```
 
-For a UUIDv7, both `get_minor_version` and `get_major_version` return
-`Err(MalformedVersion)`; the walker emits one `tracing::warn!` per version-keyed
-subdirectory it skips and falls through to the top-level `patches/*.patch` apply
-path, producing the desired graceful degradation (item 1 under §Effects of
-UUIDv7 VERSIONs). The target string `"cbscore::builder::prepare"` matches the
-naming design 002 §Build Pipeline uses for this module; Phase 1 of the
-cbscore-rs port defines the matching `pub const TARGET_*: &str` in
-`cbscore-types::logger`. The schematic uses the string literal directly to stay
-decoupled from Phase 1's exact constant identifier; the warn line carries the
-existing target hierarchy so `CBS_DEBUG` filtering keeps working unchanged.
+One `tracing::warn!` is emitted per walk (not per skipped subdir) when VERSION
+fails to parse; the walker then falls through to the top-level `patches/*.patch`
+apply path. UUIDv7 builds will exercise this code path unchanged — UUIDv7
+strings don't parse as `[prefix-]vM.m[.p][-suffix]`, so `major` is `None`, the
+warn fires, version-keyed subdirs are skipped, and the top-level patches apply.
+
+**Resolved decision (seq-005 OQ-B).** Earlier drafts of this section described a
+per-skipped-subdir warn loop with UUIDv7-specific wording. That shape was
+overspec for the operator-UX problem it solves — per-subdir warns produce N
+near-identical lines for N subdirs when the diagnostic value is identical across
+them (all miss uniformly when VERSION doesn't parse). The shipped per-walk shape
+with generic wording is correct and complete; seq-005 makes no patch-walker
+changes.
 
 This is a behavioural divergence from the Python source, which propagates
 `MalformedVersionError` uncaught through `_apply_patches`. The Rust port treats
-the malformed-version case as **warn-and-skip** rather than "fail" so that the
-new UUIDv7 path does not reach `_apply_patches` with an exception in flight, and
-so the operator sees the skip in the log rather than being silently denied a
-patch they put on disk. For a supplied VERSION that fails the regex, the same
-guard applies — but `cbsbuild versions create` already validates supplied
-VERSION upfront via `validate_version`, so a malformed-supplied-VERSION
-descriptor is not written in the first place; the guard's only live trigger is
-UUIDv7 builds.
+the malformed-version case as **warn-and-skip** so the UUIDv7 path does not
+reach `_apply_patches` with an exception in flight. For a supplied VERSION that
+fails the regex, `cbsbuild versions create` rejects it upfront via
+`validate_version` (per OQ-A) — so a malformed- supplied-VERSION descriptor is
+not written in the first place, and the walker's malformed-VERSION branch's only
+live trigger is UUIDv7 builds.
 
 ### Cargo dep delta
 
@@ -550,15 +593,17 @@ The `v4` feature is already listed (design 001 §Cargo Sketch); design 005 adds
 
 ### Code
 
-| Step | Where                            | What                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| ---- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1    | `cbscore/Cargo.toml`             | Add `"v7"` to the `uuid` features list (existing `["v4"]` becomes `["v4", "v7"]`).                                                                                                                                                                                                                                                                                                                                                                                  |
-| 2    | `cbscore/src/versions/mod.rs`    | Add `resolve_version(cli: Option<&str>) -> String`. Add `uuid_v7_timestamp` helper (or inline at the single call site in the title generator).                                                                                                                                                                                                                                                                                                                      |
-| 3    | `cbscore/src/versions/create.rs` | Branch `do_version_title` on UUIDv7 (parse + version-num check) and emit the created-at form. Keep the supplied-VERSION path unchanged.                                                                                                                                                                                                                                                                                                                             |
-| 4    | `cbscore/src/builder/prepare.rs` | In the Rust port of `_get_patches_by_prio`, treat `Err(MalformedVersion)` from `get_minor_version` / `get_major_version` as **warn-and-skip** rather than propagating — emit a `tracing::warn!` per skipped version-keyed subdir (see §Design Sketch › §Patch walker for the schematic). **New behaviour relative to the Python source**, which propagates the error through `_apply_patches`. Required for UUIDv7 builds to terminate in `_apply_patches` cleanly. |
-| 5    | `cbsbuild/src/cmds/versions.rs`  | Change the positional `version: String` to `version: Option<String>`. Call `resolve_version` and gate the regex `validate_version` call on `args.version.is_some()`. No flag, env-var, or output-line changes.                                                                                                                                                                                                                                                      |
+| Step | Where                             | What                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ---- | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1    | `cbscore/Cargo.toml`              | Add `"v7"` to the `uuid` features list (existing `["v4"]` becomes `["v4", "v7"]`).                                                                                                                                                                                                                                                                                                                                                             |
+| 2a   | `cbscore/src/versions/resolve.rs` | Add `resolve_version(cli: Option<&str>) -> String` and the `uuid_v7_timestamp(&uuid) -> Option<DateTime<Utc>>` helper (alongside the `resolve_root` resolver that landed in seq-004).                                                                                                                                                                                                                                                          |
+| 2b   | `cbscore/src/versions/utils.rs`   | Add `pub fn validate_version(v: &str) -> Result<(), CbsError>` accepting either `[prefix-]vM.m.p[-suffix]` (regex match plus minor+patch present, matching Python `_validate_version`) or a UUIDv7 (operator-supplied or resolver-generated). See §Design Sketch › §Resolver for the implementation shape.                                                                                                                                     |
+| 3    | `cbscore/src/versions/create.rs`  | Add the UUIDv7 detection branch to the existing private `make_title(&str, VersionType) -> String` (at `create.rs:209`). Signature unchanged — function stays private and infallible. Keep the supplied-VERSION path unchanged.                                                                                                                                                                                                                 |
+| 4    | `cbscore/src/builder/prepare.rs`  | **Already complete pre-seq-005.** `get_patch_list` at `cbscore/src/builder/prepare.rs:255–284` (seq-002 Phase 5 Commit 1) treats `Err(MalformedVersion)` from `get_minor_version` / `get_major_version` as **warn-and-skip** — one per-walk `tracing::warn!` plus fall-through to top-level patches only. UUIDv7 builds exercise this path unchanged; seq-005 makes no changes here. See §Design Sketch › §Patch walker for the resolved spec. |
+| 5    | `cbsbuild/src/cmds/versions.rs`   | Change the positional `version: String` to `version: Option<String>`. Call `resolve_version`, then `validate_version` **unconditionally** (UUIDv7 passes by the UUIDv7 carve-out; operator-supplied gets the regex check). No flag, env-var, or output-line changes.                                                                                                                                                                           |
 
-All five steps land in a single 1.x.0 release post-M1. They are tightly coupled
+All five steps land together post-M1 as a backwards-compatible additive change
+against the M1-1.0.0 baseline (no crate-version bump). They are tightly coupled
 (clap shape + resolver + title generator + patch-walker guard must change
 together) so splitting would create broken intermediate commits.
 
