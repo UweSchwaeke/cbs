@@ -2,7 +2,7 @@
 
 ## Status
 
-**Drafted — under design-review.** Implements design 003
+**Implemented.** Implements design 003
 (`design/003-20260427T1255-interactive-config-init.md`). Lands post-M2 as a
 backwards-compatible additive change against the M1-1.0.0 baseline — operators
 using the existing `--for-systemd-install` / `--for-containerized-run` bypass
@@ -63,13 +63,18 @@ commits on the post-seq-005 main.
 
 ## Progress
 
-| #   | Commit                                                                            | ~LOC | Status  |
-| --- | --------------------------------------------------------------------------------- | ---- | ------- |
-| 1   | `cbsbuild config: add prompts module (Prompter trait + dialoguer + validate_url)` | ~250 | Pending |
-| 2   | `cbsbuild config: add init-vault subcommand`                                      | ~400 | Pending |
-| 3   | `cbsbuild config init: interactive flow + bypass versions pre-fill`               | ~500 | Pending |
+| #   | Commit                                                                            | ~LOC | Status                  |
+| --- | --------------------------------------------------------------------------------- | ---- | ----------------------- |
+| 1   | `cbsbuild config: add prompts module (Prompter trait + dialoguer + validate_url)` | ~250 | Implemented (`9ea5665`) |
+| 2   | `cbsbuild config: add init-vault subcommand`                                      | ~400 | Implemented (`9226eef`) |
+| 3   | `cbsbuild config init: interactive flow + bypass versions pre-fill`               | ~500 | Implemented (`9c85789`) |
 
 **Estimate:** ~1150 LOC, 3 commits.
+
+**Status: all three commits landed on `feature/cbscore-rs`** — end-of-feature
+acceptance criteria satisfied. The implementation-time URL-validation finding is
+recorded in the §Review trail and the corresponding docs amendment is committed
+as `2f90f9d`.
 
 ## Goal
 
