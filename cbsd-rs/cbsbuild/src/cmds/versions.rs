@@ -295,13 +295,13 @@ fn parse_component_refs(raw: &[String]) -> Result<Vec<(String, String)>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cmds::shared::CWD_LOCK;
     use cbscore_types::config::{Config, PathsConfig};
     use cbscore_types::versions::{
         VersionError, VersionType,
         desc::{VersionComponent, VersionDescriptor, VersionImage, VersionSignedOffBy},
     };
     use std::process::Command;
-    use std::sync::Mutex;
 
     #[test]
     fn parse_component_refs_basic() {
@@ -327,12 +327,6 @@ mod tests {
     }
 
     // ----- write_resolved_descriptor: plan-mandated integration tests -----
-
-    /// Shared mutex for tests that mutate the process cwd; matches the
-    /// pattern in `cbscore::versions::resolve::tests` for the same
-    /// reason (tokio's multi-threaded test runtime can interleave cwd
-    /// mutations across `#[tokio::test]` tasks).
-    static CWD_LOCK: Mutex<()> = Mutex::new(());
 
     fn stub_config(override_versions: Option<&str>) -> Config {
         Config {

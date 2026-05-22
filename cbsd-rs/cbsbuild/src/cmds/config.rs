@@ -3,11 +3,12 @@
 
 //! `cbsbuild config …` — config-file lifecycle.
 //!
-//! - `config init` with bypass-mode flags
-//!   (`--for-systemd-install` / `--for-containerized-run`) plus
-//!   per-field overrides. No interactive prompts — the
-//!   prompt-based UX is seq-003 (post-M1) per design 002 §Open
-//!   Questions lines 1424–1432.
+//! - `config init` — interactive prompt flow when no `--for-*`
+//!   bypass mode is supplied; bypass-mode behaviour preserved
+//!   when one of `--for-systemd-install` / `--for-containerized-run`
+//!   is set. Per-field flags (`--components`, `--scratch`,
+//!   `--containers-scratch`, `--ccache`, `--versions-dir`,
+//!   `--vault`, `--secrets`) suppress the matching prompts.
 //! - `config init-vault` — interactive flow to produce a
 //!   `cbs-build.vault.yaml` companion file (vault address +
 //!   auth method + credentials). Added by seq-003 Commit 2.
@@ -15,6 +16,7 @@
 //! - `config check` — validate required fields and exit 0
 //!   / non-zero.
 
+pub(crate) mod init;
 pub(crate) mod init_vault;
 pub(crate) mod prompts;
 
@@ -27,7 +29,12 @@ use clap::{Args, Subcommand};
 /// `cbsbuild config …` subcommand enum.
 #[derive(Debug, Subcommand)]
 pub(crate) enum ConfigCommand {
-    /// Initialise a config from a bypass mode + overrides.
+    /// Initialise a config interactively, or from a bypass mode +
+    /// overrides. With no flags, walks the operator through prompts
+    /// for every required field. With `--for-systemd-install` or
+    /// `--for-containerized-run`, pre-fills the matching template
+    /// and skips every prompt. Per-field flags compose on top in
+    /// both modes.
     Init(InitArgs),
     /// Interactively produce a `cbs-build.vault.yaml` companion
     /// file (vault address + auth method + credentials).
@@ -38,9 +45,21 @@ pub(crate) enum ConfigCommand {
     Check,
 }
 
-/// `cbsbuild config init` arguments. No interactive prompts — at
-/// least one of the `--for-*` mode flags is required (running with
-/// no flags returns an error with a usage hint).
+/// `cbsbuild config init` arguments.
+///
+/// Three modes, all backed by the same flag set:
+///
+/// - **Bypass mode** — one of `--for-systemd-install` or
+///   `--for-containerized-run`. Pre-fills every path field from
+///   the corresponding template and skips every prompt. Per-field
+///   flags compose on top, overriding the template's pre-fill for
+///   that field.
+/// - **Interactive mode** — no `--for-*` flag. Walks the operator
+///   through prompts for every required field. Per-field flags
+///   suppress the matching prompts (e.g. `--components /comp`
+///   skips the components prompts and uses `/comp` directly).
+/// - **Mixed mode** — interactive prompts for unset fields,
+///   per-field flag values verbatim for set fields.
 #[derive(Debug, Args)]
 pub(crate) struct InitArgs {
     /// Pre-fill paths for a systemd-managed deployment.
@@ -61,6 +80,10 @@ pub(crate) struct InitArgs {
     /// Override `paths.ccache`.
     #[arg(long = "ccache")]
     pub ccache: Option<Utf8PathBuf>,
+    /// Override `paths.versions` (interactive mode skips the
+    /// "Versions path" prompt when supplied).
+    #[arg(long = "versions-dir")]
+    pub versions_dir: Option<Utf8PathBuf>,
     /// Override `vault` (path to `cbs-build.vault.yaml`).
     #[arg(long = "vault")]
     pub vault: Option<Utf8PathBuf>,
@@ -80,13 +103,6 @@ pub(crate) async fn handle(cmd: ConfigCommand, config_path: &Utf8Path) -> Result
 }
 
 async fn handle_init(args: InitArgs, config_path: &Utf8Path) -> Result<()> {
-    if !args.for_systemd_install && !args.for_containerized_run {
-        bail!(
-            "cbsbuild config init: one of --for-systemd-install or \
-             --for-containerized-run is required (interactive prompt UX is \
-             seq-003, post-M1). Pass --help for the per-field override flags."
-        );
-    }
     if args.for_systemd_install && args.for_containerized_run {
         bail!(
             "cbsbuild config init: --for-systemd-install and \
@@ -94,6 +110,20 @@ async fn handle_init(args: InitArgs, config_path: &Utf8Path) -> Result<()> {
         );
     }
 
+    if args.for_systemd_install || args.for_containerized_run {
+        return handle_init_bypass(args, config_path).await;
+    }
+
+    // No `--for-*` flag → interactive prompt flow (seq-003).
+    let mut prompter = prompts::DialoguerPrompter;
+    init::config_init(&mut prompter, &args, config_path).await
+}
+
+/// Bypass-mode `cbsbuild config init` — write the template + the
+/// per-field overrides, no prompts. Preserves M1 byte-identical
+/// behaviour modulo the `paths.versions` pre-fill that seq-003
+/// adds per OQ-A.1 (per-template prefix-matching).
+async fn handle_init_bypass(args: InitArgs, config_path: &Utf8Path) -> Result<()> {
     let mut cfg = if args.for_systemd_install {
         systemd_install_template()
     } else {
@@ -112,6 +142,9 @@ async fn handle_init(args: InitArgs, config_path: &Utf8Path) -> Result<()> {
     }
     if let Some(p) = args.ccache {
         cfg.paths.ccache = Some(p);
+    }
+    if let Some(p) = args.versions_dir {
+        cfg.paths.versions = Some(p);
     }
     if let Some(p) = args.vault {
         cfg.vault = Some(p);
@@ -146,21 +179,18 @@ async fn handle_check(config_path: &Utf8Path) -> Result<()> {
 }
 
 /// Bypass-mode pre-fill for a systemd-managed deployment per
-/// design 004 §Bypass-mode pre-fill (excluding the `versions`
-/// field, which is design 004 Migration step 5 and deferred to
-/// seq-003).
-fn systemd_install_template() -> Config {
+/// design 004 §Bypass-mode pre-fill.
+///
+/// `paths.versions` lands at `/var/lib/cbsd/_versions` —
+/// per-template prefix-matching per seq-003 plan OQ-A.1.
+pub(crate) fn systemd_install_template() -> Config {
     Config {
         paths: PathsConfig {
             components: vec!["/etc/cbsd/components".into()],
             scratch: "/var/lib/cbsd/scratch".into(),
             scratch_containers: "/var/lib/cbsd/scratch-containers".into(),
             ccache: Some("/var/lib/cbsd/ccache".into()),
-            // Pre-fill of `versions` (design 004 OQ7) is owned by
-            // seq-003, which adds the interactive prompt + the
-            // bypass-mode pre-fill in lockstep. seq-004 keeps the
-            // template structurally valid with `None`.
-            versions: None,
+            versions: Some("/var/lib/cbsd/_versions".into()),
         },
         storage: None,
         signing: None,
@@ -172,15 +202,17 @@ fn systemd_install_template() -> Config {
 
 /// Bypass-mode pre-fill for a containerised deployment per design
 /// 004 §Bypass-mode pre-fill line 358.
-fn containerized_run_template() -> Config {
+///
+/// `paths.versions` lands at `/cbs/_versions` — per-template
+/// prefix-matching per seq-003 plan OQ-A.1.
+pub(crate) fn containerized_run_template() -> Config {
     Config {
         paths: PathsConfig {
             components: vec!["/cbs/components".into()],
             scratch: "/cbs/scratch".into(),
             scratch_containers: "/cbs/scratch-containers".into(),
             ccache: Some("/cbs/ccache".into()),
-            // See note in systemd_install_template.
-            versions: None,
+            versions: Some("/cbs/_versions".into()),
         },
         storage: None,
         signing: None,
@@ -234,6 +266,26 @@ mod tests {
         let cfg = containerized_run_template();
         assert!(cfg.paths.scratch.as_str().starts_with("/cbs/"));
         assert!(cfg.paths.components[0].as_str().starts_with("/cbs/"));
+    }
+
+    #[test]
+    fn systemd_template_pre_fills_versions_under_var_lib_cbsd() {
+        // seq-003 plan OQ-A.1: per-template prefix-matching pre-fill.
+        let cfg = systemd_install_template();
+        assert_eq!(
+            cfg.paths.versions.as_deref(),
+            Some(Utf8Path::new("/var/lib/cbsd/_versions")),
+        );
+    }
+
+    #[test]
+    fn containerized_template_pre_fills_versions_under_cbs() {
+        // seq-003 plan OQ-A.1: per-template prefix-matching pre-fill.
+        let cfg = containerized_run_template();
+        assert_eq!(
+            cfg.paths.versions.as_deref(),
+            Some(Utf8Path::new("/cbs/_versions")),
+        );
     }
 
     #[test]

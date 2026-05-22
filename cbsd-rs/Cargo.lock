@@ -883,6 +883,7 @@ dependencies = [
  "cbscore-types",
  "clap",
  "dialoguer",
+ "serde-saphyr 0.0.24",
  "serde_json",
  "tempfile",
  "thiserror 2.0.18",

@@ -49,3 +49,23 @@ pub(crate) fn dump_yaml_path(path: &Utf8Path) {
         "report written",
     );
 }
+
+/// Test-only shared mutex for tests that mutate the process cwd.
+///
+/// `std::env::set_current_dir` mutates process-global state, so
+/// tests that call it must serialise against every other such
+/// test in the binary — including across module boundaries.
+/// Tokio's multi-threaded test runtime would otherwise interleave
+/// `set_current_dir` calls across `#[tokio::test]` tasks and
+/// produce flaky failures.
+///
+/// All cwd-mutating tests in `cbsbuild` acquire this lock for the
+/// duration of the cwd dance:
+///
+/// ```ignore
+/// let _guard = crate::cmds::shared::CWD_LOCK.lock().expect("cwd lock");
+/// std::env::set_current_dir(&tmp).expect("cd tmp");
+/// // ...
+/// ```
+#[cfg(test)]
+pub(crate) static CWD_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
