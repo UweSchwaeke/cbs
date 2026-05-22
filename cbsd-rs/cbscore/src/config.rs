@@ -233,6 +233,11 @@ async fn write_atomic(path: &Utf8Path, contents: &[u8]) -> Result<(), ConfigErro
             format!("cannot derive parent dir of '{path}' for atomic write"),
         ),
     })?;
+    // `file_name()` is always `Some` at the in-tree call sites
+    // (`store` / `store_vault` both pass paths produced by clap +
+    // operator input, never a bare `/` or `..`). The "cbs-config"
+    // fallback is defensive — produces a valid tempfile name if
+    // some future caller passes an unusual path shape.
     let tmp_path = parent.join(format!(
         ".{}.tmp.{}",
         path.file_name().unwrap_or("cbs-config"),

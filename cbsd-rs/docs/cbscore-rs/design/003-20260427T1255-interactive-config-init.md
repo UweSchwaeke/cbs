@@ -113,7 +113,7 @@ failure (see § URL validation).
 
 ### `config_init_signing`
 
-1. **Configure signing?** — `Confirm`. If no, return `None`.
+1. **Configure artifact signing?** — `Confirm`. If no, return `None`.
 2. **GPG signing** — `Confirm`: "Specify package GPG signing secret name?". If
    yes, `Input::<String>`: "GPG signing secret name".
 3. **Transit signing** — `Confirm`: "Specify container image transit signing
@@ -123,7 +123,7 @@ failure (see § URL validation).
 
 ### `config_init_secrets_paths`
 
-1. **Specify secrets files?** — `Confirm`. If no, return empty list.
+1. **Specify paths to secrets file(s)?** — `Confirm`. If no, return empty list.
 2. **First path** — `Input::<String>`: "Path to secrets file".
 3. **Loop** — `Confirm`: "Specify additional secrets files?"; if yes,
    `Input::<String>` again; loop until `Confirm` returns `false`.

@@ -802,8 +802,11 @@ mod tests {
         let config_path = cwd.join("cbs-build.config.yaml");
         let args = fully_specified_args();
         let mut prompter = ScriptedPrompter::new([
-            // write-confirm at the end → no (paths + storage + signing
-            // + secrets all bypassed by fully-specified args).
+            // Paths + secrets are bypassed by the fully-specified args
+            // (every path field set, secrets non-empty). Storage and
+            // signing have no per-field bypass — each prompts once at
+            // the top level, then declines. Then the final write-confirm
+            // is declined to exercise the step 10 bail path.
             PromptAnswer::Confirm(false), // storage? no
             PromptAnswer::Confirm(false), // signing? no
             PromptAnswer::Confirm(false), // write? no

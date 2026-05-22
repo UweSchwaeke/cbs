@@ -60,6 +60,36 @@ commits on the post-seq-005 main.
   limitation" block; plan §Commit 1 §Testable flipped the `htps://` case to
   `Ok(())`. Scope-control: deliberately did not introduce a scheme allowlist —
   that's a follow-up if scheme typos prove a recurring foot-gun.
+- Implementation-time refactor (2026-05-22) — `CWD_LOCK` moved from
+  `cmds::versions::tests` to `cmds::shared` as a
+  `#[cfg(test)] pub(crate) static`. The seq-003 Commit 3 `config_init` full-flow
+  tests need to mutate the process cwd (to verify the cwd-derived components
+  default), and the existing `cmds::versions::tests::CWD_LOCK` and a new local
+  lock would not serialise across module boundaries — tokio's multi-threaded
+  test runtime would interleave `set_current_dir` calls and produce flaky
+  failures. The shared lock is the cross-module serialisation primitive.
+  Behaviour unchanged for `versions::tests`; they now reference
+  `crate::cmds::shared::CWD_LOCK` instead of the local one.
+- Post-implementation review (2026-05-22) — verdict "approve with minor doc
+  cleanups". Findings closed: MINOR-1a (`Configure signing?` →
+  `Configure artifact signing?` in design §config_init_signing step 1), MINOR-1b
+  (`Specify secrets files?` → `Specify paths to secrets file(s)?` in design
+  §config_init_secrets_paths step 1), MINOR-1c (stripped four stray backticks
+  from runtime prompt label + anyhow context messages in `init_vault.rs`'s
+  AppRole branch — leftover from a fat-fingered `replace_all` during clippy
+  doc-markdown sweep), MINOR-2 (rewrote Commit 2 §Testable overwrite-declined
+  description to match the code's `vault_config_path = None` +
+  pre-created-placeholder setup, plus added a new §Testable bullet for the
+  `Some(p) && !p.exists()` fall-through case), MINOR-3 (this CWD_LOCK entry),
+  SUGGESTION-1 (added a four-line invariant comment to `write_atomic`'s
+  `unwrap_or("cbs-config")` documenting why the fallback is functionally
+  unreachable at in-tree call sites), SUGGESTION-2 (rewrote the misleading "all
+  bypassed by fully-specified args" comment in
+  `config_init_write_declined_bails` to accurately describe which sub-functions
+  still prompt), OQ-1 (backtick markup was the `replace_all` slip — answered by
+  MINOR-1c), OQ-2 (added the
+  `vault_path_supplied_but_missing_falls_through_to_interactive` test pinning
+  the `Some(p) && !p.exists()` behaviour).
 
 ## Progress
 
@@ -487,11 +517,19 @@ populate a `cbs-build.vault.yaml`. After this commit,
   produces a vault file with token auth.
 - Unit test: empty token bails — token fallback with `Password("")` returns
   `Err(_)` matching the `errno.EINVAL`-mapped exit code.
-- Unit test: overwrite-declined path — `vault_config_path = Some(existing_path)`
-  (file does NOT exist at Step 0 — Step 3 re-checks via `path.exists()` after
-  operator types a path that collides) and
-  `Confirm("...exists. Overwrite?") → false` returns `Ok(Some(path))` without
-  writing.
+- Unit test: overwrite-declined path — `vault_config_path = None` (no `--vault`
+  flag), a placeholder file pre-created at `${cwd}/vault.yaml`, scripted
+  prompter scripts Step 1 confirm `true`, Step 2 input pointing at the
+  pre-created path, Step 3 overwrite confirm `false` → returns `Ok(Some(path))`
+  without writing (placeholder body preserved). Pins down the Step 3 re-check
+  path that fires after the operator types a path colliding with an existing
+  file. (The `vault_config_path = Some(p)` short-circuit at Step 0 only fires
+  when `p.exists()`; that branch is exercised by the
+  `pre_existing_vault_short_circuits` test.)
+- Unit test: `vault_config_path = Some(p)` with `p` non-existent falls through
+  to the interactive flow — Step 0 skips, Step 1 prompt fires; a
+  `Confirm(false)` returns `Ok(None)`. Pins down the behaviour when an operator
+  passes `--vault PATH` for a file that doesn't exist yet (rare but valid).
 - Clap-level test:
   `Cli::try_parse_from(["cbsbuild", "config", "init-vault", "--vault", "/path/to/vault.yaml"])`
   parses successfully with

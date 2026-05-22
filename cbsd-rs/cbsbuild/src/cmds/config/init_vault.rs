@@ -195,15 +195,15 @@ fn prompt_auth<P: Prompter>(
 
     // Step 6: `AppRole`.
     if prompter
-        .confirm("Specify `AppRole` auth for vault?", false)
-        .context("prompting for `AppRole` auth confirm")?
+        .confirm("Specify AppRole auth for vault?", false)
+        .context("prompting for AppRole auth confirm")?
     {
         let role_id = prompter
             .input("Role ID", None)
-            .context("prompting for `AppRole` role-id")?;
+            .context("prompting for AppRole role-id")?;
         let secret_id = prompter
             .password("Secret ID")
-            .context("prompting for `AppRole` secret-id")?;
+            .context("prompting for AppRole secret-id")?;
         return Ok((None, Some(VaultAppRoleConfig { role_id, secret_id }), None));
     }
 
@@ -275,6 +275,24 @@ mod tests {
         // The placeholder was not overwritten.
         let body = tokio::fs::read_to_string(&existing).await.expect("read");
         assert_eq!(body, "placeholder\n");
+    }
+
+    #[tokio::test]
+    async fn vault_path_supplied_but_missing_falls_through_to_interactive() {
+        // Step 0 short-circuits only when `vault_config_path` is
+        // `Some(p)` AND `p.exists()`. When the path is supplied
+        // but does not yet exist, control falls through to Step 1.
+        // The test pins that behaviour — Step 1's confirm prompt
+        // fires and a decline returns `Ok(None)`.
+        let (_tmp, cwd) = make_cwd();
+        let missing = cwd.join("not-yet-created.vault.yaml");
+        assert!(!missing.exists(), "test setup: file must not exist");
+        let mut prompter = ScriptedPrompter::new([PromptAnswer::Confirm(false)]);
+        let result = config_init_vault(&mut prompter, &cwd, Some(&missing))
+            .await
+            .expect("fall-through");
+        assert_eq!(result, None);
+        assert_eq!(prompter.calls.len(), 1, "Step 1 confirm should fire");
     }
 
     // -- Step 1 decline -------------------------------------------------------
