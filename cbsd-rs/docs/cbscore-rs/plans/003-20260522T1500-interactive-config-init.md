@@ -51,6 +51,15 @@ commits on the post-seq-005 main.
   reviewed the existing CHANGELOG hedge in Commit 3 §Files — no CHANGELOG.md
   exists in the project, so the implementer captures the behaviour change in the
   final commit message; the hedge text is correct as-is.
+- Implementation-time finding (2026-05-22) — `url::Url::parse` accepts arbitrary
+  scheme strings as syntactically valid, so the v1-design claim that
+  `validate_url("htps://typo.example.com")` would be rejected was wrong. The
+  validator catches missing-scheme / empty / garbled inputs but cannot
+  distinguish scheme typos without a scheme allowlist. Fixed: design 003 §URL
+  validation rewritten to drop the "typo cases" framing and add a "Documented
+  limitation" block; plan §Commit 1 §Testable flipped the `htps://` case to
+  `Ok(())`. Scope-control: deliberately did not introduce a scheme allowlist —
+  that's a follow-up if scheme typos prove a recurring foot-gun.
 
 ## Progress
 
@@ -334,8 +343,12 @@ Commits 2 / 3 callers are wired up yet.
 - Unit test: `validate_url("https://localhost:9000")` returns `Ok(())`.
 - Unit test: `validate_url("s3://my-bucket/prefix")` returns `Ok(())` (URL crate
   accepts non-http schemes).
-- Unit test: `validate_url("htps://typo.example.com")` returns `Err(_)` with a
-  message containing "URL".
+- Unit test: `validate_url("htps://typo.example.com")` returns `Ok(())` — pins
+  down the documented limitation that `url::Url::parse` accepts arbitrary scheme
+  strings as syntactically valid (so scheme-typos pass this check and surface
+  only at SDK connect time). See design 003 §URL validation "Documented
+  limitation" block. If a future revision adds a scheme allowlist, flip this
+  case to `Err(_)` in lockstep with the spec change.
 - Unit test: `validate_url("not a url at all")` returns `Err(_)`.
 - Unit test: `validate_url("")` returns `Err(_)`.
 - Unit test: `validate_url("vault.local")` returns `Err(_)` (the no-scheme case

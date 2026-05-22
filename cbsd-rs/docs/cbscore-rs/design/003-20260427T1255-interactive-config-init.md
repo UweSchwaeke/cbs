@@ -204,11 +204,21 @@ let url = Input::<String>::new()
     .interact()?;
 ```
 
-The validator catches missing-scheme / typo cases (`htps://`, `vault.local`
-without a scheme, etc.) and re-prompts in-place. Semantic validity (host
-reachable, port correct, TLS cert valid) is **not** checked here; that remains
-the SDK's job at first connect. The point is to fail fast on syntactic typos,
-not to verify deployment.
+The validator catches syntactic-malformed input: empty strings, missing scheme
+(`vault.local` without `https://`), or otherwise unparseable text. It re-prompts
+in-place. Semantic validity (host reachable, port correct, TLS cert valid) is
+**not** checked here; that remains the SDK's job at first connect.
+
+**Documented limitation — scheme typos pass this check.** `url::Url::parse`
+accepts arbitrary scheme strings as syntactically valid: `htps://example.com`
+parses successfully with `scheme = "htps"`. The validator cannot distinguish a
+real scheme typo from a deliberately exotic one without a scheme allowlist,
+which this design intentionally does not add. Operators who fat-finger `htps://`
+will see the failure at SDK connect time (e.g. "no resolver registered for
+scheme htps"), not at prompt time. A future revision may add an opt-in scheme
+allowlist for the three URL prompts if this proves a recurring foot-gun; until
+then, the validator's job is to fail fast only on inputs that aren't URLs at
+all.
 
 The validation logic lives in a free function:
 
