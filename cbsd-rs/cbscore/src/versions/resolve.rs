@@ -1,13 +1,16 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026  Clyso
 
-//! Resolve the descriptor-store root for `cbsbuild versions create`.
+//! Resolve the descriptor-store root and VERSION string for
+//! `cbsbuild versions create`.
+//!
+//! ## Root resolver — `resolve_root` (design 004)
 //!
 //! Precedence (design 004 OQ1):
 //!
-//! 1. CLI flag (`--versions-dir <PATH>`).
+//! 1. CLI flag (`--versions-dir PATH`).
 //! 2. Config field (`Config.paths.versions`).
-//! 3. `<git-rev-parse --show-toplevel>/_versions` — Python-parity
+//! 3. `git rev-parse --show-toplevel` + `/_versions` — Python-parity
 //!    fallback (design 004 OQ2).
 //!
 //! Layers 1 and 2 canonicalise their input via [`tokio::fs::canonicalize`]
@@ -19,10 +22,20 @@
 //! [`VersionError::NoDescriptorRoot`] with the operator's cwd
 //! (captured best-effort) so the four-line OQ5 message can name a
 //! concrete starting point for the operator.
+//!
+//! ## VERSION resolver — `resolve_version` (design 005 / seq-005)
+//!
+//! Sync, infallible. If the CLI positional was supplied, returns it
+//! verbatim. Otherwise mints a fresh `UUIDv7` string (RFC 9562) and
+//! returns it. Paired with the title-generator branch in
+//! `cbscore::versions::create::make_title` and the regex-or-UUIDv7
+//! `validate_version` in `cbscore::versions::utils`.
 
 use camino::{Utf8Path, Utf8PathBuf};
 use cbscore_types::config::Config;
 use cbscore_types::versions::VersionError;
+use chrono::{DateTime, Utc};
+use uuid::Uuid;
 
 use crate::utils::git;
 
@@ -113,6 +126,75 @@ fn current_dir_best_effort() -> Utf8PathBuf {
         .ok()
         .and_then(|p| Utf8PathBuf::try_from(p).ok())
         .unwrap_or_else(|| Utf8PathBuf::from("<unknown>"))
+}
+
+/// Resolve the VERSION string for `cbsbuild versions create`.
+///
+/// Returns `cli.to_owned()` when the operator passed a positional,
+/// otherwise mints a fresh `UUIDv7` string (RFC 9562 canonical
+/// hyphenated 36-char lowercase form). Sync, infallible —
+/// [`Uuid::now_v7`] reads the system clock without IO.
+///
+/// The `UUIDv7` form sorts lexicographically by its leading 48-bit
+/// timestamp, so descriptor filenames under `<root>/<type>/`
+/// remain in chronological creation order when listed (design 005
+/// §Goals; design 005 §Operator UX).
+///
+/// # Examples
+///
+/// ```
+/// use cbscore::versions::resolve_version;
+///
+/// // Supplied VERSION is passed through verbatim.
+/// assert_eq!(resolve_version(Some("19.2.3")), "19.2.3");
+///
+/// // Absent VERSION yields a UUIDv7 string.
+/// let generated = resolve_version(None);
+/// let parsed = uuid::Uuid::parse_str(&generated).unwrap();
+/// assert_eq!(parsed.get_version(), Some(uuid::Version::SortRand));
+/// ```
+#[must_use]
+pub fn resolve_version(cli: Option<&str>) -> String {
+    cli.map_or_else(|| Uuid::now_v7().to_string(), str::to_owned)
+}
+
+/// Extract the leading 48-bit Unix-milliseconds timestamp from a
+/// `UUIDv7` and return it as a `chrono::DateTime<Utc>`.
+///
+/// Returns `None` when the input is not a `UUIDv7` (defensive — the
+/// caller is expected to have checked `get_version() ==
+/// Some(Version::SortRand)`) or when the embedded timestamp is
+/// out of the range `chrono::DateTime::<Utc>::from_timestamp`
+/// accepts.
+///
+/// # Returns
+///
+/// `Some(DateTime<Utc>)` for a `UUIDv7` with an in-range timestamp;
+/// `None` for non-v7 UUIDs and for v7 UUIDs whose embedded
+/// timestamp does not fit `i64` seconds since the epoch (the
+/// latter is unreachable on a sane host — `UUIDv7` stores 48 bits
+/// of milliseconds, well within `i64` seconds even after the
+/// 10,895-year overflow).
+///
+/// Used by `cbscore::versions::create::make_title` to format the
+/// "Release {`type_desc`} version created at {iso8601}" title body
+/// when VERSION is a `UUIDv7` (seq-005 Commit 2).
+//
+// `dead_code` allow: this helper is introduced in seq-005 Commit 1
+// alongside the rest of the seq-005 helpers, and wired up by Commit 2
+// when `make_title` gains its UUIDv7 branch. The `#[cfg_attr(not(test),
+// ...)]` shape keeps the unit tests visible as callers under
+// `cargo test` so the function is exercised at gate time even before
+// Commit 2 lands. Drop this attribute when Commit 2 wires the caller.
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) fn uuid_v7_timestamp(uuid: &Uuid) -> Option<DateTime<Utc>> {
+    if uuid.get_version() != Some(uuid::Version::SortRand) {
+        return None;
+    }
+    let ts = uuid.get_timestamp()?;
+    let (secs, nanos) = ts.to_unix();
+    let secs = i64::try_from(secs).ok()?;
+    DateTime::<Utc>::from_timestamp(secs, nanos)
 }
 
 #[cfg(test)]
@@ -308,4 +390,71 @@ mod tests {
     // other's `set_current_dir` calls.
     use std::sync::Mutex;
     static CWD_LOCK: Mutex<()> = Mutex::new(());
+
+    // ----------------------------------------------------------------
+    // resolve_version (seq-005)
+    // ----------------------------------------------------------------
+
+    /// Operator-supplied VERSION is passed through verbatim — no
+    /// canonicalisation, no validation (validation lives in
+    /// `cbscore::versions::utils::validate_version`).
+    #[test]
+    fn resolve_version_passes_supplied_string_through_verbatim() {
+        assert_eq!(resolve_version(Some("19.2.3")), "19.2.3");
+        assert_eq!(
+            resolve_version(Some("ces-v19.2.3-dev.1")),
+            "ces-v19.2.3-dev.1"
+        );
+        // The resolver doesn't validate — that's a downstream
+        // concern. A malformed input passes through here and is
+        // rejected by validate_version at the CLI call site.
+        assert_eq!(resolve_version(Some("foobar")), "foobar");
+    }
+
+    /// Absent VERSION yields a `UUIDv7` string that parses as v7.
+    #[test]
+    fn resolve_version_none_yields_uuidv7() {
+        let generated = resolve_version(None);
+        let parsed = Uuid::parse_str(&generated).expect("UUIDv7 parses");
+        assert_eq!(parsed.get_version(), Some(uuid::Version::SortRand));
+    }
+
+    /// Two consecutive `resolve_version(None)` calls return two
+    /// distinct `UUIDv7s`. Collision is astronomically unlikely (74
+    /// random bits) but the test pins the no-determinism contract.
+    #[test]
+    fn resolve_version_none_yields_distinct_uuids_on_repeat() {
+        let a = resolve_version(None);
+        let b = resolve_version(None);
+        assert_ne!(a, b);
+    }
+
+    // ----------------------------------------------------------------
+    // uuid_v7_timestamp (seq-005)
+    // ----------------------------------------------------------------
+
+    /// `UUIDv7` minted at a fixed Unix timestamp returns a `DateTime`
+    /// matching the timestamp to the second. The `Timestamp::from_unix_time`
+    /// const ctor avoids needing a `ClockSequence` context arg —
+    /// good for deterministic fixtures.
+    #[test]
+    fn uuid_v7_timestamp_extracts_fixed_unix_seconds() {
+        // 1777895100 = 2026-05-04T11:45:00Z UTC
+        let ts = uuid::Timestamp::from_unix_time(1_777_895_100, 0, 0, 0);
+        let uuid = Uuid::new_v7(ts);
+        let extracted = uuid_v7_timestamp(&uuid).expect("v7 has a timestamp");
+        let expected = DateTime::<Utc>::from_timestamp(1_777_895_100, 0).unwrap();
+        // UUIDv7 stores millisecond precision; extracted timestamp
+        // should match the second exactly (the nanoseconds field is
+        // zero in our fixture).
+        assert_eq!(extracted, expected);
+    }
+
+    /// `UUIDv4` input returns `None` — defensive arm for callers that
+    /// bypass the `get_version()` check.
+    #[test]
+    fn uuid_v7_timestamp_returns_none_for_uuidv4() {
+        let v4 = Uuid::new_v4();
+        assert_eq!(uuid_v7_timestamp(&v4), None);
+    }
 }

@@ -12,15 +12,19 @@
 //! - [`create`] — `version_create_helper`, the builder that turns
 //!   operator-supplied component refs into a `VersionDescriptor`
 //!   (Phase 6).
-//! - [`resolve`] — descriptor-store-root resolution (CLI > config
-//!   > git-fallback) for `cbsbuild versions create` (seq-004).
+//! - [`resolve`] — descriptor-store-root resolution (CLI flag, config
+//!   field, then git-fallback) for `cbsbuild versions create`
+//!   (seq-004); plus VERSION resolution (operator-supplied or `UUIDv7`
+//!   default) for seq-005.
 //!
-//! [`resolve::resolve_root`] is re-exported at the module root for
-//! ergonomic access (`cbscore::versions::resolve_root`).
+//! [`resolve::resolve_root`], [`resolve::resolve_version`], and
+//! [`utils::validate_version`] are re-exported at the module root
+//! for ergonomic cross-crate access.
 
 pub mod create;
 pub mod desc;
 pub mod resolve;
 pub mod utils;
 
-pub use resolve::resolve_root;
+pub use resolve::{resolve_root, resolve_version};
+pub use utils::validate_version;

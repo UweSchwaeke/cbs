@@ -289,6 +289,64 @@ pub fn parse_component_refs(
     Ok(out)
 }
 
+/// Validate a `desc.version` candidate string.
+///
+/// Accepts:
+///
+/// - A `UUIDv7` string (RFC 9562 canonical hyphenated form,
+///   case-insensitive — [`uuid::Uuid::parse_str`] handles both lower
+///   and upper hex). The resolver in [`super::resolve::resolve_version`]
+///   mints lowercase `UUIDv7s` on the no-VERSION path; operators may
+///   also type one explicitly.
+/// - Any string matching the Python regex `[prefix-]vM.m.p[-suffix]`
+///   with both minor AND patch components present. Mirrors Python's
+///   `cbscore/versions/create.py:_validate_version` — regex match
+///   plus `minor is not None and patch is not None`.
+///
+/// Rejects: bare `19`, `19.2`, `foobar`, `UUIDv4` strings, and anything
+/// else that fails both checks. Each reject surfaces as
+/// [`CbsError::MalformedVersion`] carrying the offending input
+/// verbatim — operator-actionable, matches the Python side's
+/// `MalformedVersionError` shape.
+///
+/// `cbsbuild versions create` (seq-005 Commit 3) calls this
+/// unconditionally on the resolved VERSION; `UUIDv7` passes by the
+/// carve-out, operator-supplied strings get the regex check.
+///
+/// # Errors
+///
+/// Returns [`CbsError::MalformedVersion`] when the input fails both
+/// the `UUIDv7` detection and the regex+minor+patch validation.
+///
+/// # Examples
+///
+/// ```
+/// use cbscore::versions::utils::validate_version;
+///
+/// // Accepts a Python-shaped VERSION string.
+/// assert!(validate_version("19.2.3").is_ok());
+/// // Accepts a UUIDv7 string.
+/// assert!(validate_version(&uuid::Uuid::now_v7().to_string()).is_ok());
+/// // Rejects a malformed string.
+/// assert!(validate_version("19").is_err());
+/// ```
+pub fn validate_version(v: &str) -> Result<(), CbsError> {
+    // UUIDv7 fast path: lets resolver-generated v7s (and explicit
+    // operator-typed ones) pass without running the regex.
+    if let Ok(uuid) = uuid::Uuid::parse_str(v)
+        && uuid.get_version() == Some(uuid::Version::SortRand)
+    {
+        return Ok(());
+    }
+    // Python parity: regex match + both minor and patch present.
+    let parsed = parse_version(v)?;
+    if parsed.minor.is_some() && parsed.patch.is_some() {
+        Ok(())
+    } else {
+        Err(CbsError::MalformedVersion(v.to_owned()))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -434,5 +492,62 @@ mod tests {
     fn parse_component_refs_rejects_malformed() {
         assert!(parse_component_refs(&["ceph-without-ref".to_owned()]).is_err());
         assert!(parse_component_refs(&["@ref-without-name".to_owned()]).is_err());
+    }
+
+    // ----------------------------------------------------------------
+    // validate_version (seq-005)
+    // ----------------------------------------------------------------
+
+    /// Full Python-shape VERSION strings pass — the supplied-VERSION
+    /// path's regex-matched accept set.
+    #[test]
+    fn validate_version_accepts_python_shape() {
+        assert!(validate_version("19.2.3").is_ok());
+        assert!(validate_version("v19.2.3").is_ok());
+        assert!(validate_version("ces-v19.2.3-dev.1").is_ok());
+        assert!(validate_version("19.2.3-rc1").is_ok());
+    }
+
+    /// `UUIDv7` strings pass — the seq-005 carve-out for both resolver-
+    /// generated and operator-typed `UUIDv7s`.
+    #[test]
+    fn validate_version_accepts_uuidv7() {
+        let lowercase = uuid::Uuid::now_v7().to_string();
+        assert!(validate_version(&lowercase).is_ok());
+        // Uuid::parse_str is case-insensitive — uppercase passes too.
+        let uppercase = lowercase.to_uppercase();
+        assert!(validate_version(&uppercase).is_ok());
+    }
+
+    /// Missing minor/patch fails — Python parity for `_validate_version`'s
+    /// `minor is not None and patch is not None` check.
+    #[test]
+    fn validate_version_rejects_missing_minor_or_patch() {
+        for input in ["19", "19.2", "v19", "v19.2", "ces-v19", "ces-v19.2"] {
+            let err = validate_version(input).expect_err(input);
+            assert!(matches!(err, CbsError::MalformedVersion(ref s) if s == input));
+        }
+    }
+
+    /// Garbage that doesn't even pass the regex.
+    #[test]
+    fn validate_version_rejects_regex_misses() {
+        for input in ["foobar", "", "v", "1.2.x", "this is not a version"] {
+            assert!(
+                validate_version(input).is_err(),
+                "expected reject: {input:?}"
+            );
+        }
+    }
+
+    /// `UUIDv4` falls through to the regex path and gets rejected
+    /// there (the regex doesn't match the v4 shape, no carve-out
+    /// applies). Pins the seq-005 design choice that only `UUIDv7`
+    /// is accepted, not "any UUID".
+    #[test]
+    fn validate_version_rejects_uuidv4() {
+        let v4 = uuid::Uuid::new_v4().to_string();
+        let err = validate_version(&v4).expect_err("must reject v4");
+        assert!(matches!(err, CbsError::MalformedVersion(_)));
     }
 }
