@@ -12,6 +12,8 @@
 //! - `config check` — validate required fields and exit 0
 //!   / non-zero.
 
+pub(crate) mod prompts;
+
 use anyhow::{Context, Result, bail};
 use camino::{Utf8Path, Utf8PathBuf};
 use cbscore::config;
