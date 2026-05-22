@@ -23,22 +23,6 @@
 //! trait; call sites that need URL validation use dialoguer's
 //! `validate_with` hook directly on the `DialoguerPrompter` path,
 //! and tests exercise [`validate_url`] in isolation.
-//!
-//! ## Dead-code allowance
-//!
-//! This module is Commit 1 of seq-003 — plumbing landed ahead of
-//! its consumers. `Prompter`, `DialoguerPrompter`, `PromptError`,
-//! and `validate_url` are all `pub(crate)` items consumed by
-//! seq-003 Commit 2 (`cbsbuild config init-vault`) and Commit 3
-//! (interactive `cbsbuild config init`). The unit tests below
-//! exercise the trait via [`ScriptedPrompter`] and the validator
-//! directly, so the contracts are pinned down. The module-level
-//! `allow(dead_code)` suppresses the inevitable "never used in
-//! non-test build" warnings until the consuming commits land — at
-//! which point the allowance should be removed and the build
-//! re-verified.
-
-#![allow(dead_code)]
 
 use thiserror::Error;
 
@@ -61,7 +45,10 @@ pub(crate) enum PromptError {
     /// prompt is captured in the scripted prompter's
     /// recorded-calls log; tests inspect that log to identify
     /// which prompt was expected next. Production code paths
-    /// (using [`DialoguerPrompter`]) never produce this variant.
+    /// (using [`DialoguerPrompter`]) never produce this variant —
+    /// it is gated under `#[cfg(test)]` so it doesn't widen the
+    /// production error surface.
+    #[cfg(test)]
     #[error("ScriptedPrompter: answer queue exhausted")]
     EmptyScript,
 }

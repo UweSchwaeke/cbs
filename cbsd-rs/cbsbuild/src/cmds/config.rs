@@ -8,10 +8,14 @@
 //!   per-field overrides. No interactive prompts — the
 //!   prompt-based UX is seq-003 (post-M1) per design 002 §Open
 //!   Questions lines 1424–1432.
+//! - `config init-vault` — interactive flow to produce a
+//!   `cbs-build.vault.yaml` companion file (vault address +
+//!   auth method + credentials). Added by seq-003 Commit 2.
 //! - `config show` — pretty-print the loaded config.
 //! - `config check` — validate required fields and exit 0
 //!   / non-zero.
 
+pub(crate) mod init_vault;
 pub(crate) mod prompts;
 
 use anyhow::{Context, Result, bail};
@@ -25,6 +29,9 @@ use clap::{Args, Subcommand};
 pub(crate) enum ConfigCommand {
     /// Initialise a config from a bypass mode + overrides.
     Init(InitArgs),
+    /// Interactively produce a `cbs-build.vault.yaml` companion
+    /// file (vault address + auth method + credentials).
+    InitVault(init_vault::InitVaultArgs),
     /// Pretty-print the loaded config.
     Show,
     /// Validate the loaded config; exits 0 on success.
@@ -66,6 +73,7 @@ pub(crate) struct InitArgs {
 pub(crate) async fn handle(cmd: ConfigCommand, config_path: &Utf8Path) -> Result<()> {
     match cmd {
         ConfigCommand::Init(args) => handle_init(args, config_path).await,
+        ConfigCommand::InitVault(args) => init_vault::handle_init_vault(args).await,
         ConfigCommand::Show => handle_show(config_path).await,
         ConfigCommand::Check => handle_check(config_path).await,
     }

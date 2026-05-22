@@ -13,7 +13,9 @@
 //! / `cbscore::config::store(&cfg, path).await?`.
 
 use camino::Utf8Path;
-use cbscore_types::config::{Config, ConfigError, VersionedConfig};
+use cbscore_types::config::{
+    Config, ConfigError, VaultConfig, VersionedConfig, VersionedVaultConfig,
+};
 use tokio::fs::OpenOptions;
 use tokio::io::AsyncWriteExt;
 
@@ -163,6 +165,60 @@ pub async fn store(cfg: &Config, path: &Utf8Path) -> Result<(), ConfigError> {
     Ok(())
 }
 
+/// Serialise `vault` as YAML (with the kebab `schema-version: 1`
+/// marker first) and write it atomically to `path`.
+///
+/// Mirrors [`store`] for the [`VaultConfig`] file shape — the
+/// `cbs-build.vault.yaml` companion file produced by `cbsbuild
+/// config init-vault`. Same parent-directory creation, same
+/// tempfile + fsync + rename atomic-write pattern.
+///
+/// The wire format starts with `schema-version: 1` because the
+/// kebab tag is emitted first by [`VersionedVaultConfig`]'s
+/// `Serialize` impl.
+///
+/// # Errors
+///
+/// Returns [`ConfigError::Io`] on any IO failure during dir create,
+/// serialisation, tempfile write, fsync, or rename.
+///
+/// # Examples
+///
+/// ```no_run
+/// use camino::Utf8Path;
+/// use cbscore_types::config::VaultConfig;
+///
+/// # async fn demo(vault: &VaultConfig) -> Result<(), cbscore_types::config::ConfigError> {
+/// cbscore::config::store_vault(
+///     vault,
+///     Utf8Path::new("/etc/cbs/cbs-build.vault.yaml"),
+/// )
+/// .await?;
+/// # Ok(()) }
+/// ```
+pub async fn store_vault(vault: &VaultConfig, path: &Utf8Path) -> Result<(), ConfigError> {
+    if let Some(parent) = path.parent()
+        && !parent.as_str().is_empty()
+    {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .map_err(|e| ConfigError::Io { source: e })?;
+    }
+    let yaml = serde_saphyr::to_string(&VersionedVaultConfig::new(vault.clone())).map_err(|e| {
+        ConfigError::Io {
+            source: std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()),
+        }
+    })?;
+    write_atomic(path, yaml.as_bytes()).await?;
+    tracing::debug!(
+        target: TARGET_CONFIG,
+        path = %path,
+        bytes = yaml.len(),
+        "vault config stored",
+    );
+    Ok(())
+}
+
 /// Atomic write helper: sibling tempfile + fsync + rename within the
 /// same parent dir. Returns IO errors mapped into [`ConfigError`].
 ///
@@ -205,7 +261,16 @@ async fn write_atomic(path: &Utf8Path, contents: &[u8]) -> Result<(), ConfigErro
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cbscore_types::config::{Config, PathsConfig};
+    use cbscore_types::config::{Config, PathsConfig, VaultConfig};
+
+    fn sample_vault() -> VaultConfig {
+        VaultConfig {
+            vault_addr: "https://vault.example.com".into(),
+            auth_user: None,
+            auth_approle: None,
+            auth_token: Some("hvs.AAAA".into()),
+        }
+    }
 
     fn sample_config() -> Config {
         Config {
@@ -302,6 +367,40 @@ mod tests {
             panic!("expected MissingSchemaVersion, got Ok");
         };
         assert!(matches!(err, ConfigError::MissingSchemaVersion { .. }));
+    }
+
+    #[tokio::test]
+    async fn store_vault_round_trip() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = camino::Utf8PathBuf::from_path_buf(dir.path().join("cbs-build.vault.yaml"))
+            .expect("utf8 path");
+        let vault = sample_vault();
+        store_vault(&vault, &path).await.expect("store_vault");
+        let body = tokio::fs::read_to_string(&path).await.expect("read");
+        assert!(
+            body.starts_with("schema-version: 1\n"),
+            "expected 'schema-version: 1' first, got: {}",
+            body.lines().next().unwrap_or(""),
+        );
+        let raw: serde_value::Value = serde_saphyr::from_str(&body).expect("parse vault yaml");
+        let parsed = VersionedVaultConfig::from_value(raw, &path)
+            .expect("from_value")
+            .into_latest();
+        assert_eq!(parsed, vault);
+    }
+
+    #[tokio::test]
+    async fn store_vault_creates_parent_directory() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let nested =
+            camino::Utf8PathBuf::from_path_buf(dir.path().join("a/b/c/cbs-build.vault.yaml"))
+                .expect("utf8 path");
+        assert!(!nested.parent().unwrap().exists());
+        store_vault(&sample_vault(), &nested)
+            .await
+            .expect("store_vault");
+        assert!(nested.exists());
+        assert!(nested.parent().unwrap().exists());
     }
 
     #[tokio::test]
