@@ -2,18 +2,16 @@
 
 ## Status
 
-**Drafted — ready for review.** Implements design 005
-(`design/005-20260504T1145-optional-version-on-versions-create.md`). Lands
-post-M2 as a backwards-compatible additive change against the M1-1.0.0 baseline
-— operators who keep passing an explicit VERSION see no behaviour change,
-operators who drop the positional get a UUIDv7 descriptor at
-`<root>/<type>/<UUIDv7>.json` with a `created at <timestamp>` title. cbscore-rs
-stays at 1.0.0 (no crate-version bump for additive features; same posture as
-seq-004).
-
-Two design–code mismatches surfaced during drafting were recorded as **Open
-Questions** below. Both are now resolved (see their bodies for the chosen
-paths); the plan reflects the decisions and is ready for design-review.
+**Implemented.** Lands on top of the M2 release as a backwards-compatible
+additive change against the M1-1.0.0 baseline — operators who keep passing an
+explicit VERSION see no behaviour change, operators who drop the positional get
+a UUIDv7 descriptor at `<root>/<type>/<UUIDv7>.json` with a
+`created at <timestamp>` title. cbscore-rs stays at 1.0.0 (no crate-version bump
+for additive features; same posture as seq-004). Implements design 005
+(`design/005-20260504T1145-optional-version-on-versions-create.md`); the two
+design–code mismatches recorded as Open Questions below were resolved during the
+planning phase and are now reflected in both this plan and design 005's
+§Resolver / §Patch walker / §Migration table.
 
 **Review trail:**
 
@@ -45,6 +43,13 @@ paths); the plan reflects the decisions and is ready for design-review.
   of the design + plan say `resolve.rs` — design line 412 corrected),
   SUGGESTION-1 (§Open Questions section opener reworded from forward-instruction
   "These must be resolved" to "Both have been resolved as documented below").
+- v4 design-review pass (2026-05-22) — **verdict "approve — clean"**. Zero
+  findings; the review chain converged. Plan + design ready for implementation.
+- Implementation landed 2026-05-22 in three commits on `feature/cbscore-rs`:
+  `058f3a9` (Commit 1 — cbscore helpers + uuid v7 feature), `97f6f2b` (Commit 2
+  — make_title UUIDv7 branch), `3b3b177` (Commit 3 — cbsbuild CLI cutover).
+  Workspace gate green at each commit boundary; cbscore lib tests grew 175 →
+  196, cbsbuild cmds::versions tests grew 8 → 12.
 
 ## Progress
 
@@ -562,20 +567,27 @@ After all three commits land:
   matches the on-disk reality).
 - Plan progress table flips all three rows to `Done`.
 
-## Verification before implementation starts
+## Verification history
 
-1. **OQ resolutions confirmed.** OQ-A (validate_version, accept UUIDv7) and OQ-B
-   (keep current per-walk warn) are both resolved in their respective §Open
-   Questions subsections above.
-2. **Design 005 amended to match.** OQ-A's resolution updated §Resolver (drop
-   the "gate on `is_some()`" instruction; describe the unconditional
+The pre-implementation verification ran as follows; recorded here for the
+historical record (now superseded by the implementation entry in the §Status
+review trail above).
+
+1. **OQ resolutions confirmed.** OQ-A (`validate_version`, accept UUIDv7) and
+   OQ-B (keep current per-walk warn) were resolved in their respective §Open
+   Questions subsections.
+2. **Design 005 amended to match.** OQ-A's resolution updated §Resolver (dropped
+   the "gate on `is_some()`" instruction; described the unconditional
    `validate_version` call with the UUIDv7 carve-out) and §Migration table (step
-   2 split into 2a/2b; step 5 mentions `validate_version` unconditionally) —
-   applied. OQ-B's resolution simplified §Patch walker to match the existing
-   per-walk implementation and notes that §Migration table step 4's work is
-   already complete pre-seq-005 — applied. Design 005's status flips from
-   "Complete — ready for review" to "Approved for seq-005 implementation".
-3. **Spawn a design-review pass on the amended plan + design.** Same cadence as
-   the seq-004 v3 → v4 → v5 chain; expect "approve with MINOR cleanups" or
-   cleaner.
-4. **Then start Commit 1.**
+   2 split into 2a/2b; step 5 mentions `validate_version` unconditionally).
+   OQ-B's resolution simplified §Patch walker to match the existing per-walk
+   implementation and noted that §Migration table step 4's work was already
+   complete pre-seq-005. Design 005's status flipped from "Complete — ready for
+   review" to "Approved for seq-005 implementation".
+3. **Design-review chain ran v2 → v3 → v4.** Same cadence as seq-004's v3 → v4 →
+   v5 chain. Verdicts (in order): "approve with MINOR cleanups", "approve with
+   MINOR cleanups", "approve — clean". All findings closed inline before
+   implementation began.
+4. **Implementation landed in three commits** as listed in the §Status review
+   trail. cbscore lib tests grew 175 → 196, cbsbuild cmds::versions tests grew 8
+   → 12, workspace gate green at each commit boundary.

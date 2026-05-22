@@ -2,11 +2,17 @@
 
 ## Status
 
-**Approved for seq-005 implementation.** This design refines the CLI surface of
+**Implemented in seq-005 (2026-05-22).** This design refines the CLI surface of
 `cbsbuild versions create`: making the VERSION positional argument optional and
 generating a UUIDv7 string when the operator omits it. It exists as a follow-up
 to design 002 (which preserves Python parity — VERSION required) and design 004
 (which made the descriptor-store location configurable).
+
+Shipped on `feature/cbscore-rs` in three commits: `058f3a9` (cbscore helpers and
+uuid v7 feature), `97f6f2b` (make_title UUIDv7 branch), `3b3b177` (cbsbuild CLI
+cutover). See the seq-005 plan
+(`cbsd-rs/docs/cbscore-rs/plans/005-20260521T1300-optional-version-on-versions-create.md`)
+for the per-commit breakdown and review trail.
 
 The seq-005 plan's drafting sweep flagged two design–code mismatches that were
 resolved during the planning phase:
@@ -24,13 +30,13 @@ resolved during the planning phase:
   design 005 §Patch walker is rewritten to match, and §Migration table step 4 is
   marked already-complete pre-seq-005**.
 
-This design is intentionally **out of M1 scope**. M1 ships with VERSION
-required, matching Python parity. Once M1 is stable, 005's implementation lands
-as a backwards-compatible additive change against the M1-1.0.0 baseline (no
+This design was intentionally **out of M1 scope**. M1 shipped with VERSION
+required, matching Python parity. seq-005 landed post-M2 as a
+backwards-compatible additive change against the M1-1.0.0 baseline (no
 crate-version bump; cbscore-rs stays at 1.0.0). All eight Open Questions are
 resolved (see § Resolved Decisions); the per-affected-area analysis lives under
-§ Effects of UUIDv7 VERSIONs; the §Design Sketch and §Migration sections are
-populated.
+§ Effects of UUIDv7 VERSIONs; the §Design Sketch and §Migration sections
+describe the as-implemented shape.
 
 ## Context
 
