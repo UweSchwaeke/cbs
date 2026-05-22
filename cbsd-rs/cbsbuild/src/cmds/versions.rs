@@ -3,12 +3,16 @@
 
 //! `cbsbuild versions …` — version-descriptor lifecycle.
 //!
-//! - `versions create <VERSION>` — resolve component refs via
+//! - `versions create [VERSION]` — resolve component refs via
 //!   `git ls-remote`, build a `VersionDescriptor`, write to
 //!   `<root>/<type>/<VERSION>.json` where `<root>` is resolved by
 //!   [`cbscore::versions::resolve_root`] from the CLI flag
 //!   `--versions-dir`, the config field `paths.versions`, or the
 //!   `<git-root>/_versions` Python-parity fallback (design 004).
+//!   VERSION is optional (design 005): when omitted, a `UUIDv7` is
+//!   generated and used as the descriptor identifier; when supplied,
+//!   it must match `[prefix-]vM.m.p[-suffix]` (Python parity, per
+//!   the regex in `cbscore::versions::utils::validate_version`).
 //! - `versions list [--path DIR]` — list known releases from S3
 //!   via [`cbscore::releases::s3::check_released_components`].
 //! - `versions show <descriptor.json>` — pretty-print a descriptor.
@@ -54,8 +58,12 @@ pub(crate) enum VersionsCommand {
 /// `cbsbuild versions create` arguments.
 #[derive(Debug, Args)]
 pub(crate) struct CreateArgs {
-    /// Version string to create the descriptor for.
-    pub version: String,
+    /// Optional version string matching `[prefix-]vM.m.p[-suffix]`.
+    /// When omitted, a `UUIDv7` is generated and used as the descriptor
+    /// identifier (design 005); when supplied, it is regex-validated
+    /// against the Python `_validate_version` shape (rejects bare
+    /// `19`, `19.2`, `foobar`, etc.).
+    pub version: Option<String>,
     /// Component refs in `component@ref` form. Repeatable.
     #[arg(short = 'c', long = "component", value_name = "COMPONENT@REF")]
     pub components: Vec<String>,
@@ -119,6 +127,14 @@ pub(crate) async fn handle(cmd: VersionsCommand, config_path: &Utf8Path) -> Resu
 }
 
 async fn handle_create(args: CreateArgs, config_path: &Utf8Path) -> Result<()> {
+    // Resolve the VERSION first (design 005): supplied positional or
+    // a fresh UUIDv7. Then validate before any IO so a malformed
+    // supplied VERSION fails fast — no config load, no component-dir
+    // walk, no `git ls-remote` traffic.
+    let version = cbscore::versions::resolve_version(args.version.as_deref());
+    cbscore::versions::validate_version(&version)
+        .with_context(|| format!("invalid version '{version}'"))?;
+
     let cfg = config::load(config_path)
         .await
         .with_context(|| format!("loading config at '{config_path}'"))?;
@@ -150,7 +166,7 @@ async fn handle_create(args: CreateArgs, config_path: &Utf8Path) -> Result<()> {
         .with_context(|| format!("invalid --type '{}'", args.version_type))?;
 
     let input = VersionCreateInput {
-        version: args.version.clone(),
+        version: version.clone(),
         version_type,
         component_refs,
         component_repos,
@@ -167,13 +183,13 @@ async fn handle_create(args: CreateArgs, config_path: &Utf8Path) -> Result<()> {
 
     let desc = version_create_helper(&input)
         .await
-        .with_context(|| format!("creating descriptor for '{}'", args.version))?;
+        .with_context(|| format!("creating descriptor for '{version}'"))?;
 
     let dst = write_resolved_descriptor(
         args.versions_dir.as_deref(),
         &cfg,
         version_type,
-        &args.version,
+        &version,
         &desc,
     )
     .await?;
@@ -522,5 +538,104 @@ mod tests {
             matches!(typed, VersionError::AlreadyExists { .. }),
             "expected AlreadyExists, got {typed:?}",
         );
+    }
+
+    // ----- seq-005: optional positional VERSION + validate_version -----
+
+    // Aliased to avoid clashing with the `std::process::Command`
+    // already imported above for the cwd-mutating tests.
+    use crate::cli::{Cli, Command as CliCommand};
+    use clap::Parser;
+
+    /// `cbsbuild versions create` with no positional VERSION parses
+    /// `CreateArgs.version` as `None`. The handler will mint a `UUIDv7`
+    /// via `resolve_version` at runtime; this clap-level test just
+    /// pins the parsing shape.
+    #[test]
+    fn clap_accepts_missing_positional_as_none() {
+        let cli = Cli::try_parse_from(["cbsbuild", "versions", "create", "-c", "ceph@main"])
+            .expect("parses");
+        match cli.command {
+            CliCommand::Versions(VersionsCommand::Create(args)) => {
+                assert_eq!(args.version, None);
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    /// Supplied positional VERSION parses as `Some(_)`. The handler
+    /// will then `validate_version` it.
+    #[test]
+    fn clap_accepts_supplied_positional_as_some() {
+        let cli = Cli::try_parse_from([
+            "cbsbuild",
+            "versions",
+            "create",
+            "19.2.3",
+            "-c",
+            "ceph@main",
+        ])
+        .expect("parses");
+        match cli.command {
+            CliCommand::Versions(VersionsCommand::Create(args)) => {
+                assert_eq!(args.version.as_deref(), Some("19.2.3"));
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    /// `resolve_version(None) → UUIDv7` fed through
+    /// `write_resolved_descriptor` lands the descriptor at
+    /// `<root>/<type>/<UUIDv7>.json` (design 005 §Goals). Asserts the
+    /// filename parses back to a `UUIDv7` — the seq-005 sortability
+    /// property follows from that.
+    #[tokio::test]
+    async fn write_with_resolved_uuidv7_lands_under_root_type_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let dir_path = Utf8PathBuf::try_from(dir.path().to_owned()).unwrap();
+        let cfg = stub_config(None);
+        let version = cbscore::versions::resolve_version(None);
+        let desc = stub_descriptor(&version);
+
+        let written = write_resolved_descriptor(
+            Some(dir_path.as_path()),
+            &cfg,
+            VersionType::Dev,
+            &version,
+            &desc,
+        )
+        .await
+        .expect("write");
+
+        let canon = dir_path.canonicalize_utf8().unwrap();
+        let expected = canon.join("dev").join(format!("{version}.json"));
+        assert_eq!(written, expected);
+
+        // The basename (sans `.json`) parses back to a UUIDv7.
+        let stem = written.file_stem().expect("file stem");
+        let uuid = uuid::Uuid::parse_str(stem).expect("UUIDv7 parses");
+        assert_eq!(uuid.get_version(), Some(uuid::Version::SortRand));
+    }
+
+    /// Python-parity reject (OQ-A): `validate_version("19")` fails
+    /// with `CbsError::MalformedVersion("19")`. The handler in
+    /// `handle_create` calls `validate_version` before any IO, so
+    /// `cbsbuild versions create 19 -c ceph@main` would surface this
+    /// error to the operator. Drive `validate_version` directly per
+    /// the plan §Commit 3 §Testable — no need for the full
+    /// `handle_create` machinery.
+    #[test]
+    fn validate_version_rejects_python_invalid_strings() {
+        for input in ["19", "19.2", "foobar"] {
+            let err = cbscore::versions::validate_version(input).expect_err(input);
+            assert!(
+                matches!(
+                    err,
+                    cbscore_types::errors::CbsError::MalformedVersion(ref s)
+                    if s == input,
+                ),
+                "expected MalformedVersion({input:?}), got {err:?}",
+            );
+        }
     }
 }

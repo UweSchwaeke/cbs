@@ -48,11 +48,11 @@ paths); the plan reflects the decisions and is ready for design-review.
 
 ## Progress
 
-| #   | Commit                                                                                  | ~LOC | Status  |
-| --- | --------------------------------------------------------------------------------------- | ---- | ------- |
-| 1   | `cbscore: add uuid v7 feature + resolve_version + uuid_v7_timestamp + validate_version` | ~200 | Pending |
-| 2   | `cbscore: branch make_title on UUIDv7 (created-at form)`                                | ~80  | Pending |
-| 3   | `cbsbuild: optional positional VERSION + resolver wire-up + validate call`              | ~120 | Pending |
+| #   | Commit                                                                                  | ~LOC | Status |
+| --- | --------------------------------------------------------------------------------------- | ---- | ------ |
+| 1   | `cbscore: add uuid v7 feature + resolve_version + uuid_v7_timestamp + validate_version` | ~280 | Done   |
+| 2   | `cbscore: branch make_title on UUIDv7 (created-at form)`                                | ~60  | Done   |
+| 3   | `cbsbuild: optional positional VERSION + resolver wire-up + validate call`              | ~210 | Done   |
 
 **Estimate:** ~400 LOC, 3 commits.
 

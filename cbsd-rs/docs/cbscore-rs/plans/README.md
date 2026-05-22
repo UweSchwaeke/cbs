@@ -54,7 +54,11 @@ The following are tracked under their own design seq, not folded into this plan:
   [`004-20260513T0900-configurable-version-descriptor-location.md`](004-20260513T0900-configurable-version-descriptor-location.md)
   (3 commits; `Status: Done`).
 - **seq-005** — optional positional VERSION on `cbsbuild versions create`
-  (post-M1, lands as a 1.x.0 minor add).
+  (UUIDv7 default when omitted; supplied VERSION gets Python-shape regex
+  validation via the new `validate_version`). Landed post-M2 as a
+  backwards-compatible additive change on top of the 1.0.0 baseline. Plan:
+  [`005-20260521T1300-optional-version-on-versions-create.md`](005-20260521T1300-optional-version-on-versions-create.md)
+  (3 commits; `Status: Done`).
 
 ## Deferred (post-M2)
 
