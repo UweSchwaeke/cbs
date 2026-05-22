@@ -179,14 +179,6 @@ pub fn resolve_version(cli: Option<&str>) -> String {
 /// Used by `cbscore::versions::create::make_title` to format the
 /// "Release {`type_desc`} version created at {iso8601}" title body
 /// when VERSION is a `UUIDv7` (seq-005 Commit 2).
-//
-// `dead_code` allow: this helper is introduced in seq-005 Commit 1
-// alongside the rest of the seq-005 helpers, and wired up by Commit 2
-// when `make_title` gains its UUIDv7 branch. The `#[cfg_attr(not(test),
-// ...)]` shape keeps the unit tests visible as callers under
-// `cargo test` so the function is exercised at gate time even before
-// Commit 2 lands. Drop this attribute when Commit 2 wires the caller.
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn uuid_v7_timestamp(uuid: &Uuid) -> Option<DateTime<Utc>> {
     if uuid.get_version() != Some(uuid::Version::SortRand) {
         return None;

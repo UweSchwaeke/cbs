@@ -204,8 +204,24 @@ fn looks_like_sha(s: &str) -> bool {
     s.len() >= 7 && s.chars().all(|c| c.is_ascii_hexdigit())
 }
 
-/// Build the descriptor's `title` field. Matches the Python
-/// "Release <type-desc> version <VERSION>" pattern.
+/// Build the descriptor's `title` field.
+///
+/// Two shapes:
+///
+/// - Supplied VERSION (or any non-UUIDv7 input) → `"Release
+///   {type_desc} version {version}"`, matching the existing
+///   Python-parity format string the Rust port has emitted since
+///   M1 cut.
+/// - `UUIDv7` input → `"Release {type_desc} version created at
+///   {iso8601}"`, where `{iso8601}` is the `UUIDv7`'s embedded
+///   48-bit timestamp formatted as ISO 8601 UTC at seconds
+///   precision. Per design 005 §Title, this gives operators a
+///   readable creation-time stamp instead of the raw UUID in
+///   `versions list` output.
+///
+/// Stays private and infallible; the `UUIDv7` branch falls through
+/// to the existing format string on any miss (parse failure, wrong
+/// UUID version, out-of-range timestamp).
 fn make_title(version: &str, version_type: VersionType) -> String {
     let type_desc = match version_type {
         VersionType::Dev => "Development",
@@ -213,6 +229,13 @@ fn make_title(version: &str, version_type: VersionType) -> String {
         VersionType::Ci => "CI",
         VersionType::Release => "Release",
     };
+    if let Ok(uuid) = uuid::Uuid::parse_str(version)
+        && uuid.get_version() == Some(uuid::Version::SortRand)
+        && let Some(ts) = crate::versions::resolve::uuid_v7_timestamp(&uuid)
+    {
+        let formatted = ts.format("%Y-%m-%dT%H:%M:%SZ");
+        return format!("Release {type_desc} version created at {formatted}");
+    }
     format!("Release {type_desc} version {version}")
 }
 
@@ -240,5 +263,37 @@ mod tests {
         assert_eq!(t, "Release Development version 19.2.3");
         let t = make_title("19.2.3", VersionType::Release);
         assert_eq!(t, "Release Release version 19.2.3");
+    }
+
+    /// `UUIDv7` input minted at a fixed Unix timestamp produces the
+    /// "created at <iso8601>" title body (design 005 §Title). The
+    /// constant `1_777_895_100` = 2026-05-04T11:45:00Z UTC.
+    #[test]
+    fn make_title_uuidv7_emits_created_at_iso8601() {
+        let ts = uuid::Timestamp::from_unix_time(1_777_895_100, 0, 0, 0);
+        let uuid = uuid::Uuid::new_v7(ts);
+        let title = make_title(&uuid.to_string(), VersionType::Dev);
+        assert_eq!(
+            title,
+            "Release Development version created at 2026-05-04T11:45:00Z",
+        );
+    }
+
+    /// `UUIDv4` input falls through to the passthrough format with the
+    /// literal UUID string. Pins the seq-005 design choice that only
+    /// `UUIDv7` triggers the created-at branch, not "any UUID".
+    #[test]
+    fn make_title_uuidv4_falls_through_to_passthrough() {
+        let v4 = uuid::Uuid::new_v4().to_string();
+        let title = make_title(&v4, VersionType::Dev);
+        assert_eq!(title, format!("Release Development version {v4}"));
+    }
+
+    /// Non-UUID malformed input falls through cleanly. `Uuid::parse_str`
+    /// rejects the input and the passthrough format runs.
+    #[test]
+    fn make_title_non_uuid_falls_through() {
+        let title = make_title("foobar", VersionType::Dev);
+        assert_eq!(title, "Release Development version foobar");
     }
 }
