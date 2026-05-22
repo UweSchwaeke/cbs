@@ -216,22 +216,33 @@ Concrete consequences:
 
 ### OQ7 — CLI-flag bypass interactions
 
-**Resolved: `--for-systemd-install` / `--for-containerized-run` pre-fill
-`Config.paths.versions = "/cbs/_versions"`** alongside the other path fields.
-This makes `versions` symmetric with `components`, `scratch`,
+**Resolved: `--for-systemd-install` and `--for-containerized-run` each pre-fill
+`Config.paths.versions` with a path matching the template's existing filesystem
+prefix.** This makes `versions` symmetric with `components`, `scratch`,
 `scratch_containers`, `ccache`, `secrets`, and `vault` — every path field has
 both a config-init interactive prompt and a slot in the bypass-mode pre-fill
 set, and `versions` joins them.
 
+The two templates' pre-fill values:
+
+- **`--for-systemd-install`** → `paths.versions = "/var/lib/cbsd/_versions"`.
+  Matches the template's existing `/var/lib/cbsd/...` prefix on `scratch`,
+  `scratch_containers`, `ccache`.
+- **`--for-containerized-run`** → `paths.versions = "/cbs/_versions"`. Matches
+  the template's existing `/cbs/...` prefix on the same fields.
+
+Per-template prefix-matching keeps each template internally consistent (an
+operator running `--for-systemd-install` gets `/var/lib/cbsd/` for every path,
+not `/var/lib/cbsd/scratch` mixed with `/cbs/_versions`). Both values keep the
+leading-underscore `_versions/` convention from the Python
+`<git-root>/_versions` directory, so operators familiar with the existing layout
+see a recognisable directory name in either template.
+
 The systemd / containerized deployments do not necessarily _use_
 `cbsbuild versions create` today (workers typically read descriptors authored
-elsewhere via an explicit `desc_path` per OQ4), but pre- filling the path keeps
+elsewhere via an explicit `desc_path` per OQ4), but pre-filling the path keeps
 the layout uniform and lets future workflows (e.g., a CI worker that authors
 descriptors locally) work without a config edit.
-
-The chosen value `/cbs/_versions` keeps the leading-underscore convention from
-the Python `<git-root>/_versions` directory, so operators familiar with the
-existing layout see a recognisable name under `/cbs/`.
 
 Concrete consequences for design 003 (interactive `config init`):
 
@@ -240,10 +251,17 @@ Concrete consequences for design 003 (interactive `config init`):
   optional `ccache path` prompt.
 - §Bypass Behaviour: `--versions-dir` is added to the per-field flags list (it
   skips the prompt above when supplied). The systemd / containerized bypass-mode
-  pre-fill set gains `versions = /cbs/_versions`, listed alongside the other
-  paths.
+  pre-fill set gains the per-template `versions` values listed above.
 
 Both edits land in design 003 in the same commit as this resolution.
+
+**Design history.** The original OQ7 resolution pre-filled both templates with
+the same literal `/cbs/_versions`. seq-003's plan-drafting sweep (2026-05-22)
+flagged that the literal pre-fill would mix prefixes in the systemd template;
+the per-template prefix-matching shape replaces the single-literal shape. See
+seq-003 plan OQ-A
+(`cbsd-rs/docs/cbscore-rs/plans/003-20260522T1500-interactive-config-init.md`)
+for the full rationale.
 
 ## Design Sketch
 
@@ -446,9 +464,14 @@ public API contract for `write_descriptor`.
 ### Bypass-mode pre-fill
 
 In `cbsbuild config init`'s `--for-systemd-install` / `--for-containerized-run`
-handler, alongside the other path pre-fills:
+handler, alongside the other path pre-fills. Each template uses a path that
+matches its own existing filesystem prefix (see §OQ7 for the rationale):
 
 ```rust
+// systemd_install_template — paths under /var/lib/cbsd/...
+init.paths.versions = Some(Utf8PathBuf::from("/var/lib/cbsd/_versions"));
+
+// containerized_run_template — paths under /cbs/...
 init.paths.versions = Some(Utf8PathBuf::from("/cbs/_versions"));
 ```
 
@@ -458,25 +481,25 @@ Listed in design 003 §Bypass Behaviour for completeness.
 
 ### Code
 
-| Step | Where                                              | What                                                                                                                                                                                                                                 |
-| ---- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 1    | `cbscore-types/src/config/paths.rs`                | Add `versions: Option<Utf8PathBuf>` field with `#[serde(default, skip_serializing_if = "Option::is_none")]` (both attributes mandatory — see §OQ6 for the round-trip dependency).                                                    |
-| 2    | `cbscore-types/src/versions/desc.rs`               | Add `descriptor_path()` helper with absolute-root doc contract and a `debug_assert!(root.is_absolute())` guard. Add `VersionType::as_dir_name()` if not already present.                                                             |
-| 3    | `cbscore/src/versions/mod.rs`                      | Add `resolve_root()` and its `canonicalize_root()` helper. Add three `VersionError` variants: `NoDescriptorRoot` (OQ5 text), `DescriptorRootResolve { path, source: std::io::Error }`, and `DescriptorRootNotUtf8 { path: String }`. |
-| 4    | `cbsbuild/src/cmds/versions.rs`                    | Add `--versions-dir` flag. Call `resolve_root()` then `descriptor_path()`. Drop the old hardcoded `repo_root.join("_versions").join(type).join(...)` chain.                                                                          |
-| 5    | `cbsbuild/src/cmds/config/init.rs` (later seq-003) | Add the optional "Versions path" prompt. Add `versions = "/cbs/_versions"` to the bypass-mode pre-fill set.                                                                                                                          |
+| Step | Where                                              | What                                                                                                                                                                                                                                    |
+| ---- | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1    | `cbscore-types/src/config/paths.rs`                | Add `versions: Option<Utf8PathBuf>` field with `#[serde(default, skip_serializing_if = "Option::is_none")]` (both attributes mandatory — see §OQ6 for the round-trip dependency).                                                       |
+| 2    | `cbscore-types/src/versions/desc.rs`               | Add `descriptor_path()` helper with absolute-root doc contract and a `debug_assert!(root.is_absolute())` guard. Add `VersionType::as_dir_name()` if not already present.                                                                |
+| 3    | `cbscore/src/versions/mod.rs`                      | Add `resolve_root()` and its `canonicalize_root()` helper. Add three `VersionError` variants: `NoDescriptorRoot` (OQ5 text), `DescriptorRootResolve { path, source: std::io::Error }`, and `DescriptorRootNotUtf8 { path: String }`.    |
+| 4    | `cbsbuild/src/cmds/versions.rs`                    | Add `--versions-dir` flag. Call `resolve_root()` then `descriptor_path()`. Drop the old hardcoded `repo_root.join("_versions").join(type).join(...)` chain.                                                                             |
+| 5    | `cbsbuild/src/cmds/config/init.rs` (later seq-003) | Add the optional "Versions path" prompt. Pre-fill `paths.versions` in each bypass template with a path matching the template's own filesystem prefix (systemd → `/var/lib/cbsd/_versions`; containerized → `/cbs/_versions`); see §OQ7. |
 
 Steps 1–4 land in the seq-004 post-M2 minor release. Step 5 lands when design
 003 (interactive `config init`) is implemented under seq-003.
 
 ### Operator-side
 
-| Operator scenario                                                       | Required action at upgrade                                                                                                                                                                                                                                                                                                  |
-| ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Existing operator with `<git-root>/_versions/` populated, doing nothing | None. Default fallback resolves to `<git-root>/_versions`. Bit-identical behaviour.                                                                                                                                                                                                                                         |
-| Operator who wants to relocate the descriptor store                     | Set `paths.versions: /new/path` in `cbs-build.config.yaml`, or pass `--versions-dir /new/path` per invocation. The directory must exist (`mkdir -p /new/path` first) — `resolve_root` canonicalizes the path and errors out if it does not exist. Move existing files via shell: `cp -r <git-root>/_versions/* /new/path/`. |
-| Operator using `--for-systemd-install` / `--for-containerized-run`      | Re-run `cbsbuild config init --for-systemd-install` (or equivalent) on the bypass-pre-fill side; the regenerated `cbscore.config.yaml` will include `paths.versions: /cbs/_versions`. Alternatively, manually add the field to the existing config.                                                                         |
-| Operator on a worker host without a git checkout (today: blocked)       | Set `paths.versions` in config or pass `--versions-dir`. The blocking constraint is removed.                                                                                                                                                                                                                                |
+| Operator scenario                                                       | Required action at upgrade                                                                                                                                                                                                                                                                                                                    |
+| ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Existing operator with `<git-root>/_versions/` populated, doing nothing | None. Default fallback resolves to `<git-root>/_versions`. Bit-identical behaviour.                                                                                                                                                                                                                                                           |
+| Operator who wants to relocate the descriptor store                     | Set `paths.versions: /new/path` in `cbs-build.config.yaml`, or pass `--versions-dir /new/path` per invocation. The directory must exist (`mkdir -p /new/path` first) — `resolve_root` canonicalizes the path and errors out if it does not exist. Move existing files via shell: `cp -r <git-root>/_versions/* /new/path/`.                   |
+| Operator using `--for-systemd-install` / `--for-containerized-run`      | Re-run `cbsbuild config init` with the chosen bypass mode; the regenerated `cbs-build.config.yaml` includes `paths.versions` pre-filled with a path matching the template's existing filesystem prefix (systemd → `/var/lib/cbsd/_versions`; containerized → `/cbs/_versions`). Alternatively, manually add the field to the existing config. |
+| Operator on a worker host without a git checkout (today: blocked)       | Set `paths.versions` in config or pass `--versions-dir`. The blocking constraint is removed.                                                                                                                                                                                                                                                  |
 
 No Python-side patches; no schema-version bump (per OQ6, bump policy is
 currently deferred across every design in the corpus — see §OQ6 for the full

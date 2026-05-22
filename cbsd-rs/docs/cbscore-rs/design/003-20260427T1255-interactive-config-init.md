@@ -298,11 +298,15 @@ real-pty tests would introduce on CI.
 The flag-based bypass modes ship in M1; this design preserves them unchanged
 when interactive mode lands:
 
-- `--for-systemd-install`: pre-fill paths for the systemd worker layout
-  (`/cbs/components`, `/cbs/scratch`, `/cbs/_versions` for
-  `Config.paths.versions` per design 004 OQ7, etc.) and write to
-  `~/.config/cbsd/${deployment}/worker/cbscore.config.yaml`.
-- `--for-containerized-run`: pre-fill the same paths as systemd-install but
+- `--for-systemd-install`: pre-fill paths for the systemd worker layout (each
+  path under `/var/lib/cbsd/...` or `/etc/cbsd/...` — matching the template's
+  existing filesystem prefix: `components: /etc/cbsd/components`,
+  `scratch: /var/lib/cbsd/scratch`, `ccache: /var/lib/cbsd/ccache`,
+  `paths.versions: /var/lib/cbsd/_versions` per design 004 OQ7 + seq-003 OQ-A)
+  and write to `~/.config/cbsd/${deployment}/worker/cbscore.config.yaml`.
+- `--for-containerized-run`: pre-fill paths for a containerised deployment (each
+  path under `/cbs/...`: `components: /cbs/components`, `scratch: /cbs/scratch`,
+  `ccache: /cbs/ccache`, `paths.versions: /cbs/_versions` per OQ7 + OQ-A) and
   write to the user-supplied `--config` path.
 - Per-field flags: `--components`, `--scratch`, `--containers-scratch`,
   `--ccache`, `--versions-dir` (design 004), `--vault`, `--secrets`. Any field
@@ -339,10 +343,13 @@ automation that uses the flag-based modes.
 - **ccache prompt default: no.** The Python flow asks "Specify ccache path?"
   with default **no**, and the Rust port preserves that behaviour. Operators who
   want ccache opt in either via the prompt or by passing `--ccache <path>` on
-  the command line; the `--for-systemd-install` and `--for-containerized-run`
-  bypass flags continue to pre-fill `/cbs/ccache`. Default-yes was considered
-  and rejected: muscle-memory parity with Python cbscore wins over the
-  build-speedup convenience for the (small) interactive workstation cohort.
+  the command line; the `--for-systemd-install` bypass continues to pre-fill
+  `/var/lib/cbsd/ccache` and `--for-containerized-run` pre-fills `/cbs/ccache`
+  (per-template prefix-matching per design 004 §OQ7 + seq-003 OQ-A; the two
+  templates use different filesystem prefixes across every path field).
+  Default-yes was considered and rejected: muscle-memory parity with Python
+  cbscore wins over the build-speedup convenience for the (small) interactive
+  workstation cohort.
 - **URL validation: yes, via `url::Url::parse`.** The S3 storage URL, registry
   storage URL, and Vault address prompts all use dialoguer's `validate_with`
   hook to call `url::Url::parse` and re-prompt on syntactic failure. See § URL
