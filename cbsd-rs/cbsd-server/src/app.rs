@@ -108,10 +108,15 @@ pub fn build_router(
                 .get(&X_REQUEST_ID)
                 .and_then(|v| v.to_str().ok())
                 .unwrap_or("-");
+            // Per audit-rem D9: emit only the URI **path** in the
+            // tracing span, never the full URI. Query strings can
+            // carry bearer tokens (e.g. OAuth `code=`, legacy
+            // `cli-token=`, retry tokens) that must not land in
+            // access logs.
             tracing::info_span!(
                 "request",
                 method = %request.method(),
-                uri = %request.uri(),
+                path = %request.uri().path(),
                 request_id = %request_id,
             )
         })

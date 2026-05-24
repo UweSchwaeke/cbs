@@ -12,6 +12,17 @@
 
 //! Auth route handlers: OAuth login/callback, token management, API keys.
 
+/// Build the post-login redirect URL for the `cli` client flow.
+///
+/// Per audit-rem D4 / audit F5: the CLI token is carried in the URL
+/// **fragment**, not a query parameter. Fragments are not sent to the
+/// server, so they cannot appear in access logs, TraceLayer spans, or
+/// outbound `Referer` headers. The UI script reads the fragment then
+/// calls `history.replaceState` to clear it from the address bar.
+pub(crate) fn build_cli_token_redirect(token_b64: &str) -> String {
+    format!("/#cli-token={token_b64}")
+}
+
 use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
@@ -335,9 +346,14 @@ async fn callback(
 
     // Respond based on client type
     if client_type == "cli" {
-        // CLI: redirect to UI with token in fragment for copy-paste.
-        // The fragment is client-side only — never sent to the server.
-        let redirect_url = format!("/?cli-token={token_b64}");
+        // CLI: redirect to UI with token in the URL **fragment**, not a
+        // query parameter. Per audit-rem D4 / audit F5: fragments are
+        // never sent to the server (so they cannot appear in access
+        // logs, TraceLayer spans, or `Referer` headers on outbound
+        // navigations). The UI script reads `window.location.hash` and
+        // calls `history.replaceState` to clear the fragment from the
+        // browser address bar before any other script runs.
+        let redirect_url = build_cli_token_redirect(&token_b64);
         Ok(Redirect::temporary(&redirect_url).into_response())
     } else {
         // Web: store token server-side in session (BFF pattern).
@@ -726,6 +742,40 @@ async fn revoke_api_key_handler(
 mod handler_tests {
     use super::*;
     use crate::routes::test_support::{auth_user, test_app_state, test_pool};
+
+    /// Per audit-rem D4 / audit F5: the CLI redirect carries the token
+    /// in the URL **fragment**, never a query parameter. A naive
+    /// `?cli-token=...` would land in server access logs, TraceLayer
+    /// spans, and outbound `Referer` headers; the `#` form keeps the
+    /// token client-side only.
+    #[test]
+    fn cli_token_redirect_uses_url_fragment_not_query() {
+        let url = build_cli_token_redirect("abc.def.ghi");
+        assert!(
+            url.starts_with("/#cli-token="),
+            "redirect must use a fragment, got: {url}"
+        );
+        assert!(
+            !url.contains('?'),
+            "redirect must not carry the token as a query parameter, got: {url}"
+        );
+    }
+
+    #[test]
+    fn cli_token_redirect_does_not_include_token_in_path() {
+        // The path portion must be just `/` — the token MUST live in
+        // the fragment so the server never sees it on subsequent
+        // navigations.
+        let url = build_cli_token_redirect("XYZ-token");
+        let (path, fragment) = url
+            .split_once('#')
+            .expect("redirect must contain a fragment separator");
+        assert_eq!(path, "/", "path must be exactly '/', got: {path}");
+        assert!(
+            fragment.contains("XYZ-token"),
+            "token must appear in the fragment, got fragment: {fragment}"
+        );
+    }
 
     #[tokio::test]
     async fn create_api_key_rejects_robot_caller_with_400() {

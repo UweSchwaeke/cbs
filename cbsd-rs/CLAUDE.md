@@ -170,6 +170,16 @@ These are easy to get wrong. Document and test them:
    an open FD to an unlinked file survives deletion. This prevents the GC
    race where the file is deleted between reads.
 
+8. **URI logging policy (audit-rem D4/D9):** Tracing spans MUST emit only the
+   URI **path** (`Uri::path()`), never the full URI or query string. Bearer
+   tokens travel in query strings (`?cli-token=…`, OAuth `?code=…`) and must
+   not land in access logs, panic handlers, or any future error-reporting
+   middleware. The CLI post-login redirect uses a URL **fragment**
+   (`/#cli-token=…`), not a query parameter — fragments are not sent to the
+   server. The UI calls `history.replaceState({}, '', '/')` immediately on
+   page load to clear the fragment from the address bar before any other
+   script runs.
+
 ## sqlx Offline Query Cache
 
 The `.sqlx/` directory lives at the workspace root (`cbsd-rs/.sqlx/`).
