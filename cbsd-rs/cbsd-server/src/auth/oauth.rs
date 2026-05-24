@@ -40,10 +40,60 @@ impl OAuthState {
 }
 
 /// User information returned by Google's userinfo endpoint.
+///
+/// `email_verified` is canonical per OpenID Connect; Google's v2
+/// `/oauth2/v2/userinfo` endpoint returns `verified_email` — accepted
+/// here as a serde alias for the legacy field name. Missing field
+/// defaults to `false` so an unverified or malformed response is
+/// rejected by [`validate_user_info`].
 #[derive(Debug, Clone, Deserialize)]
 pub struct GoogleUserInfo {
     pub email: String,
     pub name: String,
+    #[serde(default, alias = "verified_email")]
+    pub email_verified: bool,
+}
+
+/// Reasons why a `GoogleUserInfo` may be rejected during the OAuth
+/// callback. Surfaced to the user as a single generic error to avoid
+/// leaking which check failed (audit-rem D2 pitfall).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AuthRejection {
+    /// Google reported the email is not verified (or the field was
+    /// absent in the userinfo response).
+    EmailNotVerified,
+    /// The email's domain is not in `allowed_domains` and
+    /// `allow_any_google_account` is false.
+    DomainNotAllowed,
+}
+
+impl std::fmt::Display for AuthRejection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::EmailNotVerified => write!(f, "email not verified"),
+            Self::DomainNotAllowed => write!(f, "email domain not allowed"),
+        }
+    }
+}
+
+/// Validate the userinfo against the server's OAuth config. Returns
+/// `Err(AuthRejection::EmailNotVerified)` first so an attacker cannot
+/// probe `allowed_domains` with unverified accounts (audit-rem D2).
+pub fn validate_user_info(
+    info: &GoogleUserInfo,
+    allowed_domains: &[String],
+    allow_any_google_account: bool,
+) -> Result<(), AuthRejection> {
+    if !info.email_verified {
+        return Err(AuthRejection::EmailNotVerified);
+    }
+    if !allow_any_google_account {
+        let domain = info.email.rsplit_once('@').map(|(_, d)| d).unwrap_or("");
+        if !allowed_domains.iter().any(|d| d == domain) {
+            return Err(AuthRejection::DomainNotAllowed);
+        }
+    }
+    Ok(())
 }
 
 /// Layout of the Google OAuth secrets JSON file.
@@ -210,3 +260,76 @@ fn urlencoding(s: &str) -> String {
 }
 
 const HEX_CHARS: [u8; 16] = *b"0123456789ABCDEF";
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn info(email: &str, verified: bool) -> GoogleUserInfo {
+        GoogleUserInfo {
+            email: email.to_string(),
+            name: "Test User".to_string(),
+            email_verified: verified,
+        }
+    }
+
+    #[test]
+    fn deserializes_email_verified_canonical() {
+        let json = r#"{"email": "u@example.com", "name": "U", "email_verified": true}"#;
+        let v: GoogleUserInfo = serde_json::from_str(json).expect("parse");
+        assert!(v.email_verified);
+    }
+
+    #[test]
+    fn deserializes_verified_email_legacy_alias() {
+        // Google's v2 /oauth2/v2/userinfo endpoint returns this name.
+        let json = r#"{"email": "u@example.com", "name": "U", "verified_email": true}"#;
+        let v: GoogleUserInfo = serde_json::from_str(json).expect("parse");
+        assert!(v.email_verified);
+    }
+
+    #[test]
+    fn missing_field_defaults_to_unverified() {
+        let json = r#"{"email": "u@example.com", "name": "U"}"#;
+        let v: GoogleUserInfo = serde_json::from_str(json).expect("parse");
+        assert!(!v.email_verified);
+    }
+
+    #[test]
+    fn validate_rejects_unverified_email_before_domain_check() {
+        // Attacker's email_verified=false; domain happens to be in the
+        // allow-list. The verification check must fire first so the
+        // domain allow-list is not probed.
+        let v = info("evil@allowed.example.com", false);
+        let result = validate_user_info(&v, &["allowed.example.com".to_string()], false);
+        assert_eq!(result, Err(AuthRejection::EmailNotVerified));
+    }
+
+    #[test]
+    fn validate_accepts_verified_and_allowed() {
+        let v = info("ok@allowed.example.com", true);
+        let result = validate_user_info(&v, &["allowed.example.com".to_string()], false);
+        assert_eq!(result, Ok(()));
+    }
+
+    #[test]
+    fn validate_rejects_verified_but_disallowed_domain() {
+        let v = info("ok@other.example.com", true);
+        let result = validate_user_info(&v, &["allowed.example.com".to_string()], false);
+        assert_eq!(result, Err(AuthRejection::DomainNotAllowed));
+    }
+
+    #[test]
+    fn validate_accepts_when_allow_any_and_verified() {
+        let v = info("anyone@anywhere.com", true);
+        let result = validate_user_info(&v, &[], true);
+        assert_eq!(result, Ok(()));
+    }
+
+    #[test]
+    fn validate_rejects_unverified_even_when_allow_any() {
+        let v = info("anyone@anywhere.com", false);
+        let result = validate_user_info(&v, &[], true);
+        assert_eq!(result, Err(AuthRejection::EmailNotVerified));
+    }
+}

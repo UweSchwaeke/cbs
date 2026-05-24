@@ -231,7 +231,14 @@ async fn callback(
     // Resolve user info — dev mode or Google exchange.
     let user_info = if let Some(email) = params.dev_email.filter(|_| state.config.dev.enabled) {
         let name = email.split('@').next().unwrap_or(&email).to_string();
-        oauth::GoogleUserInfo { email, name }
+        // Dev-mode short-circuit synthesizes `email_verified = true`
+        // because no real OAuth verification is happening; this path is
+        // only reachable when `dev.enabled` is set on the server.
+        oauth::GoogleUserInfo {
+            email,
+            name,
+            email_verified: true,
+        }
     } else {
         let code = params
             .code
@@ -247,22 +254,26 @@ async fn callback(
                 )
             })?;
 
-        // Check domain restriction (production only).
-        if !state.config.oauth.allow_any_google_account {
-            let domain = info.email.rsplit_once('@').map(|(_, d)| d).unwrap_or("");
-
-            if !state
-                .config
-                .oauth
-                .allowed_domains
-                .iter()
-                .any(|d| d == domain)
-            {
-                return Err(auth_error(
-                    StatusCode::FORBIDDEN,
-                    "email domain not allowed",
-                ));
-            }
+        // Per audit-rem D2: validate `email_verified` BEFORE the
+        // allowed-domain check, and route both rejection reasons through
+        // the same generic user-facing error so the response does not
+        // leak which check failed. Server-side log captures the
+        // specific reason for operator diagnostics.
+        if let Err(reason) = oauth::validate_user_info(
+            &info,
+            &state.config.oauth.allowed_domains,
+            state.config.oauth.allow_any_google_account,
+        ) {
+            tracing::warn!(
+                email = %info.email,
+                email_verified = info.email_verified,
+                %reason,
+                "OAuth callback rejected"
+            );
+            return Err(auth_error(
+                StatusCode::UNAUTHORIZED,
+                "authentication failed; contact your administrator",
+            ));
         }
 
         info
