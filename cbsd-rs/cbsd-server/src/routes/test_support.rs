@@ -29,6 +29,9 @@ use sqlx::SqlitePool;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use std::str::FromStr;
 use tokio::sync::{Mutex, Notify};
+use tower_sessions::SessionManagerLayer;
+use tower_sessions::service::SignedCookie;
+use tower_sessions_sqlx_store::SqliteStore;
 
 use crate::app::AppState;
 use crate::auth::extractors::AuthUser;
@@ -134,6 +137,24 @@ pub fn temp_component_dir(component_name: &str) -> tempfile::TempDir {
     std::fs::create_dir_all(&component_root).expect("mkdir component");
     std::fs::write(component_root.join("placeholder"), b"test\n").expect("write placeholder");
     tmp
+}
+
+/// Build a `SessionManagerLayer<SqliteStore, SignedCookie>` for tests
+/// that exercise the full `build_router` chain. Runs the tower-sessions
+/// SQLite migration and generates a fresh signing key per call.
+pub async fn test_session_layer(
+    pool: SqlitePool,
+) -> SessionManagerLayer<SqliteStore, SignedCookie> {
+    let session_store = SqliteStore::new(pool);
+    session_store
+        .migrate()
+        .await
+        .expect("session store migrate");
+    let session_key = tower_sessions::cookie::Key::generate();
+    SessionManagerLayer::new(session_store)
+        .with_signed(session_key)
+        .with_name("cbsd_test_session")
+        .with_http_only(true)
 }
 
 /// Construct an `AuthUser` with the requested caps. Does not insert a

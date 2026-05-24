@@ -21,6 +21,7 @@ use axum::{Json, Router, routing::get};
 use sqlx::SqlitePool;
 use tokio::sync::{Mutex, mpsc, watch};
 use tower_http::classify::ServerErrorsFailureClass;
+use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer};
 use tower_http::sensitive_headers::SetSensitiveRequestHeadersLayer;
 use tower_http::trace::TraceLayer;
@@ -138,17 +139,25 @@ pub fn build_router(
     let sensitive_headers_layer =
         SetSensitiveRequestHeadersLayer::new([axum::http::header::AUTHORIZATION]);
 
+    // Per audit-rem D6: cap REST request bodies at 1 MiB. axum returns
+    // 413 Payload Too Large when this is exceeded. The WS upgrade route
+    // bypasses request-body reading, so this layer applies only to
+    // regular REST endpoints.
+    let body_limit_layer = RequestBodyLimitLayer::new(cbsd_common::limits::REQUEST_BODY_MAX_BYTES);
+
     // Layer ordering (outermost → innermost):
     //   1. SetRequestId — assigns x-request-id before tracing sees it
     //   2. Sensitive headers — marks Authorization as sensitive
     //   3. TraceLayer — logs request/response with the assigned ID
     //   4. PropagateRequestId — copies x-request-id to the response
     //   5. SessionManagerLayer — session handling for OAuth
+    //   6. RequestBodyLimit — bounds REST payloads at 1 MiB
     Router::new()
         .nest(
             "/api",
             api.route("/ws/worker", get(ws::handler::ws_upgrade)),
         )
+        .layer(body_limit_layer)
         .layer(session_layer)
         .layer(PropagateRequestIdLayer::new(X_REQUEST_ID.clone()))
         .layer(trace_layer)
@@ -162,4 +171,66 @@ pub fn build_router(
 
 async fn health() -> Json<serde_json::Value> {
     Json(serde_json::json!({"status": "ok", "version": crate::VERSION}))
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::body::Body;
+    use axum::http::{Request, StatusCode};
+    use tower::ServiceExt;
+
+    use super::*;
+    use crate::routes::test_support::{test_app_state, test_pool, test_session_layer};
+
+    /// Per audit-rem D6: a request with `Content-Length` above
+    /// [`cbsd_common::limits::REQUEST_BODY_MAX_BYTES`] must be rejected
+    /// with `413 Payload Too Large` before reaching any handler.
+    #[tokio::test]
+    async fn rest_body_over_limit_returns_413() {
+        let pool = test_pool().await;
+        let state = test_app_state(pool.clone());
+        let session_layer = test_session_layer(pool).await;
+        let app = build_router(state, session_layer);
+
+        let huge = cbsd_common::limits::REQUEST_BODY_MAX_BYTES + 1;
+        let req = Request::builder()
+            .method("POST")
+            .uri("/api/builds")
+            .header("content-length", huge.to_string())
+            .body(Body::empty())
+            .expect("build request");
+
+        let response = app.oneshot(req).await.expect("router");
+        assert_eq!(
+            response.status(),
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "expected 413 for Content-Length > REQUEST_BODY_MAX_BYTES"
+        );
+    }
+
+    /// Counterpart: a request with `Content-Length` at the limit must
+    /// pass through the limit layer (it may then fail downstream — auth,
+    /// JSON parse — but the limit layer must not be the rejecter).
+    #[tokio::test]
+    async fn rest_body_at_limit_passes_layer() {
+        let pool = test_pool().await;
+        let state = test_app_state(pool.clone());
+        let session_layer = test_session_layer(pool).await;
+        let app = build_router(state, session_layer);
+
+        let at_limit = cbsd_common::limits::REQUEST_BODY_MAX_BYTES;
+        let req = Request::builder()
+            .method("POST")
+            .uri("/api/builds")
+            .header("content-length", at_limit.to_string())
+            .body(Body::empty())
+            .expect("build request");
+
+        let response = app.oneshot(req).await.expect("router");
+        assert_ne!(
+            response.status(),
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "limit layer must not fire at exactly REQUEST_BODY_MAX_BYTES"
+        );
+    }
 }

@@ -88,6 +88,13 @@ pub async fn ws_upgrade(
         "ws upgrade accepted"
     );
 
+    // Per audit-rem D6: bound WS message and frame sizes on the
+    // server-accept side. tungstenite defaults (64 MiB / 16 MiB) are
+    // larger than anything the protocol legitimately needs.
+    let ws = ws
+        .max_message_size(cbsd_common::limits::WS_MAX_MESSAGE_BYTES)
+        .max_frame_size(cbsd_common::limits::WS_MAX_FRAME_BYTES);
+
     Ok(ws.on_upgrade(move |socket| handle_connection(socket, state, connection_id, worker_row)))
 }
 

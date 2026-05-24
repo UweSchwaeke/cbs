@@ -56,10 +56,25 @@ async fn connect(config: &ResolvedWorkerConfig) -> Result<WsStream, ConnectionEr
         None
     };
 
-    let (stream, _response) =
-        tokio_tungstenite::connect_async_tls_with_config(request, None, false, connector)
-            .await
-            .map_err(ConnectionError::WebSocket)?;
+    // Per audit-rem D6: enforce the same message/frame caps on
+    // server-sent traffic the server applies to worker-sent traffic.
+    // Component tarballs arrive as binary frames; the cap accommodates
+    // the worker's `max_uncompressed_component_bytes` decompression
+    // budget without blowing through it in a single message.
+    let ws_config = tungstenite::protocol::WebSocketConfig {
+        max_message_size: Some(cbsd_common::limits::WS_MAX_MESSAGE_BYTES),
+        max_frame_size: Some(cbsd_common::limits::WS_MAX_FRAME_BYTES),
+        ..Default::default()
+    };
+
+    let (stream, _response) = tokio_tungstenite::connect_async_tls_with_config(
+        request,
+        Some(ws_config),
+        false,
+        connector,
+    )
+    .await
+    .map_err(ConnectionError::WebSocket)?;
 
     Ok(stream)
 }
