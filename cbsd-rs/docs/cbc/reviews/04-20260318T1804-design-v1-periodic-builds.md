@@ -40,8 +40,9 @@ Similarly, `PUT /api/periodic/{id}` requires `builds:create`
 when updating the descriptor.
 
 **Fix:** Add "Requires" annotations: `periodic:create` +
-`builds:create` (scoped) for create, `periodic:manage` +
-`builds:create` (scoped, if descriptor changed) for update.
+`builds:create` (scoped) for create, `periodic:manage:own`
+or `:any` + `builds:create` (scoped, if descriptor
+changed) for update.
 
 ---
 

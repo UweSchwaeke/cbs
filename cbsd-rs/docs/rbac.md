@@ -93,7 +93,8 @@ include them) but no route handler checks for them.
 | `channels:manage` | Create, update, delete channels/types | **Yes** | |
 | `periodic:create` | Create scheduled builds | **Yes** | Also requires `builds:create` |
 | `periodic:view` | View periodic tasks | **Yes** | |
-| `periodic:manage` | Update and delete periodic tasks | **Yes** | |
+| `periodic:manage:own` | Update/delete/enable/disable periodic tasks the holder created | **Yes** | Owner match: `created_by == user.email` |
+| `periodic:manage:any` | Update/delete/enable/disable any periodic task | **Yes** | Admin variant of `:own` |
 | `permissions:view` | View roles, users, assignments | **Yes** | |
 | `permissions:manage` | Create/update/delete roles; assign/revoke user roles | **Yes** | |
 | `components:manage` | Manage component definitions | **No** | Defined but never checked; `GET /api/components` requires only authentication |
@@ -344,8 +345,8 @@ assignments and the computed effective capability set.
   administration
 - `workers:view` / `workers:manage` for worker lifecycle
 - `channels:view` / `channels:manage` for channel/type CRUD
-- `periodic:create` / `periodic:view` / `periodic:manage` for
-  scheduled builds
+- `periodic:create` / `periodic:view` /
+  `periodic:manage:{own,any}` for scheduled builds
 - `admin:queue:view` for build queue inspection
 - Last-admin guard on all 5 mutation paths
 - Built-in role protection
@@ -446,10 +447,10 @@ capability check.
 | `/api/periodic` | POST | `periodic:create` AND `builds:create` |
 | `/api/periodic` | GET | `periodic:view` |
 | `/api/periodic/{id}` | GET | `periodic:view` |
-| `/api/periodic/{id}` | PUT | `periodic:manage`; +`builds:create` if updating descriptor |
-| `/api/periodic/{id}` | DELETE | `periodic:manage` |
-| `/api/periodic/{id}/trigger` | POST | `periodic:manage` |
-| `/api/periodic/{id}/retry` | POST | `periodic:manage` |
+| `/api/periodic/{id}` | PUT | `periodic:manage:own` or `:any`; +`builds:create` if updating descriptor |
+| `/api/periodic/{id}` | DELETE | `periodic:manage:own` or `:any` |
+| `/api/periodic/{id}/enable` | PUT | `periodic:manage:own` or `:any` |
+| `/api/periodic/{id}/disable` | PUT | `periodic:manage:own` or `:any` |
 
 ### Permission routes
 

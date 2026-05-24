@@ -410,7 +410,8 @@ Cap:
 
   // Periodic build operations (deferred to post-v1)
   // periodic:create
-  // periodic:manage
+  // periodic:manage:own
+  // periodic:manage:any
   // periodic:view
 
   // Administrative

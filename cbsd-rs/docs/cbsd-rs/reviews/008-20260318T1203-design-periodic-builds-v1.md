@@ -180,9 +180,9 @@ occurrence. Log a warning at startup for each missed fire."
   builds spawned by task X." Consider adding a nullable FK
   `periodic_task_id TEXT REFERENCES periodic_tasks(id) ON DELETE SET NULL`.
 
-- **`periodic:create`, `periodic:view`, `periodic:manage` not in
-  `KNOWN_CAPS`.** Non-admin roles will get "unknown capability" errors.
-  Add to `KNOWN_CAPS` in `routes/permissions.rs`.
+- **`periodic:create`, `periodic:view`, `periodic:manage:{own,any}` not
+  in `KNOWN_CAPS`.** Non-admin roles will get "unknown capability"
+  errors. Add to `KNOWN_CAPS` in `routes/permissions.rs`.
 
 - **Priority of triggered builds is unspecified.** No `priority` field
   in `periodic_tasks`. All triggered builds implicitly use `Normal`.

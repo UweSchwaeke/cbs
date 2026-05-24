@@ -146,9 +146,10 @@ periodic task 550e8400-... updated
 
 **Endpoint:** `PUT /api/periodic/{id}`
 
-**Requires:** `periodic:manage`. If updating the
-descriptor, additionally requires `builds:create` with
-full scope validation.
+**Requires:** `periodic:manage:own` (with owner match) or
+`periodic:manage:any`. If updating the descriptor,
+additionally requires `builds:create` with full scope
+validation.
 
 All options are optional (at least one required). Same
 option set as `periodic new` — including `--tag-format`.

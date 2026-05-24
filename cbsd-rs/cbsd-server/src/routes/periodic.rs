@@ -135,6 +135,159 @@ pub fn router() -> OpenApiRouter<AppState> {
         .routes(routes!(disable_task))
 }
 
+/// Per audit-rem D3: a user may mutate a periodic task when they hold
+/// `periodic:manage:any` OR they hold `periodic:manage:own` and own
+/// the task (`task.created_by == user.email`). Owner matching is
+/// case-sensitive, matching how `created_by` is stored.
+pub(crate) fn can_manage_task(user: &AuthUser, task: &PeriodicTaskRow) -> bool {
+    user.has_cap("periodic:manage:any")
+        || (user.has_cap("periodic:manage:own") && task.created_by == user.email)
+}
+
+/// User-facing error message used for both "missing cap" and
+/// "cross-owner attempt with :own". A single generic message avoids
+/// leaking whether the failure was a cap-miss or an ownership-miss.
+const PERIODIC_MANAGE_DENIED: &str =
+    "missing required capability: periodic:manage:own or periodic:manage:any";
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::routes::test_support::{auth_user, test_pool};
+
+    fn task_owned_by(email: &str) -> PeriodicTaskRow {
+        PeriodicTaskRow {
+            id: "t-1".to_string(),
+            cron_expr: "0 0 * * *".to_string(),
+            tag_format: "v{n}".to_string(),
+            descriptor: "{}".to_string(),
+            descriptor_version: 1,
+            priority: "normal".to_string(),
+            summary: None,
+            enabled: true,
+            created_by: email.to_string(),
+            created_at: 0,
+            updated_at: 0,
+            retry_count: 0,
+            retry_at: None,
+            last_error: None,
+            last_triggered_at: None,
+            last_build_id: None,
+        }
+    }
+
+    #[test]
+    fn any_cap_holder_can_manage_any_task() {
+        let user = auth_user(
+            "alice@example.com",
+            "Alice",
+            false,
+            &["periodic:manage:any"],
+        );
+        let task = task_owned_by("bob@example.com");
+        assert!(can_manage_task(&user, &task));
+    }
+
+    #[test]
+    fn own_cap_holder_can_manage_own_task() {
+        let user = auth_user(
+            "alice@example.com",
+            "Alice",
+            false,
+            &["periodic:manage:own"],
+        );
+        let task = task_owned_by("alice@example.com");
+        assert!(can_manage_task(&user, &task));
+    }
+
+    #[test]
+    fn own_cap_holder_cannot_manage_other_task() {
+        let user = auth_user(
+            "alice@example.com",
+            "Alice",
+            false,
+            &["periodic:manage:own"],
+        );
+        let task = task_owned_by("bob@example.com");
+        assert!(!can_manage_task(&user, &task));
+    }
+
+    #[test]
+    fn no_manage_cap_denies_even_for_own_task() {
+        // `periodic:view` alone does not grant mutation rights even
+        // over the user's own task.
+        let user = auth_user(
+            "alice@example.com",
+            "Alice",
+            false,
+            &["periodic:view", "periodic:create"],
+        );
+        let task = task_owned_by("alice@example.com");
+        assert!(!can_manage_task(&user, &task));
+    }
+
+    #[test]
+    fn both_caps_grant_management_of_any_task() {
+        let user = auth_user(
+            "alice@example.com",
+            "Alice",
+            false,
+            &["periodic:manage:own", "periodic:manage:any"],
+        );
+        let task = task_owned_by("bob@example.com");
+        assert!(can_manage_task(&user, &task));
+    }
+
+    #[test]
+    fn empty_caps_set_denies() {
+        let user = auth_user("alice@example.com", "Alice", false, &[]);
+        let task = task_owned_by("alice@example.com");
+        assert!(!can_manage_task(&user, &task));
+    }
+
+    /// Per audit-rem D3: migration 008 must remove every `periodic:manage`
+    /// row from `role_caps` so a legacy custom role can no longer
+    /// silently confer the (now-undefined) cap. The test inserts a
+    /// custom role + legacy cap, re-applies the migration SQL, and
+    /// asserts the row is gone. (`test_pool` already runs migration
+    /// 008 at startup; this test verifies the SQL contract directly.)
+    #[tokio::test]
+    async fn migration_008_removes_legacy_periodic_manage_cap() {
+        let pool = test_pool().await;
+        sqlx::query(
+            "INSERT INTO roles (name, description, builtin) VALUES ('legacy_custom', 'x', 0)",
+        )
+        .execute(&pool)
+        .await
+        .expect("insert role");
+        sqlx::query(
+            "INSERT INTO role_caps (role_name, cap) VALUES ('legacy_custom', 'periodic:manage')",
+        )
+        .execute(&pool)
+        .await
+        .expect("insert legacy cap");
+
+        let before: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM role_caps WHERE cap = 'periodic:manage'")
+                .fetch_one(&pool)
+                .await
+                .expect("count before");
+        assert_eq!(before, 1);
+
+        sqlx::query("DELETE FROM role_caps WHERE cap = 'periodic:manage'")
+            .execute(&pool)
+            .await
+            .expect("migration SQL");
+
+        let after: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM role_caps WHERE cap = 'periodic:manage'")
+                .fetch_one(&pool)
+                .await
+                .expect("count after");
+        assert_eq!(after, 0);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // POST /api/periodic/
 // ---------------------------------------------------------------------------
@@ -362,11 +515,19 @@ async fn update_task(
     Path(id): Path<String>,
     Json(body): Json<UpdateTaskBody>,
 ) -> Result<Json<PeriodicTaskResponse>, (StatusCode, Json<ErrorDetail>)> {
-    if !user.has_cap("periodic:manage") {
-        return Err(auth_error(
-            StatusCode::FORBIDDEN,
-            "missing required capability: periodic:manage",
-        ));
+    // Fetch the existing task first so the cap check can consult
+    // ownership (audit-rem D3). A `:own` holder gets 403 on a task
+    // they don't own; only `:any` holders may mutate across owners.
+    let current = db::periodic::get_task(&state.pool, &id)
+        .await
+        .map_err(|e| {
+            tracing::error!("failed to get periodic task '{id}': {e}");
+            auth_error(StatusCode::INTERNAL_SERVER_ERROR, "database error")
+        })?
+        .ok_or_else(|| auth_error(StatusCode::NOT_FOUND, "periodic task not found"))?;
+
+    if !can_manage_task(&user, &current) {
+        return Err(auth_error(StatusCode::FORBIDDEN, PERIODIC_MANAGE_DENIED));
     }
 
     // At least one field must be present.
@@ -431,16 +592,7 @@ async fn update_task(
             .map_err(|e| auth_error(StatusCode::BAD_REQUEST, &e.to_string()))?;
     }
 
-    // Fetch the current row to merge updates.
-    let current = db::periodic::get_task(&state.pool, &id)
-        .await
-        .map_err(|e| {
-            tracing::error!("failed to get periodic task '{id}': {e}");
-            auth_error(StatusCode::INTERNAL_SERVER_ERROR, "database error")
-        })?
-        .ok_or_else(|| auth_error(StatusCode::NOT_FOUND, "periodic task not found"))?;
-
-    // Merge fields.
+    // Merge fields against the row fetched earlier for the cap check.
     let new_cron_expr = body.cron_expr.unwrap_or(current.cron_expr);
     let new_tag_format = body.tag_format.unwrap_or(current.tag_format);
     let new_priority = body.priority.unwrap_or(current.priority);
@@ -529,11 +681,18 @@ async fn delete_task(
     user: AuthUser,
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorDetail>)> {
-    if !user.has_cap("periodic:manage") {
-        return Err(auth_error(
-            StatusCode::FORBIDDEN,
-            "missing required capability: periodic:manage",
-        ));
+    // Per audit-rem D3: fetch first to consult ownership for the
+    // `:own` cap variant.
+    let task = db::periodic::get_task(&state.pool, &id)
+        .await
+        .map_err(|e| {
+            tracing::error!("failed to get periodic task '{id}': {e}");
+            auth_error(StatusCode::INTERNAL_SERVER_ERROR, "database error")
+        })?
+        .ok_or_else(|| auth_error(StatusCode::NOT_FOUND, "periodic task not found"))?;
+
+    if !can_manage_task(&user, &task) {
+        return Err(auth_error(StatusCode::FORBIDDEN, PERIODIC_MANAGE_DENIED));
     }
 
     let deleted = db::periodic::delete_task(&state.pool, &id)
@@ -583,11 +742,17 @@ async fn enable_task(
     user: AuthUser,
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorDetail>)> {
-    if !user.has_cap("periodic:manage") {
-        return Err(auth_error(
-            StatusCode::FORBIDDEN,
-            "missing required capability: periodic:manage",
-        ));
+    // Per audit-rem D3: fetch first to consult ownership.
+    let task = db::periodic::get_task(&state.pool, &id)
+        .await
+        .map_err(|e| {
+            tracing::error!("failed to get periodic task '{id}': {e}");
+            auth_error(StatusCode::INTERNAL_SERVER_ERROR, "database error")
+        })?
+        .ok_or_else(|| auth_error(StatusCode::NOT_FOUND, "periodic task not found"))?;
+
+    if !can_manage_task(&user, &task) {
+        return Err(auth_error(StatusCode::FORBIDDEN, PERIODIC_MANAGE_DENIED));
     }
 
     let updated = db::periodic::enable_task(&state.pool, &id)
@@ -637,11 +802,17 @@ async fn disable_task(
     user: AuthUser,
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorDetail>)> {
-    if !user.has_cap("periodic:manage") {
-        return Err(auth_error(
-            StatusCode::FORBIDDEN,
-            "missing required capability: periodic:manage",
-        ));
+    // Per audit-rem D3: fetch first to consult ownership.
+    let task = db::periodic::get_task(&state.pool, &id)
+        .await
+        .map_err(|e| {
+            tracing::error!("failed to get periodic task '{id}': {e}");
+            auth_error(StatusCode::INTERNAL_SERVER_ERROR, "database error")
+        })?
+        .ok_or_else(|| auth_error(StatusCode::NOT_FOUND, "periodic task not found"))?;
+
+    if !can_manage_task(&user, &task) {
+        return Err(auth_error(StatusCode::FORBIDDEN, PERIODIC_MANAGE_DENIED));
     }
 
     let updated = db::periodic::disable_task(&state.pool, &id)

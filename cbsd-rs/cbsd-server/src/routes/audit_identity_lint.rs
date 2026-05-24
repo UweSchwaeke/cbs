@@ -19,7 +19,7 @@
 //! The allowlist below names files whose handlers are **guaranteed
 //! human-only** via the forbidden-cap strip in `load_authed_user`: robots
 //! cannot hold caps like `permissions:manage`, `channels:manage`,
-//! `workers:manage`, or `periodic:manage`, so every actor-log call site in
+//! `workers:manage`, or `periodic:manage:{own,any}`, so every actor-log call site in
 //! those files is reachable only by a human caller. Files outside the
 //! allowlist must use `display_identity()` for every `tracing::` macro
 //! actor position.

@@ -196,10 +196,10 @@ only the `admin` role should be granted this capability.
 | POST | `/periodic` | Required | `periodic:create` + `builds:create` (scoped) | Create periodic task |
 | GET | `/periodic` | Required | `periodic:view` | List periodic tasks |
 | GET | `/periodic/{id}` | Required | `periodic:view` | Get periodic task details |
-| PUT | `/periodic/{id}` | Required | `periodic:manage` (+ `builds:create` if descriptor changed) | Update periodic task |
-| DELETE | `/periodic/{id}` | Required | `periodic:manage` | Delete periodic task |
-| PUT | `/periodic/{id}/enable` | Required | `periodic:manage` | Enable periodic task |
-| PUT | `/periodic/{id}/disable` | Required | `periodic:manage` | Disable periodic task |
+| PUT | `/periodic/{id}` | Required | `periodic:manage:own` or `:any` (+ `builds:create` if descriptor changed) | Update periodic task |
+| DELETE | `/periodic/{id}` | Required | `periodic:manage:own` or `:any` | Delete periodic task |
+| PUT | `/periodic/{id}/enable` | Required | `periodic:manage:own` or `:any` | Enable periodic task |
+| PUT | `/periodic/{id}/disable` | Required | `periodic:manage:own` or `:any` | Disable periodic task |
 
 ## Capabilities Reference (v1)
 
@@ -223,7 +223,8 @@ with 400 to prevent silent typos.
 
 | `periodic:create` | Create periodic build tasks | No |
 | `periodic:view` | View periodic build tasks | No |
-| `periodic:manage` | Update, delete, enable, disable periodic tasks | No |
+| `periodic:manage:own` | Update/delete/enable/disable periodic tasks the holder created | No |
+| `periodic:manage:any` | Update/delete/enable/disable any periodic task (admin variant) | No |
 
 ## Decided Questions
 
