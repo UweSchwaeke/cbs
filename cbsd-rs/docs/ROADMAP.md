@@ -8,7 +8,84 @@ This file is component-organized; sequence numbering and design/plan authoring
 conventions still follow the seq-docs convention when individual items are
 picked up for implementation.
 
+## Priority labels
+
+Provisional priority hint: `C` (Critical), `H` (High), `M` (Medium), `L` (Low),
+or `Nit`. The scheme is provisional and will be revamped; for now treat the
+label as a coarse ordering hint, not a binding commitment.
+
 ## cbsd-rs (server + worker)
+
+### Testing hardening — Phase 2 audit-remediation deferrals
+
+- Priority: M
+- Origin: implementation review at
+  [./cbsd-rs/reviews/019-20260524T1031-impl-security-audit-remediation-phase-2-v1.md](./cbsd-rs/reviews/019-20260524T1031-impl-security-audit-remediation-phase-2-v1.md)
+- Motivation: multiple plan-required test categories were deferred when their
+  corresponding production code landed. Each guards against a specific
+  regression class that today would pass code review but fail at runtime in the
+  production-shaped scenario the test would model.
+- Scope:
+  1. **Trigger integration tests (SI-15 scenarios).** Drive
+     `trigger_periodic_build` end-to-end with seeded users/tasks/scope changes
+     to exercise: scope-loss after task creation, owner row hard-deleted, and
+     scheduler-loop continuity (one task disables, others keep firing).
+     Currently only the pure `caps_satisfy_trigger_requirements` predicate is
+     unit-tested.
+  2. **WebSocket over-cap protocol-level test.** Spin up a real WS server with
+     the message-size caps applied, send an oversized message, assert the
+     connection closes with the protocol-level error. Currently only the
+     constant values are pinned in unit tests.
+  3. **`tracing-test` log-capture assertions for the URI redaction policy
+     (audit-rem D9).** Add `tracing-test` as a dev-dependency and assert that
+     the TraceLayer span emits `path` only (no `uri`, no query). A future change
+     reintroducing `uri = request.uri()` would otherwise go undetected.
+  4. **`trybuild` compile-fail tests for the `SecretString` wrap (audit-rem D10
+     / F13).** Assert that `#[derive(Serialize)]` over a struct holding a
+     `SecretString` fails to compile, and that the inner value is unreachable
+     without `.expose_secret()`. Commit 14 shipped a `tracing-test` redaction
+     test plus a `static_assertions::assert_not_impl_any!(Config: Serialize)`
+     guard on the real cbc `Config`; these two `trybuild` cases (the plan's
+     commit-14 test items 2 and 3) are deferred because `.stderr` fixtures are
+     rustc-version-brittle. Source:
+     [secret-wrap review](./cbsd-rs/reviews/019-20260530T1452-impl-security-audit-remediation-secret-wrap-v1.md).
+- Trigger: before the next implementation phase opens new ground that touches
+  the same production code without strengthening the test guard, or sooner.
+
+### Review periodic task capability semantics
+
+- Priority: M
+- Origin: implementation review at
+  [./cbsd-rs/reviews/019-20260524T1031-impl-security-audit-remediation-phase-2-v1.md](./cbsd-rs/reviews/019-20260524T1031-impl-security-audit-remediation-phase-2-v1.md)
+  (Open Question OQ1); raised again during triage of the v1 review.
+- Motivation: the four periodic-task capabilities are independent, not nested.
+  The current relationships are surprising and likely wrong for the intended
+  deployment model:
+  - `periodic:create` is required to create a new task; it is NOT implied by any
+    `:manage` cap.
+  - `periodic:manage:own` permits the holder to update/delete/enable/disable
+    tasks they themselves created — but if they lack `periodic:create`, they
+    cannot create tasks to manage, so `:own` is a dead cap in isolation.
+  - `periodic:manage:any` is the admin variant of `:own` over all tasks
+    regardless of `created_by`.
+  - `periodic:view` is required to list/read tasks; it is NOT implied by any
+    `:manage` cap, so a `:manage:any` holder cannot list the tasks they could
+    mutate without also holding `:view`.
+
+  An additional sub-question raised by review OQ1: if a task owner holds
+  `:manage:own` but loses `periodic:create` or `builds:create`, should the
+  scheduler trigger still fire that task? Today the trigger-time re-validation
+  only checks `periodic:create` and `builds:create`, so an owner can lose
+  `:manage:own` (and thereby lose their ability to disable the task via the API)
+  yet retain trigger firing.
+
+- Scope: revisit the cap mapping. Decide whether the four caps should remain
+  orthogonal or whether some implicate-each-other relationships should be added.
+  Decide whether `builder` (or a new `developer` role) should be granted a
+  sensible default subset at seed time. Decide what the trigger-time
+  re-validation should require beyond `periodic:create` and `builds:create`.
+- Trigger: near term, before any production deployment grants periodic caps to
+  non-admin users.
 
 ### Native TLS termination in `cbsd-server`
 
@@ -60,6 +137,12 @@ picked up for implementation.
   reviewed.
 - Trigger: after design 019 implementation completes, before introducing the
   next class of commit-time policy gate.
+- Related D10 follow-ups (from the
+  [secret-wrap review](./cbsd-rs/reviews/019-20260530T1452-impl-security-audit-remediation-secret-wrap-v1.md)):
+  - When the gate lands, the `.expose_secret()` call sites added in commit 14
+    (cbsd-server, cbsd-worker, cbc) will need `// allow-expose` annotations.
+  - `cbsd-worker`'s `WorkerConfig` derives `Debug` over a plain `api_key`;
+    redact it as part of commit 15's tracing/`Debug` sweep.
 
 ## cbc (CLI client)
 
