@@ -14,9 +14,9 @@ The current cbsd-rs worker identity model has three weaknesses:
    affecting others that share the same key. There is no server-side record
    linking a specific key to a specific worker.
 
-3. **Bootstrap friction.** Deploying a worker requires manually capturing an
-   API key from server logs, editing the worker config file, and restarting.
-   This makes compose-style and automated deployments difficult.
+3. **Bootstrap friction.** Deploying a worker requires manually capturing an API
+   key from server logs, editing the worker config file, and restarting. This
+   makes compose-style and automated deployments difficult.
 
 ## Goals
 
@@ -76,21 +76,21 @@ Key decisions:
   size and are safe to expose in tokens.
 - **`name` is UNIQUE** — prevents accidental duplicate names.
 - **`api_key_id` is UNIQUE** and cascades on delete — one key per worker.
-  Deleting the worker row triggers API key deletion via the cascade
-  relationship on `api_key_id`. However, the actual cleanup happens in the
-  application layer: the `DELETE /api/admin/workers/{id}` handler revokes the
-  API key first (setting `revoked=1`, purging the LRU cache), then deletes
-  the worker row. The FK cascade is a safety net, not the primary mechanism.
-- **`last_seen`** is updated on WS handshake and on `build_finished`. This
-  gives operators a reliable proof-of-life signal for fleet monitoring.
+  Deleting the worker row triggers API key deletion via the cascade relationship
+  on `api_key_id`. However, the actual cleanup happens in the application layer:
+  the `DELETE /api/admin/workers/{id}` handler revokes the API key first
+  (setting `revoked=1`, purging the LRU cache), then deletes the worker row. The
+  FK cascade is a safety net, not the primary mechanism.
+- **`last_seen`** is updated on WS handshake and on `build_finished`. This gives
+  operators a reliable proof-of-life signal for fleet monitoring.
 - **`created_by`** tracks who registered the worker, for audit purposes.
   References `users(email)` with no `ON DELETE` clause — users are deactivated,
   never deleted. This is an invariant of the user model.
 
 ### Worker token (the blob the worker receives)
 
-When a worker is registered, the server returns a base64url-encoded JSON
-object containing everything the worker needs to connect:
+When a worker is registered, the server returns a base64url-encoded JSON object
+containing everything the worker needs to connect:
 
 ```json
 {
@@ -101,18 +101,18 @@ object containing everything the worker needs to connect:
 }
 ```
 
-This is the **worker token** — a JSON object encoded as base64url (RFC 4648
-§5, no padding). It is shown exactly once (at registration time) and cannot
-be recovered later because the API key plaintext is never stored.
+This is the **worker token** — a JSON object encoded as base64url (RFC 4648 §5,
+no padding). It is shown exactly once (at registration time) and cannot be
+recovered later because the API key plaintext is never stored.
 
 The worker accepts this token via:
 
 - **Config file:** `worker_token: "eyJ3b3JrZXJfaWQ..."` in `worker.yaml`
 - **Environment variable:** `CBSD_WORKER_TOKEN=eyJ3b3JrZXJfaWQ...`
 
-When a worker token is present, it overrides `api_key` and `arch` fields in
-the config (if present). The `server_url` is NOT included in the token — it
-is deployment-specific and must be configured separately.
+When a worker token is present, it overrides `api_key` and `arch` fields in the
+config (if present). The `server_url` is NOT included in the token — it is
+deployment-specific and must be configured separately.
 
 ### REST API
 
@@ -146,8 +146,8 @@ is deployment-specific and must be configured separately.
 2. Hash the API key with argon2 **before** opening the transaction (argon2 is
    CPU-bound and must not hold a pool connection).
 3. Begin transaction.
-4. Insert API key row (name: `worker:<name>`, owner: requesting user).
-   Use `last_insert_rowid()` to get the `api_key_id` — no second query.
+4. Insert API key row (name: `worker:<name>`, owner: requesting user). Use
+   `last_insert_rowid()` to get the `api_key_id` — no second query.
 5. Insert into `workers` table with the `api_key_id`.
 6. Commit transaction.
 7. Return the worker token (base64url of JSON with id, name, key, arch).
@@ -158,8 +158,8 @@ self-service `GET /api/auth/api-keys` listing to prevent accidental deletion.
 
 #### `GET /api/workers` — List all registered workers
 
-**Requires:** `workers:view` capability (same path as the existing endpoint,
-now updated to merge DB and in-memory state).
+**Requires:** `workers:view` capability (same path as the existing endpoint, now
+updated to merge DB and in-memory state).
 
 **Response:**
 
@@ -213,23 +213,21 @@ in-memory `BuildQueue.workers` map:
 **Server-side actions:**
 
 1. Look up the worker row to find its `api_key_id` and `name`.
-2. Revoke the API key by ID (`revoke_api_key_by_id(pool, api_key_id)` — does
-   not filter by `owner_email`, so any admin can deregister any worker).
+2. Revoke the API key by ID (`revoke_api_key_by_id(pool, api_key_id)` — does not
+   filter by `owner_email`, so any admin can deregister any worker).
 3. Purge the API key from the LRU cache.
 4. Delete the worker row.
-5. If the worker is currently connected, force-disconnect it:
-   a. Lock `BuildQueue` → scan for connection whose `registered_worker_id`
-      matches → extract `connection_id` → remove entry from map → **release
-      lock.** (The queue mutex must be released before step 5c because
-      `handle_worker_dead` re-acquires it — `tokio::sync::Mutex` is not
-      reentrant.)
-   b. Remove `connection_id` from `state.worker_senders`. This drops the
-      `UnboundedSender`, closing `outbound_rx`, which terminates the forward
-      task and ultimately triggers `cleanup_worker`. Since the
-      `BuildQueue.workers` entry was already removed, `cleanup_worker` finds
-      nothing and bails.
-   c. Call `handle_worker_dead(state, connection_id)` to re-queue any
-      in-flight build (uses `ab.priority`, not hardcoded `Priority::Normal`).
+5. If the worker is currently connected, force-disconnect it: a. Lock
+   `BuildQueue` → scan for connection whose `registered_worker_id` matches →
+   extract `connection_id` → remove entry from map → **release lock.** (The
+   queue mutex must be released before step 5c because `handle_worker_dead`
+   re-acquires it — `tokio::sync::Mutex` is not reentrant.) b. Remove
+   `connection_id` from `state.worker_senders`. This drops the
+   `UnboundedSender`, closing `outbound_rx`, which terminates the forward task
+   and ultimately triggers `cleanup_worker`. Since the `BuildQueue.workers`
+   entry was already removed, `cleanup_worker` finds nothing and bails. c. Call
+   `handle_worker_dead(state, connection_id)` to re-queue any in-flight build
+   (uses `ab.priority`, not hardcoded `Priority::Normal`).
 
 #### `POST /api/admin/workers/{id}/regenerate-token` — Rotate API key
 
@@ -248,14 +246,14 @@ Useful for key rotation without deleting and re-creating the worker.
 6. Commit transaction.
 7. Purge old API key from LRU cache.
 8. If the worker is currently connected: force-disconnect using the same
-   sequence as deregistration (lock queue → extract connection_id → remove
-   from map → release lock → remove from worker_senders → call
-   `handle_worker_dead`). Re-queues any in-flight build.
+   sequence as deregistration (lock queue → extract connection_id → remove from
+   map → release lock → remove from worker_senders → call `handle_worker_dead`).
+   Re-queues any in-flight build.
 
-The transaction ordering (insert new → update FK → revoke old) ensures that
-a crash at any point leaves the worker with at least one valid key. If the
-crash is before commit, the old key is still valid. If after commit, the new
-key is active.
+The transaction ordering (insert new → update FK → revoke old) ensures that a
+crash at any point leaves the worker with at least one valid key. If the crash
+is before commit, the old key is still valid. If after commit, the new key is
+active.
 
 **Response (200):**
 
@@ -268,44 +266,43 @@ key is active.
 }
 ```
 
-The operator must update the worker's config/env with the new token and
-restart.
+The operator must update the worker's config/env with the new token and restart.
 
 ### WebSocket handshake changes
 
-Currently the WS `Hello` message includes a self-reported `worker_id` string
-and an `arch` field. After this change:
+Currently the WS `Hello` message includes a self-reported `worker_id` string and
+an `arch` field. After this change:
 
 1. **Auth at WS upgrade** remains unchanged — the API key is verified from the
    `Authorization: Bearer cbsk_...` header.
 2. After successful API key verification, the server looks up the `workers`
    table row where `api_key_id` matches the verified key's DB row ID.
-   - If no worker row exists: reject with `"API key is not bound to a
-     registered worker"`. This prevents unregistered keys from establishing
-     WS connections.
-   - If found: the server now knows the worker's UUID, name, and arch from
-     the DB. This identity is passed to `handle_connection`.
+   - If no worker row exists: reject with
+     `"API key is not bound to a registered worker"`. This prevents unregistered
+     keys from establishing WS connections.
+   - If found: the server now knows the worker's UUID, name, and arch from the
+     DB. This identity is passed to `handle_connection`.
 3. The `worker_id` field is **removed from the `Hello` message**. The server
    uses the DB-registered identity (looked up at step 2), not a self-reported
    value. This is a protocol-breaking change (protocol version bump to 2).
 4. The `Hello.arch` field is **kept and validated** against `workers.arch`. A
    mismatch is an error — the server disconnects with a clear error message
-   (e.g., `"arch mismatch: worker registered as x86_64 but reported
-   aarch64"`). This catches operators who copy a worker token between machines
-   with different architectures.
+   (e.g., `"arch mismatch: worker registered as x86_64 but reported aarch64"`).
+   This catches operators who copy a worker token between machines with
+   different architectures.
 5. The server updates `workers.last_seen` on successful handshake and on
    `build_finished`.
 
 ### Protocol version bump
 
-The `Hello` message changes shape (drops `worker_id`), which requires a
-protocol version bump from 1 to 2. The `Welcome` message already includes
+The `Hello` message changes shape (drops `worker_id`), which requires a protocol
+version bump from 1 to 2. The `Welcome` message already includes
 `protocol_version` and `min_version`/`max_version` in the `Error` message.
 
 The server accepts only protocol version 2. Workers running the old protocol
-(version 1) receive an `Error` message with `min_version: 2, max_version: 2`
-and are disconnected. Since cbsd-rs is pre-release, there are no deployed v1
-workers to worry about.
+(version 1) receive an `Error` message with `min_version: 2, max_version: 2` and
+are disconnected. Since cbsd-rs is pre-release, there are no deployed v1 workers
+to worry about.
 
 ### `Hello` and `WorkerStopping` message changes
 
@@ -350,16 +347,16 @@ The `WorkerConfig` struct gains a `worker_token` field. Resolution order:
 
 1. `CBSD_WORKER_TOKEN` env var (highest priority)
 2. `worker_token` field in YAML config
-3. Individual fields (`api_key`, `arch`) in YAML config (legacy — `worker_id`
-   is no longer sent in the protocol)
+3. Individual fields (`api_key`, `arch`) in YAML config (legacy — `worker_id` is
+   no longer sent in the protocol)
 
 When a token is present, the individual fields are ignored (if also set, a
-warning is logged). When no token is present, the individual fields are
-required (current behavior minus `worker_id`, which is no longer needed).
+warning is logged). When no token is present, the individual fields are required
+(current behavior minus `worker_id`, which is no longer needed).
 
 The `worker_name` from the token is used only for the worker's own structured
-log output (so the operator can identify which worker a log line belongs to).
-It is never sent over the wire.
+log output (so the operator can identify which worker a log line belongs to). It
+is never sent over the wire.
 
 ### Seed config changes
 
@@ -375,12 +372,12 @@ seed:
     #   arch: aarch64
 ```
 
-`SeedWorker.arch` is typed as `Arch` (the `cbsd-proto` enum), so invalid
-values fail at YAML parse time — no separate validation step needed.
+`SeedWorker.arch` is typed as `Arch` (the `cbsd-proto` enum), so invalid values
+fail at YAML parse time — no separate validation step needed.
 
-Each entry creates a `workers` row + API key at first startup, and the
-plaintext worker tokens are printed to stdout. This maintains the existing
-bootstrapping workflow but now produces tokens instead of bare API keys.
+Each entry creates a `workers` row + API key at first startup, and the plaintext
+worker tokens are printed to stdout. This maintains the existing bootstrapping
+workflow but now produces tokens instead of bare API keys.
 
 The old `seed_worker_api_keys` format is no longer accepted (breaking change
 confined to the config file, acceptable for a pre-release project).
@@ -397,16 +394,16 @@ the **registered worker UUID** (matching `workers.id`). This enables:
 ### Worker name validation
 
 Worker names must match `[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}` — alphanumeric,
-hyphens, underscores, 1–64 characters, starting with alphanumeric. Validated
-in the application layer (not a SQL CHECK constraint). The UNIQUE constraint
-on `workers.name` prevents duplicates.
+hyphens, underscores, 1–64 characters, starting with alphanumeric. Validated in
+the application layer (not a SQL CHECK constraint). The UNIQUE constraint on
+`workers.name` prevents duplicates.
 
 ### Capability additions
 
-| Capability | Description |
-|---|---|
+| Capability       | Description                                |
+| ---------------- | ------------------------------------------ |
 | `workers:manage` | Register, deregister, rotate worker tokens |
-| `workers:view` | List workers and their status (existing) |
+| `workers:view`   | List workers and their status (existing)   |
 
 The `admin` builtin role gets `*` (already covers everything). The `builder`
 role gets `workers:view` (so builders can see worker status) but not
@@ -418,9 +415,9 @@ custom roles can include it.
 ### Worker API key isolation
 
 Worker API keys (named `worker:<name>`) are filtered from the self-service
-`GET /api/auth/api-keys` listing. This prevents users from accidentally
-revoking a worker key via `DELETE /api/auth/api-keys/{prefix}`. Worker keys
-are managed exclusively through the `/api/admin/workers` endpoints.
+`GET /api/auth/api-keys` listing. This prevents users from accidentally revoking
+a worker key via `DELETE /api/auth/api-keys/{prefix}`. Worker keys are managed
+exclusively through the `/api/admin/workers` endpoints.
 
 ### Lost-token recovery
 
@@ -440,45 +437,40 @@ Phase 7 requires a **fresh database**. There are no production cbsd-rs
 deployments. Existing development databases with workers seeded via the old
 `seed_worker_api_keys` config do not have `workers` table rows and will be
 rejected at WS upgrade after this change. The simplest path is to delete the
-development DB and let the server re-seed on startup with the new
-`seed_workers` config format.
+development DB and let the server re-seed on startup with the new `seed_workers`
+config format.
 
 ### Reconnection identity
 
-When a worker reconnects after a disconnect, the server matches the
-reconnecting worker to its previous connection by looking up the `workers`
-table via the API key. Since `api_key_id` is unique per worker, the server
-deterministically identifies which worker is reconnecting, regardless of
-connection UUID. This replaces the current heuristic of matching by
-self-reported `worker_id` string.
+When a worker reconnects after a disconnect, the server matches the reconnecting
+worker to its previous connection by looking up the `workers` table via the API
+key. Since `api_key_id` is unique per worker, the server deterministically
+identifies which worker is reconnecting, regardless of connection UUID. This
+replaces the current heuristic of matching by self-reported `worker_id` string.
 
 The reconnection flow:
 
 1. Worker establishes new WS connection, authenticates with its API key.
 2. Server looks up `workers` row by `api_key_id` → gets worker UUID.
 3. In `handle_connection`, after receiving a valid `Hello` and **before
-   registering the new connection**, the server scans `BuildQueue.workers`
-   under the queue lock for any existing entry whose
-   `registered_worker_id` matches:
-   a. If found and `Disconnected`: under the queue lock, migrate active
-      build `connection_id` references from old to new, remove the old
-      entry, register the new connection. After releasing the queue lock,
-      remove old `connection_id` from `worker_senders`. The in-flight
-      build is preserved.
-   b. If found and `Connected` (stale double-connect): treat identically
-      to force-disconnect. Under the queue lock: extract old
-      `connection_id`, remove old entry, register new. After releasing:
-      remove old `connection_id` from `worker_senders`, call
-      `handle_worker_dead(state, old_connection_id)` to re-queue any
-      active build. Log a warning.
-   c. If not found: register as a fresh connection.
-4. Queue map mutations (migrate, remove old, register new) are atomic under
-   one queue lock. `worker_senders` cleanup and `handle_worker_dead` happen
-   **after** releasing the queue lock — `worker_senders` is a separate mutex
-   and must not be nested inside the queue lock (lock inversion:
-   `cleanup_worker` acquires `worker_senders` first, then queue). The grace-
-   period monitor cannot fire during the migration because it also needs the
-   queue lock.
+   registering the new connection**, the server scans `BuildQueue.workers` under
+   the queue lock for any existing entry whose `registered_worker_id` matches:
+   a. If found and `Disconnected`: under the queue lock, migrate active build
+   `connection_id` references from old to new, remove the old entry, register
+   the new connection. After releasing the queue lock, remove old
+   `connection_id` from `worker_senders`. The in-flight build is preserved. b.
+   If found and `Connected` (stale double-connect): treat identically to
+   force-disconnect. Under the queue lock: extract old `connection_id`, remove
+   old entry, register new. After releasing: remove old `connection_id` from
+   `worker_senders`, call `handle_worker_dead(state, old_connection_id)` to
+   re-queue any active build. Log a warning. c. If not found: register as a
+   fresh connection.
+4. Queue map mutations (migrate, remove old, register new) are atomic under one
+   queue lock. `worker_senders` cleanup and `handle_worker_dead` happen
+   **after** releasing the queue lock — `worker_senders` is a separate mutex and
+   must not be nested inside the queue lock (lock inversion: `cleanup_worker`
+   acquires `worker_senders` first, then queue). The grace- period monitor
+   cannot fire during the migration because it also needs the queue lock.
 
 This is strictly more reliable than the current approach because the identity
 comes from a cryptographic proof (the API key), not a self-reported string.
@@ -488,13 +480,13 @@ comes from a cryptographic proof (the API key), not a self-reported string.
 1. **`workers:manage` is admin-only.** Builders cannot self-serve worker
    registration. The `builder` role does not get `workers:manage`.
 
-2. **Deregistration force-disconnects the worker and re-queues its build.**
-   Once a worker is deregistered, we no longer trust it — the in-flight build
-   is re-queued via the existing dead-worker resolution mechanism.
+2. **Deregistration force-disconnects the worker and re-queues its build.** Once
+   a worker is deregistered, we no longer trust it — the in-flight build is
+   re-queued via the existing dead-worker resolution mechanism.
 
-3. **`Hello` message drops `worker_id`, keeps `arch`.** The `worker_id` field
-   is removed from the `Hello` message — the server already knows the worker's
-   identity from the API key lookup at WS upgrade. The `arch` field is kept
-   and validated against the registered value: a mismatch is an error that
-   disconnects the worker with a log message. This catches admins copying
-   worker tokens between machines with different architectures.
+3. **`Hello` message drops `worker_id`, keeps `arch`.** The `worker_id` field is
+   removed from the `Hello` message — the server already knows the worker's
+   identity from the API key lookup at WS upgrade. The `arch` field is kept and
+   validated against the registered value: a mismatch is an error that
+   disconnects the worker with a log message. This catches admins copying worker
+   tokens between machines with different architectures.

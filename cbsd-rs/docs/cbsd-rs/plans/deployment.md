@@ -4,16 +4,16 @@
 
 This document describes how to build, deploy, and operate the Rust
 reimplementation of the CBS build service daemon (`cbsd-rs`). It covers local
-development, container image production, systemd-managed production
-deployments, and the migration path from the Python `cbsd` stack.
+development, container image production, systemd-managed production deployments,
+and the migration path from the Python `cbsd` stack.
 
 The Rust port eliminates three runtime dependencies:
 
-| Python stack | Rust replacement |
-|---|---|
-| Celery worker | WebSocket client (`cbsd-worker`) |
-| Redis (broker + result backend + log streams) | Eliminated entirely |
-| `dbm` files + `permissions.yaml` | Single SQLite database (`cbsd.db`) |
+| Python stack                                  | Rust replacement                   |
+| --------------------------------------------- | ---------------------------------- |
+| Celery worker                                 | WebSocket client (`cbsd-worker`)   |
+| Redis (broker + result backend + log streams) | Eliminated entirely                |
+| `dbm` files + `permissions.yaml`              | Single SQLite database (`cbsd.db`) |
 
 The server and worker are both static Rust binaries. The worker additionally
 needs a Python environment with `cbscore` installed (it spawns cbscore as a
@@ -94,7 +94,7 @@ secrets:
   session_secret_key: "$(openssl rand -hex 32)"
   token_secret_key: "$(openssl rand -hex 32)"
 
-max_token_ttl_seconds: none  # infinite
+max_token_ttl_seconds: none # infinite
 
 # First-startup bootstrapping
 seed_admin: "admin@clyso.com"
@@ -139,7 +139,7 @@ server_url: "wss://localhost:8080/api/ws/worker"
 api_key: "cbsk_<paste-key-from-server-stdout>"
 worker_id: "dev-local-01"
 arch: "x86_64"
-build_timeout_secs: 7200  # 2 hours
+build_timeout_secs: 7200 # 2 hours
 component_temp_dir: "/tmp/cbsd-worker-components"
 
 # cbscore Python wrapper
@@ -166,8 +166,8 @@ The worker connects to the server over WebSocket, sends `hello`, receives
 ### 1.5 Mapping to the existing dev workflow
 
 The current Python dev workflow uses `do-cbs-compose.sh` with
-`podman-compose.cbs.yaml` (or `podman-compose.cbs-dev.yaml`), which starts
-three containers: `cbs` (server), `worker`, and `redis`.
+`podman-compose.cbs.yaml` (or `podman-compose.cbs-dev.yaml`), which starts three
+containers: `cbs` (server), `worker`, and `redis`.
 
 For cbsd-rs development, the simplest approach is to run the server and worker
 directly on the host (no containers, no compose) using `cargo run`. This is
@@ -185,10 +185,10 @@ should not be modified -- cbsd-rs gets its own compose file.
 
 Two images, matching the current naming convention:
 
-| Image | Contents | Base |
-|---|---|---|
-| `cbsd-rs-server` | Rust server binary + migrations + `components/` | `gcr.io/distroless/cc-debian12` or `alpine:3.20` |
-| `cbsd-rs-worker` | Rust worker binary + Python 3.13 + cbscore + `cbscore-wrapper.py` | `python:3.13-alpine3.20` |
+| Image            | Contents                                                          | Base                                             |
+| ---------------- | ----------------------------------------------------------------- | ------------------------------------------------ |
+| `cbsd-rs-server` | Rust server binary + migrations + `components/`                   | `gcr.io/distroless/cc-debian12` or `alpine:3.20` |
+| `cbsd-rs-worker` | Rust worker binary + Python 3.13 + cbscore + `cbscore-wrapper.py` | `python:3.13-alpine3.20`                         |
 
 The server image does not contain Python. The worker image does not contain
 SQLite CLI or axum -- only the worker binary and the Python runtime.
@@ -333,15 +333,15 @@ podman build -f container/ContainerFile.cbsd-rs --target cbsd-rs-worker -t cbsd-
 
 ### 3.1 What changes from the Python stack
 
-| Python stack component | Rust replacement | Action |
-|---|---|---|
-| `clyso-cbsd-server` container (FastAPI + Uvicorn) | `cbsd-rs-server` container (axum) | Replace |
-| `clyso-cbsd-worker` container (Celery) | `cbsd-rs-worker` container (WS client) | Replace |
-| `cbs-redis` container (Redis 8.4) | Nothing | Remove entirely |
-| `_local/cbs/redis/` data directory | Nothing | Remove after migration |
-| `_local/cbs/data/db/` (dbm files) | `_local/cbs/data/cbsd.db` (SQLite) | One-time migration |
-| `permissions.yaml` (static YAML) | SQLite `roles` + `user_role_scopes` tables | One-time migration script |
-| Celery health check (`celery inspect ping`) | WebSocket connectivity (server `/api/workers` endpoint) | Update health checks |
+| Python stack component                            | Rust replacement                                        | Action                    |
+| ------------------------------------------------- | ------------------------------------------------------- | ------------------------- |
+| `clyso-cbsd-server` container (FastAPI + Uvicorn) | `cbsd-rs-server` container (axum)                       | Replace                   |
+| `clyso-cbsd-worker` container (Celery)            | `cbsd-rs-worker` container (WS client)                  | Replace                   |
+| `cbs-redis` container (Redis 8.4)                 | Nothing                                                 | Remove entirely           |
+| `_local/cbs/redis/` data directory                | Nothing                                                 | Remove after migration    |
+| `_local/cbs/data/db/` (dbm files)                 | `_local/cbs/data/cbsd.db` (SQLite)                      | One-time migration        |
+| `permissions.yaml` (static YAML)                  | SQLite `roles` + `user_role_scopes` tables              | One-time migration script |
+| Celery health check (`celery inspect ping`)       | WebSocket connectivity (server `/api/workers` endpoint) | Update health checks      |
 
 ### 3.2 Podman Compose (development/staging)
 
@@ -407,8 +407,8 @@ PODMAN_COMPOSE_PROVIDER="podman-compose" podman compose \
 ### 3.3 Systemd units (production)
 
 The existing systemd templates in `systemd/templates/systemd/` use a
-deployment-parameterized model (`%i` / `{{deployment}}`). The Rust port
-follows the same pattern but does not need a network unit for Redis.
+deployment-parameterized model (`%i` / `{{deployment}}`). The Rust port follows
+the same pattern but does not need a network unit for Redis.
 
 **New files in `systemd/templates/systemd/`:**
 
@@ -475,9 +475,9 @@ TimeoutStopSec=120
 WantedBy=cbsd-%i.target
 ```
 
-Note: the `cbsd-network@.service` unit (which creates a podman network for
-Redis connectivity) is **not needed** for cbsd-rs. The worker uses host
-networking and connects to the server via its public address.
+Note: the `cbsd-network@.service` unit (which creates a podman network for Redis
+connectivity) is **not needed** for cbsd-rs. The worker uses host networking and
+connects to the server via its public address.
 
 ### 3.4 Config file management
 
@@ -498,8 +498,8 @@ Production deployments need two config files plus supporting secrets:
 ```
 
 The server config (`server.yaml`) replaces three current files:
-`cbsd.server.config.yaml`, `permissions.yaml`, and the Redis connection
-strings. Permissions are now in SQLite, and Redis is gone.
+`cbsd.server.config.yaml`, `permissions.yaml`, and the Redis connection strings.
+Permissions are now in SQLite, and Redis is gone.
 
 The worker config (`worker.yaml`) replaces `cbsd.worker.config.yaml`. It no
 longer contains Redis connection strings. Instead it has the server WebSocket
@@ -507,16 +507,16 @@ URL and an API key.
 
 ### 3.5 Secret management
 
-| Secret | Where configured | Notes |
-|---|---|---|
-| PASETO token secret key | `server.yaml` → `secrets.token_secret_key` | 32-byte hex string. Generate with `openssl rand -hex 32`. |
-| Session secret key | `server.yaml` → `secrets.session_secret_key` | 32-byte hex string. Used for HKDF derivation of session encryption keys. |
-| Google OAuth client secrets | `server.yaml` → `oauth.client_secrets_file` | JSON file from Google Cloud Console. |
-| TLS certificate + key | `server.yaml` → `tls.cert_path`, `tls.key_path` | PEM files. Self-signed for dev; CA-signed for production. |
-| Worker API keys | Generated at first startup, printed to stdout | Save and distribute to worker configs. Store securely. |
-| Worker API key (per worker) | `worker.yaml` → `api_key` | The `cbsk_...` string from server bootstrap output. |
-| Vault credentials | `cbscore.config.yaml` → vault section | Worker-local. Same as current Python deployment. |
-| Build signing secrets | `secrets.yaml` on worker | Worker-local. Same as current Python deployment. |
+| Secret                      | Where configured                                | Notes                                                                    |
+| --------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------ |
+| PASETO token secret key     | `server.yaml` → `secrets.token_secret_key`      | 32-byte hex string. Generate with `openssl rand -hex 32`.                |
+| Session secret key          | `server.yaml` → `secrets.session_secret_key`    | 32-byte hex string. Used for HKDF derivation of session encryption keys. |
+| Google OAuth client secrets | `server.yaml` → `oauth.client_secrets_file`     | JSON file from Google Cloud Console.                                     |
+| TLS certificate + key       | `server.yaml` → `tls.cert_path`, `tls.key_path` | PEM files. Self-signed for dev; CA-signed for production.                |
+| Worker API keys             | Generated at first startup, printed to stdout   | Save and distribute to worker configs. Store securely.                   |
+| Worker API key (per worker) | `worker.yaml` → `api_key`                       | The `cbsk_...` string from server bootstrap output.                      |
+| Vault credentials           | `cbscore.config.yaml` → vault section           | Worker-local. Same as current Python deployment.                         |
+| Build signing secrets       | `secrets.yaml` on worker                        | Worker-local. Same as current Python deployment.                         |
 
 **Important:** The PASETO token secret key must be the same across server
 restarts (it is used to decrypt tokens). If it changes, all existing tokens
@@ -527,10 +527,10 @@ become invalid. Back up `server.yaml` or manage via a secrets manager.
 **Location:** Configured via `database_path` in `server.yaml`. Production
 recommendation: `/var/lib/cbsd/<deployment>/data/cbsd.db`.
 
-**Backup:** SQLite in WAL mode supports online backup. Use `sqlite3 cbsd.db
-".backup /path/to/backup.db"` or filesystem snapshots. The database is small
-(users, tokens, roles, build metadata) -- typically under 100 MB even with
-thousands of builds.
+**Backup:** SQLite in WAL mode supports online backup. Use
+`sqlite3 cbsd.db ".backup /path/to/backup.db"` or filesystem snapshots. The
+database is small (users, tokens, roles, build metadata) -- typically under 100
+MB even with thousands of builds.
 
 **Pragmas** (set automatically by the server at connection time):
 
@@ -544,8 +544,8 @@ deadlock with the dispatch mutex; see design docs).
 
 ### 3.7 Log directory
 
-Build logs are written to `{log_dir}/builds/{build_id}.log`. Server
-application logs go to `{log_dir}/cbsd-server.log`.
+Build logs are written to `{log_dir}/builds/{build_id}.log`. Server application
+logs go to `{log_dir}/cbsd-server.log`.
 
 ```bash
 mkdir -p /var/log/cbsd/<deployment>/builds
@@ -556,28 +556,28 @@ Log GC runs daily, deleting build log files older than `log_retention_days`
 
 ### 3.8 TLS certificates
 
-The server uses `rustls` (pure Rust, no OpenSSL runtime). TLS is configured
-via `tls.cert_path` and `tls.key_path` in the server config. PEM format.
+The server uses `rustls` (pure Rust, no OpenSSL runtime). TLS is configured via
+`tls.cert_path` and `tls.key_path` in the server config. PEM format.
 
-For production: use certificates from a CA (e.g., Let's Encrypt, or
-internal PKI). The `do-cbs-compose.sh` script's `gen_server_keys()` function
-generates self-signed certs and can be adapted for cbsd-rs development.
+For production: use certificates from a CA (e.g., Let's Encrypt, or internal
+PKI). The `do-cbs-compose.sh` script's `gen_server_keys()` function generates
+self-signed certs and can be adapted for cbsd-rs development.
 
-Workers connect via `wss://` and validate the server certificate against the
-OS trust store by default. For private CAs or self-signed certs, set
+Workers connect via `wss://` and validate the server certificate against the OS
+trust store by default. For private CAs or self-signed certs, set
 `tls_ca_bundle_path` in the worker config to point to the CA's PEM bundle.
 
 ### 3.9 First-startup bootstrapping
 
-On first startup with an empty database, the server executes (in a single
-atomic transaction):
+On first startup with an empty database, the server executes (in a single atomic
+transaction):
 
 1. Creates builtin roles: `admin`, `builder`, `viewer` (with predefined
    capabilities).
 2. Creates a user record for `seed_admin` (from server config).
 3. Assigns the `admin` role to the seed admin user.
-4. For each entry in `seed_worker_api_keys`: creates an API key owned by
-   the seed admin, stores the argon2 hash.
+4. For each entry in `seed_worker_api_keys`: creates an API key owned by the
+   seed admin, stores the argon2 hash.
 5. Commits the transaction.
 6. Prints plaintext API keys to stdout (only after commit succeeds).
 
@@ -597,8 +597,7 @@ Additional worker API keys can be created later via the REST API:
 1. Stop the Python `cbsd` server and worker.
 2. Stop Redis.
 3. Run the permissions migration script (YAML to SQLite).
-4. Start the Rust `cbsd-rs` server (generates new database, seeds
-   roles/admin).
+4. Start the Rust `cbsd-rs` server (generates new database, seeds roles/admin).
 5. Start the Rust `cbsd-rs` worker (connects via WebSocket).
 6. Notify users to update `cbc` and re-authenticate (`cbc login`).
 
@@ -607,14 +606,14 @@ Additional worker API keys can be created later via the REST API:
 The cutover requires a coordinated release of three packages:
 
 1. **`cbsdcore`** -- updated Pydantic models with new build states
-   (`dispatched`, `revoking`, `revoked`), lowercase state names, `aarch64`
-   as canonical arch value. This must be published first because both old
-   `cbc` and new `cbc` depend on it.
+   (`dispatched`, `revoking`, `revoked`), lowercase state names, `aarch64` as
+   canonical arch value. This must be published first because both old `cbc` and
+   new `cbc` depend on it.
 
-2. **`cbc`** -- updated API paths, SSE log streaming, new build states,
-   field renames (`task_id` dropped, `submitted` to `submitted_at`,
-   `desc` to `descriptor`, `user` to `user_email`). Must be released
-   before or alongside the Rust server deployment.
+2. **`cbc`** -- updated API paths, SSE log streaming, new build states, field
+   renames (`task_id` dropped, `submitted` to `submitted_at`, `desc` to
+   `descriptor`, `user` to `user_email`). Must be released before or alongside
+   the Rust server deployment.
 
 3. **`cbsd-rs` server + worker** -- deployed after cbsdcore and cbc are
    available.
@@ -626,11 +625,11 @@ The cutover requires a coordinated release of three packages:
 
 **Approach: accept the break.** The Rust server starts with an empty `tokens`
 table. Python-era PASETO tokens use ISO 8601 timestamps; Rust uses epoch
-integers. SHA-256 hashes are incompatible. All existing tokens will be
-rejected with 401.
+integers. SHA-256 hashes are incompatible. All existing tokens will be rejected
+with 401.
 
-Users re-authenticate once with `cbc login`. Tokens default to infinite TTL,
-so this is a one-time cost.
+Users re-authenticate once with `cbc login`. Tokens default to infinite TTL, so
+this is a one-time cost.
 
 ### 4.4 Permissions migration
 
@@ -653,33 +652,32 @@ This script:
    - `type: project` becomes scope type `channel` (per design decision).
    - `pattern` regex patterns are converted to glob patterns.
    - `caps` are mapped to the new capability strings.
-4. For each YAML `rule`: creates user-role assignments matching
-   `user_pattern` (regex) against known users.
+4. For each YAML `rule`: creates user-role assignments matching `user_pattern`
+   (regex) against known users.
 5. Writes results to the SQLite database.
 
-**Note:** The `seed_admin` from the server config will already have the
-`admin` role from bootstrapping. The migration script should skip
-duplicate assignments.
+**Note:** The `seed_admin` from the server config will already have the `admin`
+role from bootstrapping. The migration script should skip duplicate assignments.
 
 ### 4.5 Build ID continuity
 
-The Rust server uses `AUTOINCREMENT` for `builds.id`. On a fresh database,
-this starts at 1. If the Python system had existing builds, the initial
-migration must set the autoincrement counter to `MAX(existing_id) + 1` to
-avoid collisions with retained log files on disk.
+The Rust server uses `AUTOINCREMENT` for `builds.id`. On a fresh database, this
+starts at 1. If the Python system had existing builds, the initial migration
+must set the autoincrement counter to `MAX(existing_id) + 1` to avoid collisions
+with retained log files on disk.
 
 If no build history is being preserved, this is not needed.
 
 ### 4.6 Data directories
 
-| Python path | Rust equivalent | Migration action |
-|---|---|---|
-| `_local/cbs/data/db/` (dbm) | `_local/cbsd-rs/data/cbsd.db` (SQLite) | Run migration script or start fresh |
-| `_local/cbs/logs/builds/` | `_local/cbsd-rs/logs/builds/` | Copy or symlink (log format unchanged) |
-| `_local/cbs/redis/` | (not needed) | Archive and remove |
-| `_local/cbs/config/server/` | `_local/cbsd-rs/config/server/` | Write new `server.yaml` |
-| `_local/cbs/config/worker/` | `_local/cbsd-rs/config/worker/` | Write new `worker.yaml` + keep cbscore config |
-| `_local/cbs/scratch/` | `_local/cbs/scratch/` (unchanged) | No change needed |
+| Python path                 | Rust equivalent                        | Migration action                              |
+| --------------------------- | -------------------------------------- | --------------------------------------------- |
+| `_local/cbs/data/db/` (dbm) | `_local/cbsd-rs/data/cbsd.db` (SQLite) | Run migration script or start fresh           |
+| `_local/cbs/logs/builds/`   | `_local/cbsd-rs/logs/builds/`          | Copy or symlink (log format unchanged)        |
+| `_local/cbs/redis/`         | (not needed)                           | Archive and remove                            |
+| `_local/cbs/config/server/` | `_local/cbsd-rs/config/server/`        | Write new `server.yaml`                       |
+| `_local/cbs/config/worker/` | `_local/cbsd-rs/config/worker/`        | Write new `worker.yaml` + keep cbscore config |
+| `_local/cbs/scratch/`       | `_local/cbs/scratch/` (unchanged)      | No change needed                              |
 
 ---
 
@@ -687,34 +685,34 @@ If no build history is being preserved, this is not needed.
 
 ### 5.1 New files
 
-| Path | Description |
-|---|---|
-| `container/ContainerFile.cbsd-rs` | Multi-stage Dockerfile: Rust build, server image, worker image |
-| `container/entrypoint-cbsd-rs-server.sh` | Server container entrypoint |
-| `container/build-rs.sh` | Build script for Rust container images |
-| `podman-compose.cbsd-rs.yaml` | Compose file for dev/staging (server + worker, no Redis) |
-| `cbsd-rs/scripts/cbscore-wrapper.py` | Python bridge: receives JSON on stdin, invokes cbscore, emits structured result |
-| `cbsd-rs/scripts/migrate-permissions.py` | One-time migration: `permissions.yaml` to SQLite |
-| `systemd/templates/systemd/cbsd-rs-server@.service` | Systemd unit for containerized server |
-| `systemd/templates/systemd/cbsd-rs-worker@.service` | Systemd unit for containerized worker |
+| Path                                                | Description                                                                     |
+| --------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `container/ContainerFile.cbsd-rs`                   | Multi-stage Dockerfile: Rust build, server image, worker image                  |
+| `container/entrypoint-cbsd-rs-server.sh`            | Server container entrypoint                                                     |
+| `container/build-rs.sh`                             | Build script for Rust container images                                          |
+| `podman-compose.cbsd-rs.yaml`                       | Compose file for dev/staging (server + worker, no Redis)                        |
+| `cbsd-rs/scripts/cbscore-wrapper.py`                | Python bridge: receives JSON on stdin, invokes cbscore, emits structured result |
+| `cbsd-rs/scripts/migrate-permissions.py`            | One-time migration: `permissions.yaml` to SQLite                                |
+| `systemd/templates/systemd/cbsd-rs-server@.service` | Systemd unit for containerized server                                           |
+| `systemd/templates/systemd/cbsd-rs-worker@.service` | Systemd unit for containerized worker                                           |
 
 ### 5.2 Modified files
 
-| Path | Change |
-|---|---|
-| `container/build.sh` | No change (continues to build Python images) |
-| `do-cbs-compose.sh` | Add `--rs` flag or new command to support `podman-compose.cbsd-rs.yaml` |
-| `.github/workflows/release-container-images.yaml` | Add job for building Rust container images alongside Python ones |
+| Path                                              | Change                                                                  |
+| ------------------------------------------------- | ----------------------------------------------------------------------- |
+| `container/build.sh`                              | No change (continues to build Python images)                            |
+| `do-cbs-compose.sh`                               | Add `--rs` flag or new command to support `podman-compose.cbsd-rs.yaml` |
+| `.github/workflows/release-container-images.yaml` | Add job for building Rust container images alongside Python ones        |
 
 ### 5.3 Files that remain unchanged
 
-| Path | Reason |
-|---|---|
-| `container/ContainerFile.cbsd` | Python images continue to be produced until Python cbsd is fully deprecated |
-| `container/entrypoint.sh` | Python server entrypoint, unchanged |
-| `container/release.sh` | Tag-based release, unchanged (Rust images use same tag scheme) |
-| `systemd/templates/systemd/cbsd-network@.service` | Still needed for Python deployments; not needed for Rust |
-| `systemd/templates/systemd/cbsd-.service.in` | Python container service template, unchanged |
+| Path                                              | Reason                                                                      |
+| ------------------------------------------------- | --------------------------------------------------------------------------- |
+| `container/ContainerFile.cbsd`                    | Python images continue to be produced until Python cbsd is fully deprecated |
+| `container/entrypoint.sh`                         | Python server entrypoint, unchanged                                         |
+| `container/release.sh`                            | Tag-based release, unchanged (Rust images use same tag scheme)              |
+| `systemd/templates/systemd/cbsd-network@.service` | Still needed for Python deployments; not needed for Rust                    |
+| `systemd/templates/systemd/cbsd-.service.in`      | Python container service template, unchanged                                |
 
 ### 5.4 CI/CD changes
 
@@ -722,44 +720,44 @@ The existing `.github/workflows/release-container-images.yaml` builds Python
 images using `container/build.sh`. For the Rust port, add a parallel job:
 
 ```yaml
-  build-and-push-rust:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    env:
-      REGISTRY: ghcr.io
-      IMAGE_PREFIX: ${{ github.repository }}
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          ref: ${{ inputs.tag_name }}
+build-and-push-rust:
+  runs-on: ubuntu-latest
+  permissions:
+    contents: read
+    packages: write
+  env:
+    REGISTRY: ghcr.io
+    IMAGE_PREFIX: ${{ github.repository }}
+  steps:
+    - uses: actions/checkout@v6
+      with:
+        ref: ${{ inputs.tag_name }}
 
-      - name: Log in to GHCR
-        run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | \
-            podman login ${{ env.REGISTRY }} -u ${{ github.actor }} --password-stdin
+    - name: Log in to GHCR
+      run: |
+        echo "${{ secrets.GITHUB_TOKEN }}" | \
+          podman login ${{ env.REGISTRY }} -u ${{ github.actor }} --password-stdin
 
-      - name: Build and push cbsd-rs images
-        run: |
-          TAG="${{ inputs.tag_name || github.ref_name }}"
+    - name: Build and push cbsd-rs images
+      run: |
+        TAG="${{ inputs.tag_name || github.ref_name }}"
 
-          podman build -f container/ContainerFile.cbsd-rs \
-            --target cbsd-rs-server \
-            -t ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/cbsd-rs-server:${TAG} .
+        podman build -f container/ContainerFile.cbsd-rs \
+          --target cbsd-rs-server \
+          -t ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/cbsd-rs-server:${TAG} .
 
-          podman build -f container/ContainerFile.cbsd-rs \
-            --target cbsd-rs-worker \
-            -t ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/cbsd-rs-worker:${TAG} .
+        podman build -f container/ContainerFile.cbsd-rs \
+          --target cbsd-rs-worker \
+          -t ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/cbsd-rs-worker:${TAG} .
 
-          podman push ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/cbsd-rs-server:${TAG}
-          podman push ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/cbsd-rs-worker:${TAG}
+        podman push ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/cbsd-rs-server:${TAG}
+        podman push ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/cbsd-rs-worker:${TAG}
 ```
 
 ### 5.5 The cbscore-wrapper.py bridge script
 
-Located at `cbsd-rs/scripts/cbscore-wrapper.py`. This is the Python process
-that the Rust worker spawns as a subprocess. It:
+Located at `cbsd-rs/scripts/cbscore-wrapper.py`. This is the Python process that
+the Rust worker spawns as a subprocess. It:
 
 1. Reads a JSON object from stdin: `{descriptor, component_path, trace_id}`.
 2. Sets `CBS_TRACE_ID` environment variable for cbscore logging.
@@ -819,15 +817,15 @@ Workers do not need to be restarted or updated for component changes.
 
 ### 6.5 Health checks
 
-| Check | Python stack | Rust stack |
-|---|---|---|
-| Server alive | HTTP GET to `:8080` | HTTP GET to `:8080` (same) |
+| Check        | Python stack          | Rust stack                                   |
+| ------------ | --------------------- | -------------------------------------------- |
+| Server alive | HTTP GET to `:8080`   | HTTP GET to `:8080` (same)                   |
 | Worker alive | `celery inspect ping` | `GET /api/workers` (shows connected workers) |
-| Redis alive | `redis-cli ping` | N/A (no Redis) |
+| Redis alive  | `redis-cli ping`      | N/A (no Redis)                               |
 
 ### 6.6 Monitoring
 
 The server's `GET /api/admin/queue` endpoint (requires `admin:queue:view`)
 returns the full queue state including active builds, worker assignments, and
-queue depths per priority lane. This replaces Celery's `flower` or `celery
-events` monitoring.
+queue depths per priority lane. This replaces Celery's `flower` or
+`celery events` monitoring.

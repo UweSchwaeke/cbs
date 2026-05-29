@@ -2,16 +2,15 @@
 
 ## Progress
 
-| Item | Status |
-|------|--------|
-| Commit 1: BFF session cookie authentication for web UI | Done |
+| Item                                                   | Status |
+| ------------------------------------------------------ | ------ |
+| Commit 1: BFF session cookie authentication for web UI | Done   |
 
 ## Goal
 
-Web UI users authenticate via HttpOnly session cookies (BFF
-pattern). CLI users get a token via URL fragment for copy-paste.
-The `cli_port` localhost redirect is removed. All cookie
-attributes are set explicitly.
+Web UI users authenticate via HttpOnly session cookies (BFF pattern). CLI users
+get a token via URL fragment for copy-paste. The `cli_port` localhost redirect
+is removed. All cookie attributes are set explicitly.
 
 ## Depends on
 
@@ -21,13 +20,12 @@ None — this is a new feature on the existing auth subsystem.
 
 ## Commit 1: BFF session cookie authentication for web UI
 
-Single commit covering session config hardening, the extractor
-fallback, callback rewrite, logout endpoint, TTL validation,
-and `cli_port` removal. All pieces are tightly coupled: the
-config sets up the cookie attributes the extractor reads, the
-extractor reads the token the callback stores, the logout
-endpoint clears what the callback created, and the TTL
-validation guards the session idle timeout the callback sets.
+Single commit covering session config hardening, the extractor fallback,
+callback rewrite, logout endpoint, TTL validation, and `cli_port` removal. All
+pieces are tightly coupled: the config sets up the cookie attributes the
+extractor reads, the extractor reads the token the callback stores, the logout
+endpoint clears what the callback created, and the TTL validation guards the
+session idle timeout the callback sets.
 
 ### `main.rs` — explicit session cookie attributes
 
@@ -55,9 +53,8 @@ let session_layer = SessionManagerLayer::new(session_store)
     ));
 ```
 
-Requires `use tower_sessions::cookie::SameSite;` (verify
-re-export path against tower-sessions 0.14 API at
-implementation time).
+Requires `use tower_sessions::cookie::SameSite;` (verify re-export path against
+tower-sessions 0.14 API at implementation time).
 
 ### `config.rs` — token TTL ≥ session idle timeout
 
@@ -77,8 +74,8 @@ if self.secrets.max_token_ttl_seconds < WEB_SESSION_IDLE_SECS {
 
 ### `auth/extractors.rs` — session cookie fallback
 
-Modify `AuthUser::from_request_parts` to try the session when
-no `Authorization` header is present:
+Modify `AuthUser::from_request_parts` to try the session when no `Authorization`
+header is present:
 
 ```
 1. Try Authorization: Bearer <token>
@@ -97,11 +94,10 @@ no `Authorization` header is present:
 ```
 
 Implementation: extract `Session` via
-`Session::from_request_parts(parts, state)` inside the
-existing `from_request_parts`. The `Session` extractor returns
-`Ok` even when no cookie is present (it creates an empty
-session), so check for the `"paseto_token"` key to distinguish
-"no session" from "session without token".
+`Session::from_request_parts(parts, state)` inside the existing
+`from_request_parts`. The `Session` extractor returns `Ok` even when no cookie
+is present (it creates an empty session), so check for the `"paseto_token"` key
+to distinguish "no session" from "session without token".
 
 Add `use tower_sessions::Session;` to imports.
 
@@ -111,8 +107,7 @@ Add `use tower_sessions::Session;` to imports.
 
 - `LoginQuery.cli_port: Option<u16>` field
 - Session insert/read of `cli_port` in both login and callback
-- `if let Some(port) = cli_port` branch (localhost JS redirect
-  HTML)
+- `if let Some(port) = cli_port` branch (localhost JS redirect HTML)
 - Server-rendered HTML token page (CLI without port)
 - `/#token=<base64>` redirect (web flow)
 
@@ -136,14 +131,13 @@ if client_type == "cli" {
 }
 ```
 
-The `session.cycle_id()` call (session fixation prevention)
-remains exactly where it is — before the response branch.
+The `session.cycle_id()` call (session fixation prevention) remains exactly
+where it is — before the response branch.
 
 ### `routes/auth.rs` — new logout endpoint
 
-Add `POST /api/auth/logout` to the `oauth_routes` router
-group (rate-limited via tower-governor, same as `/login` and
-`/callback`):
+Add `POST /api/auth/logout` to the `oauth_routes` router group (rate-limited via
+tower-governor, same as `/login` and `/callback`):
 
 ```rust
 let oauth_routes = Router::new()
@@ -184,17 +178,17 @@ async fn logout(
 }
 ```
 
-This handler does NOT use `AuthUser` — the session may contain
-an expired or revoked token. The user should be able to log
-out regardless. Placed in `oauth_routes` for rate limiting.
+This handler does NOT use `AuthUser` — the session may contain an expired or
+revoked token. The user should be able to log out regardless. Placed in
+`oauth_routes` for rate limiting.
 
 ### `routes/auth.rs` — guard on `/token/revoke` for cookie users
 
-The existing `POST /api/auth/token/revoke` handler reads the
-`Authorization` header directly to find the token to revoke.
-After this change, a cookie-authenticated user calling this
-endpoint would pass the `AuthUser` extractor (via session) but
-then fail when the handler tries to read the missing header.
+The existing `POST /api/auth/token/revoke` handler reads the `Authorization`
+header directly to find the token to revoke. After this change, a
+cookie-authenticated user calling this endpoint would pass the `AuthUser`
+extractor (via session) but then fail when the handler tries to read the missing
+header.
 
 Add a guard at the top of `revoke_token`:
 
@@ -210,20 +204,18 @@ if headers.get("authorization").is_none() {
 ### Import changes
 
 - `extractors.rs`: add `use tower_sessions::Session;`
-- `auth.rs`: add `use tower_sessions::Expiry;`, remove `Html`
-  from `use axum::response::{Html, IntoResponse, ...};`, and
-  remove `HeaderValue` from
-  `use axum::http::{HeaderMap, HeaderValue, StatusCode};`.
-  `HeaderMap` stays (used by `revoke_token`).
+- `auth.rs`: add `use tower_sessions::Expiry;`, remove `Html` from
+  `use axum::response::{Html, IntoResponse, ...};`, and remove `HeaderValue`
+  from `use axum::http::{HeaderMap, HeaderValue, StatusCode};`. `HeaderMap`
+  stays (used by `revoke_token`).
 
 ### Testable
 
-- Web login: redirects to `/` with `cbsd_session` cookie set.
-  Subsequent `/api/auth/whoami` returns 200 (cookie auth).
-- CLI login: redirects to `/#cli-token=<base64>`. No cookie
-  set.
-- Logout: `POST /api/auth/logout` clears cookie, revokes
-  token. Subsequent `/api/auth/whoami` returns 401.
+- Web login: redirects to `/` with `cbsd_session` cookie set. Subsequent
+  `/api/auth/whoami` returns 200 (cookie auth).
+- CLI login: redirects to `/#cli-token=<base64>`. No cookie set.
+- Logout: `POST /api/auth/logout` clears cookie, revokes token. Subsequent
+  `/api/auth/whoami` returns 401.
 - Bearer header still works (CLI and API key auth unchanged).
 - Token revocation invalidates web session on next request.
 - User deactivation invalidates web session on next request.

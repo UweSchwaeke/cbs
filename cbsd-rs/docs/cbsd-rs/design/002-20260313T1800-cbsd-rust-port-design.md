@@ -52,8 +52,8 @@ Key changes:
 
 - **No Redis.** The server owns the queue, tracker, and log storage directly.
 - **No Celery.** Replaced by a single persistent WebSocket per worker.
-- **Server owns components.** Workers receive component tarballs with each
-  build request.
+- **Server owns components.** Workers receive component tarballs with each build
+  request.
 - **Workers are pure clients.** They connect outbound to the server — no
   listening port, no firewall concerns, no TLS cert management on the worker
   side.
@@ -62,24 +62,24 @@ Key changes:
 
 The Rust server retains all current `cbsd` server capabilities:
 
-| Capability | Rust Crate(s) | Notes |
-|-----------|--------------|-------|
-| HTTP REST API | `axum`, `tower`, `tokio` | Route-for-route port from FastAPI |
-| SSL/TLS | `axum-server`, `rustls` | Built-in |
-| Google OAuth 2.0 | `reqwest`, manual OIDC flow | ~200 LoC for 3-legged flow |
-| PASETO v4 tokens | `pasetors` | Wire-compatible with current tokens |
-| Capability-based authz | String enums in SQLite | RBAC model, see auth design doc |
-| Session middleware | `tower-sessions` | OAuth state only |
-| Shared API types (cbsdcore) | `serde`, `serde_json`, `chrono` | ~13 Pydantic models → serde structs |
-| Configuration | `serde_yaml`, `serde_json` | Same YAML/JSON config format |
-| Database (all state) | `sqlx` + SQLite | Single `cbsd.db`, compile-time checked queries |
-| In-memory build tracker | `tokio::sync::RwLock`, `HashMap` | Hot cache backed by SQLite |
-| Build log storage | `tokio::fs` | Server writes logs directly (no Redis streams) |
-| Periodic/cron builds | `cron`, `tokio-cron-scheduler` | Design TBD (separate doc) |
-| Logging | `tracing`, `tracing-subscriber` | Structured logging |
-| Component store | Filesystem + in-memory index | Server is single source of truth |
-| Build queue + dispatch | Custom, in-process | Matches workers by arch/resources |
-| Worker management | WebSocket (axum built-in) | Per-worker persistent connection |
+| Capability                  | Rust Crate(s)                    | Notes                                          |
+| --------------------------- | -------------------------------- | ---------------------------------------------- |
+| HTTP REST API               | `axum`, `tower`, `tokio`         | Route-for-route port from FastAPI              |
+| SSL/TLS                     | `axum-server`, `rustls`          | Built-in                                       |
+| Google OAuth 2.0            | `reqwest`, manual OIDC flow      | ~200 LoC for 3-legged flow                     |
+| PASETO v4 tokens            | `pasetors`                       | Wire-compatible with current tokens            |
+| Capability-based authz      | String enums in SQLite           | RBAC model, see auth design doc                |
+| Session middleware          | `tower-sessions`                 | OAuth state only                               |
+| Shared API types (cbsdcore) | `serde`, `serde_json`, `chrono`  | ~13 Pydantic models → serde structs            |
+| Configuration               | `serde_yaml`, `serde_json`       | Same YAML/JSON config format                   |
+| Database (all state)        | `sqlx` + SQLite                  | Single `cbsd.db`, compile-time checked queries |
+| In-memory build tracker     | `tokio::sync::RwLock`, `HashMap` | Hot cache backed by SQLite                     |
+| Build log storage           | `tokio::fs`                      | Server writes logs directly (no Redis streams) |
+| Periodic/cron builds        | `cron`, `tokio-cron-scheduler`   | Design TBD (separate doc)                      |
+| Logging                     | `tracing`, `tracing-subscriber`  | Structured logging                             |
+| Component store             | Filesystem + in-memory index     | Server is single source of truth               |
+| Build queue + dispatch      | Custom, in-process               | Matches workers by arch/resources              |
+| Worker management           | WebSocket (axum built-in)        | Per-worker persistent connection               |
 
 ## Component Distribution
 
@@ -102,9 +102,8 @@ total across all components currently). This is trivially sendable over
 WebSocket.
 
 **Transfer mechanism:** WebSocket binary frames. The server sends a JSON text
-frame (`build_new` message) followed by a binary frame containing the raw
-tar.gz bytes. No base64 encoding needed — WebSocket natively supports binary
-frames.
+frame (`build_new` message) followed by a binary frame containing the raw tar.gz
+bytes. No base64 encoding needed — WebSocket natively supports binary frames.
 
 **Worker behavior:** Unpack tarball to a temp directory, pass that path to
 cbscore for the build, clean up on completion.
@@ -125,16 +124,16 @@ initiated by the worker. This connection serves as:
 
 ### Worker startup
 
-The worker receives the server's URL and an API key via command-line argument
-or environment variable. On startup:
+The worker receives the server's URL and an API key via command-line argument or
+environment variable. On startup:
 
 1. Connect to `wss://<server>/api/ws/worker` with
    `Authorization: Bearer <api-key>` header on the HTTP upgrade request.
 2. Server validates the API key in the HTTP upgrade handler (axum extractor)
    **before** accepting the WebSocket. Invalid keys receive HTTP 401 and never
    get a WebSocket connection. This prevents unauthenticated connections from
-   holding open sockets. The API key is **never** passed in the URL query
-   string — query strings are logged by reverse proxies and access logs.
+   holding open sockets. The API key is **never** passed in the URL query string
+   — query strings are logged by reverse proxies and access logs.
 3. Server accepts the upgrade; WebSocket is now established.
 4. Worker sends `hello` with protocol version and worker capabilities.
 5. Server validates and responds with `welcome`.
@@ -149,13 +148,13 @@ messages themselves.
 
 ### TLS configuration
 
-The worker connects via `wss://` using `rustls`. By default, the OS trust
-store is used for certificate validation. For internal deployments with
-self-signed certificates or private CAs:
+The worker connects via `wss://` using `rustls`. By default, the OS trust store
+is used for certificate validation. For internal deployments with self-signed
+certificates or private CAs:
 
 ```yaml
 # worker config
-tls_ca_bundle_path: /etc/cbsd/ca-bundle.pem  # optional
+tls_ca_bundle_path: /etc/cbsd/ca-bundle.pem # optional
 ```
 
 When set, the PEM file is loaded and added as a trusted root to the rustls
@@ -164,8 +163,8 @@ internal PKI will refuse to connect.
 
 ## WebSocket Protocol
 
-JSON text frames for structured messages. Binary frames for component data.
-All messages have a `type` field as discriminator.
+JSON text frames for structured messages. Binary frames for component data. All
+messages have a `type` field as discriminator.
 
 ### Server → Worker
 
@@ -215,9 +214,9 @@ sends `build_rejected` with `reason: "component integrity check failed"`.
 
 **Server response to integrity failure:** Unlike other rejections, an integrity
 failure indicates a server-side tarball corruption — re-queuing to another
-worker would produce the same failure. The server marks the build `FAILURE`
-with `error = "component integrity check failed"` and logs a server-side alarm.
-The build is **not** re-queued.
+worker would produce the same failure. The server marks the build `FAILURE` with
+`error = "component integrity check failed"` and logs a server-side alarm. The
+build is **not** re-queued.
 
 ### Worker → Server
 
@@ -299,42 +298,42 @@ The build is **not** re-queued.
 }
 ```
 
-**Tracing:** The `trace_id` from `build_new` is included in all worker-side
-log output (via `tracing` spans). This enables correlating server-side and
+**Tracing:** The `trace_id` from `build_new` is included in all worker-side log
+output (via `tracing` spans). This enables correlating server-side and
 worker-side log lines for a single build without relying on `build_id` alone.
 
 **Sequence numbers:** The `start_seq` field in `build_output` is a per-build
 monotonically increasing counter at **per-line granularity** (starting at 0).
 Each line in the batch has an implicit seq: `start_seq`, `start_seq + 1`, etc.
 The worker tracks the running total of lines emitted and sets `start_seq`
-accordingly. This per-line granularity enables exact SSE resume — a client
-that disconnects mid-batch can reconnect with `Last-Event-ID: <line_seq>` and
-receive only the lines it hasn't seen, with no duplicates.
+accordingly. This per-line granularity enables exact SSE resume — a client that
+disconnects mid-batch can reconnect with `Last-Event-ID: <line_seq>` and receive
+only the lines it hasn't seen, with no duplicates.
 
 ### Protocol version negotiation
 
-The `hello` → `welcome` exchange establishes the protocol version. If the
-server does not support the worker's protocol version, it responds with an
-`error` message (including `min_version` and `max_version` for diagnostics)
-and closes the connection.
+The `hello` → `welcome` exchange establishes the protocol version. If the server
+does not support the worker's protocol version, it responds with an `error`
+message (including `min_version` and `max_version` for diagnostics) and closes
+the connection.
 
-The server validates the `arch` field against a known enum. Canonical values
-are `x86_64` and `aarch64`. The alias `arm64` is accepted as input (mapped to
+The server validates the `arch` field against a known enum. Canonical values are
+`x86_64` and `aarch64`. The alias `arm64` is accepted as input (mapped to
 `aarch64` internally) for compatibility with the existing Python `cbsdcore`
 `BuildArch` enum which uses `arm64`. Unknown arch values result in an `error`
 message and connection close.
 
 **Arch enum (protocol constant):**
 
-| Canonical | Aliases | Serde |
-|-----------|---------|-------|
-| `x86_64` | — | `#[serde(rename = "x86_64")]` |
+| Canonical | Aliases | Serde                                           |
+| --------- | ------- | ----------------------------------------------- |
+| `x86_64`  | —       | `#[serde(rename = "x86_64")]`                   |
 | `aarch64` | `arm64` | `#[serde(rename = "aarch64", alias = "arm64")]` |
 
 Future additions (e.g., `riscv64`) extend this enum.
 
-Note: the previous `worker_register` message has been merged into `hello`.
-A single message carries both protocol version and worker capabilities,
+Note: the previous `worker_register` message has been merged into `hello`. A
+single message carries both protocol version and worker capabilities,
 eliminating a round-trip and the half-registered worker failure mode.
 
 ### Build dispatch flow
@@ -370,20 +369,19 @@ Server                          Worker
 On sending `build_revoke`, the server transitions the build to the
 **`REVOKING`** intermediate state. While `REVOKING`:
 
-- The server continues writing `build_output` messages to the log file
-  normally (the worker may still be producing output while the container
-  shuts down).
+- The server continues writing `build_output` messages to the log file normally
+  (the worker may still be producing output while the container shuts down).
 - The **revoke acknowledgement timeout** (configurable, default 30 seconds)
-  starts. This is separate from and shorter than the liveness grace period —
-  a user who calls `DELETE /api/builds/{id}` should not wait two minutes.
+  starts. This is separate from and shorter than the liveness grace period — a
+  user who calls `DELETE /api/builds/{id}` should not wait two minutes.
 
 On receiving `build_finished(revoked)`: flush logs, set
 `build_logs.finished = 1`, transition to `REVOKED`.
 
 If the revoke ack timeout expires without `build_finished`: flush logs, set
-`build_logs.finished = 1`, transition to `REVOKED` unilaterally, log a
-warning. Any `build_output` arriving after `finished = 1` is **discarded**.
-Any late `build_finished` for an already-terminal build is silently discarded.
+`build_logs.finished = 1`, transition to `REVOKED` unilaterally, log a warning.
+Any `build_output` arriving after `finished = 1` is **discarded**. Any late
+`build_finished` for an already-terminal build is silently discarded.
 
 ## Worker Liveness & Reconnection
 
@@ -433,21 +431,21 @@ The worker's reconnect loop uses exponential backoff:
 **Invariant:** `reconnect_backoff_ceiling_secs` must be **less than**
 `liveness_grace_period_secs`. If the ceiling exceeds the grace period, the
 worker will be declared dead before it can reconnect — even though it's alive.
-The server validates this invariant at startup and refuses to start if
-violated. The worker validates its own backoff ceiling against the grace period
-value received in the `welcome` message.
+The server validates this invariant at startup and refuses to start if violated.
+The worker validates its own backoff ceiling against the grace period value
+received in the `welcome` message.
 
 ### Reconnection protocol
 
 On reconnect, the worker sends `hello` (which includes capabilities), then
-optionally `worker_status` if it is currently executing a build. The absence
-of `worker_status` after `hello` implies the worker is idle.
+optionally `worker_status` if it is currently executing a build. The absence of
+`worker_status` after `hello` implies the worker is idle.
 
 ### Dispatch acknowledgement timeout
 
 After sending `build_new`, the server expects `build_accepted` or
-`build_rejected` within `dispatch_ack_timeout_secs` (configurable, default
-15 seconds). If neither arrives in time:
+`build_rejected` within `dispatch_ack_timeout_secs` (configurable, default 15
+seconds). If neither arrives in time:
 
 - The build is pushed back to the **front** of its priority lane (re-queued).
 - The worker's connection state is marked suspect (but not disconnected).
@@ -463,34 +461,34 @@ When a worker reconnects, it sends `hello` (capabilities) and optionally
 `worker_status` (if mid-build). The server reconciles based on this table.
 **This table is authoritative** — it must be implemented exactly as specified:
 
-| Server state of build N | Worker reports | Server action |
-|--------------------------|----------------|---------------|
-| `queued` (server crashed between dispatch and DB write) | building N | Send `build_revoke` immediately |
-| `dispatched` | building N | Treat as implicit `build_accepted`; transition to `started`; resume log streaming |
-| `dispatched` | idle (no `worker_status`) | Re-queue build at front of its priority lane immediately |
-| `started` | building N | Resume log streaming; no state change |
-| `started` | idle | Mark build `failure` with `error = "worker lost build"` |
-| `revoking` | building N | Re-send `build_revoke`; remain in `revoking` |
-| `failure` (declared dead) | building N | Send `build_revoke` immediately |
-| `revoked` | building N | Send `build_revoke` immediately |
-| `success` | building N | Send `build_revoke` immediately |
-| Not found (server restarted) | building N | Send `build_revoke` immediately |
+| Server state of build N                                 | Worker reports            | Server action                                                                     |
+| ------------------------------------------------------- | ------------------------- | --------------------------------------------------------------------------------- |
+| `queued` (server crashed between dispatch and DB write) | building N                | Send `build_revoke` immediately                                                   |
+| `dispatched`                                            | building N                | Treat as implicit `build_accepted`; transition to `started`; resume log streaming |
+| `dispatched`                                            | idle (no `worker_status`) | Re-queue build at front of its priority lane immediately                          |
+| `started`                                               | building N                | Resume log streaming; no state change                                             |
+| `started`                                               | idle                      | Mark build `failure` with `error = "worker lost build"`                           |
+| `revoking`                                              | building N                | Re-send `build_revoke`; remain in `revoking`                                      |
+| `failure` (declared dead)                               | building N                | Send `build_revoke` immediately                                                   |
+| `revoked`                                               | building N                | Send `build_revoke` immediately                                                   |
+| `success`                                               | building N                | Send `build_revoke` immediately                                                   |
+| Not found (server restarted)                            | building N                | Send `build_revoke` immediately                                                   |
 
 ### Grace period expiry (no reconnect)
 
 When the grace period elapses without a reconnection, the server applies these
 transitions — this is authoritative alongside the reconnection table:
 
-| Server state of build | Transition on grace period expiry |
-|-----------------------|-----------------------------------|
-| `dispatched` | → `failure` with `error = "worker lost"` |
-| `started` | → `failure` with `error = "worker lost"` |
-| `revoking` | → `revoked` (unilateral, log warning) |
+| Server state of build | Transition on grace period expiry        |
+| --------------------- | ---------------------------------------- |
+| `dispatched`          | → `failure` with `error = "worker lost"` |
+| `started`             | → `failure` with `error = "worker lost"` |
+| `revoking`            | → `revoked` (unilateral, log warning)    |
 
 **Invariant:** If the server receives `worker_status` for a build that is in a
-terminal state (`success`, `failure`, `revoked`) or is unknown, the server
-sends `build_revoke` immediately. The worker's subsequent `build_finished` for
-that build ID is silently discarded.
+terminal state (`success`, `failure`, `revoked`) or is unknown, the server sends
+`build_revoke` immediately. The worker's subsequent `build_finished` for that
+build ID is silently discarded.
 
 **Rationale for "always revoke unknown":** An unknown build ID means the server
 was restarted or the build was cleaned up. Letting the worker continue produces
@@ -507,22 +505,22 @@ On SIGTERM, the worker:
    `build_finished(revoked)`.
 5. Closes the WebSocket connection.
 
-**Server response to `worker_stopping`:** The server transitions the worker to
-a `Stopping` state:
+**Server response to `worker_stopping`:** The server transitions the worker to a
+`Stopping` state:
 
 - **Remove from dispatch eligibility.** No new builds are sent.
 - **Skip grace period on subsequent disconnect.** When a `Stopping` worker's
   connection closes, it is deregistered immediately (not placed in the
   `Disconnected` grace period) because the shutdown was intentional. Any build
-  in `DISPATCHED` state assigned to that worker is immediately **re-queued**
-  to the front of its priority lane.
+  in `DISPATCHED` state assigned to that worker is immediately **re-queued** to
+  the front of its priority lane.
 - **Do not send `build_revoke`.** Wait for the worker's natural
   `build_finished`. The worker manages its own drain timeout.
-- **If `worker_stopping` arrives mid-dispatch** (a `build_new` was just sent
-  but `build_accepted` hasn't arrived): the dispatch ack timeout handles it —
-  if the worker doesn't accept, the build is re-queued. The ack-timeout path
-  must check for `Stopping` state and not mark the worker as "suspect" (the
-  shutdown is intentional).
+- **If `worker_stopping` arrives mid-dispatch** (a `build_new` was just sent but
+  `build_accepted` hasn't arrived): the dispatch ack timeout handles it — if the
+  worker doesn't accept, the build is re-queued. The ack-timeout path must check
+  for `Stopping` state and not mark the worker as "suspect" (the shutdown is
+  intentional).
 
 ### Server shutdown modes
 
@@ -536,19 +534,19 @@ Two modes, selected by signal:
 4. Close all WebSocket connections.
 5. Shut down.
 
-Workers detect the connection drop and enter their reconnection loop.
-When the new server instance starts, workers reconnect and the reconnection
-decision table handles reconciliation (STARTED + building N → resume).
-No builds are terminated. This is the correct behavior for rolling deploys.
+Workers detect the connection drop and enter their reconnection loop. When the
+new server instance starts, workers reconnect and the reconnection decision
+table handles reconciliation (STARTED + building N → resume). No builds are
+terminated. This is the correct behavior for rolling deploys.
 
 **Intentional decommission (SIGQUIT or `--drain` flag):**
 
 1. Stop accepting new HTTP connections and build submissions.
 2. Send `build_revoke` to all workers with active builds.
-3. Wait up to a configurable drain timeout (default 30 seconds) for workers
-   to acknowledge with `build_finished`.
-4. For any builds that did not receive acknowledgement, mark them
-   `FAILURE` with `error = "server decommissioned"` in the database.
+3. Wait up to a configurable drain timeout (default 30 seconds) for workers to
+   acknowledge with `build_finished`.
+4. For any builds that did not receive acknowledgement, mark them `FAILURE` with
+   `error = "server decommissioned"` in the database.
 5. Close all WebSocket connections.
 6. Flush log data to disk.
 7. Shut down.
@@ -565,9 +563,9 @@ ported, the Rust worker needs a bridge to Python.
 
 The worker invokes a thin Python wrapper script that:
 
-1. Receives the build descriptor, component path, and `trace_id` via stdin
-   as JSON. The wrapper sets `CBS_TRACE_ID=<trace_id>` as an environment
-   variable for cbscore's logging layer, enabling cross-boundary correlation.
+1. Receives the build descriptor, component path, and `trace_id` via stdin as
+   JSON. The wrapper sets `CBS_TRACE_ID=<trace_id>` as an environment variable
+   for cbscore's logging layer, enabling cross-boundary correlation.
 2. Calls `cbscore.runner.runner()` with the appropriate config.
 3. Streams build output (stdout/stderr) back to the Rust worker process.
 4. On completion, emits a structured JSON line on stdout (see below).
@@ -579,13 +577,13 @@ and sends it to the server over the WebSocket.
 
 ### Exit code classification
 
-| Exit code | Meaning | Maps to `build_finished.status` |
-|-----------|---------|-------------------------------|
-| 0 | Build succeeded | `success` |
-| 1 | Build failed (RPM build error, image push rejected, etc.) | `failure` |
-| 2 | Infrastructure error (OOM, config error, descriptor malformed) | `failure` |
-| 137 (128+9) | Killed by SIGKILL | `revoked` |
-| 143 (128+15) | Killed by SIGTERM | `revoked` |
+| Exit code    | Meaning                                                        | Maps to `build_finished.status` |
+| ------------ | -------------------------------------------------------------- | ------------------------------- |
+| 0            | Build succeeded                                                | `success`                       |
+| 1            | Build failed (RPM build error, image push rejected, etc.)      | `failure`                       |
+| 2            | Infrastructure error (OOM, config error, descriptor malformed) | `failure`                       |
+| 137 (128+9)  | Killed by SIGKILL                                              | `revoked`                       |
+| 143 (128+15) | Killed by SIGTERM                                              | `revoked`                       |
 
 Exit codes 137 and 143 indicate the process was killed by a signal, which
 happens when the worker sends SIGTERM during revocation or timeout.
@@ -595,7 +593,11 @@ happens when the worker sends SIGTERM during revocation or timeout.
 The Python wrapper emits a final JSON line on stdout before exiting:
 
 ```json
-{"type": "result", "exit_code": 1, "error": "RPM build failed: spec file not found"}
+{
+  "type": "result",
+  "exit_code": 1,
+  "error": "RPM build failed: spec file not found"
+}
 ```
 
 The Rust worker recognizes lines starting with `{"type": "result"` and extracts
@@ -678,8 +680,8 @@ enum Arch {
 `queued_build.descriptor.build.arch` when matching against worker capabilities.
 
 **Registry hostname extraction:** For scope checking, the registry hostname is
-extracted from `descriptor.dst_image.name` by splitting on the first `/`
-(e.g., `harbor.clyso.com/ces-devel/ceph` → `harbor.clyso.com`).
+extracted from `descriptor.dst_image.name` by splitting on the first `/` (e.g.,
+`harbor.clyso.com/ces-devel/ceph` → `harbor.clyso.com`).
 
 ## Server-Side Build Queue
 
@@ -687,16 +689,16 @@ extracted from `descriptor.dst_image.name` by splitting on the first `/`
 
 Builds have one of three priority levels, specified at scheduling time:
 
-| Priority | Value | Default | Use case |
-|----------|-------|---------|----------|
+| Priority | Value | Default | Use case                               |
+| -------- | ----- | ------- | -------------------------------------- |
 | `high`   | 0     | No      | Urgent hotfix builds, release-blocking |
-| `normal` | 1     | Yes     | Standard builds |
-| `low`    | 2     | No      | Nightly, exploratory, non-urgent |
+| `normal` | 1     | Yes     | Standard builds                        |
+| `low`    | 2     | No      | Nightly, exploratory, non-urgent       |
 
 Priority is an attribute of the build, set at submission time via the REST API
-(`POST /api/builds`). If not specified, it defaults to `normal`. Priority
-cannot be changed after submission (simplifies queue invariants). Periodic
-builds can specify a priority in their task definition.
+(`POST /api/builds`). If not specified, it defaults to `normal`. Priority cannot
+be changed after submission (simplifies queue invariants). Periodic builds can
+specify a priority in their task definition.
 
 ### Queue design
 
@@ -721,11 +723,11 @@ type SharedBuildQueue = Arc<tokio::sync::Mutex<BuildQueue>>;
 lock across I/O:
 
 1. **Under lock:** pop from lane, validate worker availability, insert into
-   `active` as `DISPATCHED`, determine target worker and build payload.
-   **Write the state transition to SQLite** so the DB reflects `DISPATCHED`
-   before the WS send (prevents crash gap). The critical section includes a
-   SQLite write (~1–5ms on NVMe-backed WAL) — this is why
-   `tokio::sync::Mutex` (async, yield-safe) is required, not `std::sync::Mutex`.
+   `active` as `DISPATCHED`, determine target worker and build payload. **Write
+   the state transition to SQLite** so the DB reflects `DISPATCHED` before the
+   WS send (prevents crash gap). The critical section includes a SQLite write
+   (~1–5ms on NVMe-backed WAL) — this is why `tokio::sync::Mutex` (async,
+   yield-safe) is required, not `std::sync::Mutex`.
 2. **Release lock.**
 3. **Outside lock:** Pack component tarball (no caching — re-packed on each
    dispatch; at ~6 KB per component this is negligible). Send `build_new` JSON
@@ -745,9 +747,9 @@ fn next_pending(&mut self) -> Option<QueuedBuild> {
 }
 ```
 
-On `build_rejected`, the build is pushed back to the **front** of its
-respective priority lane (not the back), preserving its position relative to
-other builds at the same priority.
+On `build_rejected`, the build is pushed back to the **front** of its respective
+priority lane (not the back), preserving its position relative to other builds
+at the same priority.
 
 ### Starvation
 
@@ -760,12 +762,12 @@ If starvation becomes a concern in the future, two mitigation options:
 1. **Age-based promotion.** A build that has been queued longer than a
    configurable threshold (e.g., 2 hours) is promoted one level up. This
    guarantees eventual execution without complicating the common case.
-2. **Weighted round-robin.** Serve N high, then 1 normal, then check high
-   again. More complex, less predictable.
+2. **Weighted round-robin.** Serve N high, then 1 normal, then check high again.
+   More complex, less predictable.
 
 Age-based promotion is the recommended future extension. It requires adding a
-`queued_at: Instant` field to `QueuedBuild` and checking it during dispatch.
-Not needed for v1.
+`queued_at: Instant` field to `QueuedBuild` and checking it during dispatch. Not
+needed for v1.
 
 ### Dispatch logic
 
@@ -773,23 +775,22 @@ When a build is submitted (via REST API) or a worker becomes idle:
 
 1. Acquire the `BuildQueue` mutex.
 2. Call `next_pending()` to get the highest-priority oldest build.
-3. Find a connected, idle worker whose `arch` matches the build target.
-   **Worker selection strategy (v1):** first idle worker with matching arch.
-   This is a valid starting point; revisit when multi-worker deployments are
-   operational.
-4. Move build to `active` (in `DISPATCHED` state). Record target worker.
-   **Write the state transition to SQLite here** (under the mutex) so the DB
-   reflects `DISPATCHED` before the WS send. This prevents the crash gap where
-   the DB still says `queued` but the build was dispatched in memory.
+3. Find a connected, idle worker whose `arch` matches the build target. **Worker
+   selection strategy (v1):** first idle worker with matching arch. This is a
+   valid starting point; revisit when multi-worker deployments are operational.
+4. Move build to `active` (in `DISPATCHED` state). Record target worker. **Write
+   the state transition to SQLite here** (under the mutex) so the DB reflects
+   `DISPATCHED` before the WS send. This prevents the crash gap where the DB
+   still says `queued` but the build was dispatched in memory.
 5. Release the mutex.
 6. Pack component tarball. Send `build_new` + binary frame to the worker.
-7. Start `dispatch_ack_timeout` timer (default 15 seconds).
-8a. On `build_accepted`: **cancel the ack timer**. Build remains in
-    `DISPATCHED` state (worker has acknowledged but not yet started).
-8b. On `build_started`: transition from `DISPATCHED` to `STARTED`.
-8. On `build_rejected`: re-acquire mutex, push build back to front of its
-   lane, try the next worker.
-9 On send failure: re-acquire mutex, push build back to front of its lane.
+7. Start `dispatch_ack_timeout` timer (default 15 seconds). 8a. On
+   `build_accepted`: **cancel the ack timer**. Build remains in `DISPATCHED`
+   state (worker has acknowledged but not yet started). 8b. On `build_started`:
+   transition from `DISPATCHED` to `STARTED`.
+8. On `build_rejected`: re-acquire mutex, push build back to front of its lane,
+   try the next worker. 9 On send failure: re-acquire mutex, push build back to
+   front of its lane.
 9. On ack timeout: re-acquire mutex, push build back to front of its lane.
 10. If no workers are available, the build stays in its priority lane.
 
@@ -799,21 +800,21 @@ dedicated timeout. This is intentional — the liveness grace period (60–120s)
 handles it. When the worker is declared dead, the reconnection decision table
 applies (DISPATCHED + idle → re-queue; DISPATCHED + dead → FAILURE).
 
-**Re-dispatch trigger:** Dispatch runs when (a) a new build is submitted,
-(b) a worker sends `build_finished` (becoming idle), (c) a worker reconnects
-as idle, or (d) a periodic sweep runs (every 30 seconds) to catch edge cases
-like reconnection without build completion.
+**Re-dispatch trigger:** Dispatch runs when (a) a new build is submitted, (b) a
+worker sends `build_finished` (becoming idle), (c) a worker reconnects as idle,
+or (d) a periodic sweep runs (every 30 seconds) to catch edge cases like
+reconnection without build completion.
 
 **Component validation at submission time:** `POST /api/builds` validates the
 component name against the server's component store before accepting the build.
 Unknown component → 400 Bad Request. This catches errors at submission time
 rather than at dispatch time.
 
-**No-matching-worker warning:** When a build is submitted via the REST API
-and no connected worker matches the target architecture, the response includes
-a warning field: `"warning": "no connected worker matches arch x86_64; build
-is queued and will dispatch when a matching worker connects"`. The build is
-still accepted (HTTP 202) — this is informational, not an error.
+**No-matching-worker warning:** When a build is submitted via the REST API and
+no connected worker matches the target architecture, the response includes a
+warning field:
+`"warning": "no connected worker matches arch x86_64; build is queued and will dispatch when a matching worker connects"`.
+The build is still accepted (HTTP 202) — this is informational, not an error.
 
 ### Build states (server side)
 
@@ -833,13 +834,13 @@ state.
 
 **`DELETE /api/builds/{id}` per-state behavior:**
 
-| Current state | Action | HTTP response |
-|---------------|--------|---------------|
-| `queued` | Remove from priority lane, mark `REVOKED` synchronously | 200 |
-| `dispatched` | Send `build_revoke`, transition to `REVOKING` | 202 |
-| `started` | Send `build_revoke`, transition to `REVOKING` | 202 |
-| `revoking` | Already revoking, no-op | 200 |
-| `success` / `failure` / `revoked` | Already terminal | 409 Conflict |
+| Current state                     | Action                                                  | HTTP response |
+| --------------------------------- | ------------------------------------------------------- | ------------- |
+| `queued`                          | Remove from priority lane, mark `REVOKED` synchronously | 200           |
+| `dispatched`                      | Send `build_revoke`, transition to `REVOKING`           | 202           |
+| `started`                         | Send `build_revoke`, transition to `REVOKING`           | 202           |
+| `revoking`                        | Already revoking, no-op                                 | 200           |
+| `success` / `failure` / `revoked` | Already terminal                                        | 409 Conflict  |
 
 ## Server Startup Recovery
 
@@ -862,12 +863,13 @@ previous server instance.
      while maintaining durability against OS crashes. The default FULL is
      unnecessary for this workload.
 
-   **Pool sizing (correctness requirement):** `min_connections = 1,
-   max_connections = 4` (or similar). The dispatch mutex is held across a
-   SQLite write. If the pool is at capacity, the `sqlx::query!` await stalls
-   while holding the mutex. Other queue operations waiting for the mutex that
-   also need pool connections would deadlock. Ensuring pool headroom prevents
-   this.
+   **Pool sizing (correctness requirement):**
+   `min_connections = 1, max_connections = 4` (or similar). The dispatch mutex
+   is held across a SQLite write. If the pool is at capacity, the `sqlx::query!`
+   await stalls while holding the mutex. Other queue operations waiting for the
+   mutex that also need pool connections would deadlock. Ensuring pool headroom
+   prevents this.
+
 2. **Run sqlx migrations.** `sqlx::migrate!("../migrations")` — creates/updates
    all application tables. The `tower_sessions` table is **not** included here;
    it is managed by `tower-sessions-sqlx-store` (see step 3).
@@ -881,8 +883,8 @@ previous server instance.
 5. **Re-queue pending builds.** Query for all builds in state `queued`, ordered
    by `queued_at` within each priority level. Insert them into the in-memory
    priority lanes in the correct order.
-6. **Ignore terminal builds.** Builds in `success`, `failure`, or `revoked`
-   are historical records and require no action.
+6. **Ignore terminal builds.** Builds in `success`, `failure`, or `revoked` are
+   historical records and require no action.
 7. **Begin normal operation.** Start accepting WebSocket connections and HTTP
    requests.
 
@@ -891,46 +893,46 @@ connection drop and enter their reconnection loop. When they reconnect:
 
 - If idle: they re-register normally.
 - If mid-build: they send `worker_status`. The server applies the reconnection
-  decision table. Since the server marked that build as `failure` in step 2,
-  it will send `build_revoke` (per the "any terminal state" row).
+  decision table. Since the server marked that build as `failure` in step 2, it
+  will send `build_revoke` (per the "any terminal state" row).
 
 ## Build Log Durability
 
 ### Write policy
 
-Each `build_output` message received from a worker is **appended to the log
-file on disk before the next message is processed**. There is no in-memory
-buffering of log data on the server side. This ensures that a server crash
-loses at most the single message in flight at the time of the crash.
+Each `build_output` message received from a worker is **appended to the log file
+on disk before the next message is processed**. There is no in-memory buffering
+of log data on the server side. This ensures that a server crash loses at most
+the single message in flight at the time of the crash.
 
-The `build_logs.log_size` column is updated periodically (every 5 seconds or
-on build completion) rather than on every write, to avoid excessive SQLite
-write amplification. The `finished` flag is set atomically when
-`build_finished` is received.
+The `build_logs.log_size` column is updated periodically (every 5 seconds or on
+build completion) rather than on every write, to avoid excessive SQLite write
+amplification. The `finished` flag is set atomically when `build_finished` is
+received.
 
 **Ordering guarantees:** The server processes messages from each worker
-connection sequentially (single tokio task per WebSocket connection). There
-are no concurrent writes to the same build's log file. No `fsync` is required
-per append — the OS page cache is sufficient given the crash-loss window is
-one message.
+connection sequentially (single tokio task per WebSocket connection). There are
+no concurrent writes to the same build's log file. No `fsync` is required per
+append — the OS page cache is sufficient given the crash-loss window is one
+message.
 
-**Late messages:** `build_output` arriving after `build_finished` (possible
-due to WebSocket message reordering) is **silently discarded**. The build is
+**Late messages:** `build_output` arriving after `build_finished` (possible due
+to WebSocket message reordering) is **silently discarded**. The build is
 terminal; the log is complete.
 
 ### Log file path
 
 Log files are stored at `{log_dir}/builds/{build_id}.log`. This path is
-deterministic from the build ID, so the `build_logs.log_path` column stores
-the path for auditability but is functionally derivable. The `log_dir` is
-configured in the server config.
+deterministic from the build ID, so the `build_logs.log_path` column stores the
+path for auditability but is functionally derivable. The `log_dir` is configured
+in the server config.
 
 ### Log streaming to clients (SSE)
 
 `GET /api/builds/{id}/logs/follow` uses **Server-Sent Events** (SSE,
-`text/event-stream`). SSE is the right choice for browser and CLI log
-following: it is unidirectional (server → client), works over standard HTTP,
-is HTTP/2 compatible, and has simpler client code than WebSocket.
+`text/event-stream`). SSE is the right choice for browser and CLI log following:
+it is unidirectional (server → client), works over standard HTTP, is HTTP/2
+compatible, and has simpler client code than WebSocket.
 
 **Wire format:**
 
@@ -952,8 +954,7 @@ data:
 - `event: done` — sent when `build_logs.finished = 1`. Client can close.
 
 **Resumption:** Client reconnects with `Last-Event-ID: <seq>` header (SSE
-built-in). Server replays from the log file starting after that sequence
-number.
+built-in). Server replays from the log file starting after that sequence number.
 
 **Seq-to-offset index:** For active builds, the server maintains an in-memory
 `HashMap<BuildId, Vec<(line_seq, file_offset)>>` index. The log writer inserts
@@ -971,8 +972,8 @@ signal**, not a per-batch delivery mechanism. On each wakeup, the SSE handler
 reads from its current file position to EOF, emitting all new lines as SSE
 events. This gives sub-millisecond latency vs. 500ms polling.
 
-When the log is complete (`finished = 1`), the server sends the `done` event
-and closes the stream.
+When the log is complete (`finished = 1`), the server sends the `done` event and
+closes the stream.
 
 **Log tail cap:** `GET /api/builds/{id}/logs/tail?n=30` caps `n` at 10000.
 Values exceeding the cap return 400 Bad Request. This prevents the server from
@@ -980,12 +981,12 @@ reading an entire multi-megabyte log into memory.
 
 ### Log file retention
 
-Build logs are retained for `log_retention_days` (configurable, default 30).
-A daily periodic task (using `tokio-cron-scheduler` or a simple `tokio::time::interval`):
+Build logs are retained for `log_retention_days` (configurable, default 30). A
+daily periodic task (using `tokio-cron-scheduler` or a simple
+`tokio::time::interval`):
 
-1. Queries `SELECT build_id, log_path FROM build_logs bl JOIN builds b ON
-   bl.build_id = b.id WHERE b.finished_at < unixepoch() - ? AND b.state IN
-   ('success', 'failure', 'revoked')`.
+1. Queries
+   `SELECT build_id, log_path FROM build_logs bl JOIN builds b ON bl.build_id = b.id WHERE b.finished_at < unixepoch() - ? AND b.state IN ('success', 'failure', 'revoked')`.
 2. Deletes the log files from disk.
 3. Deletes the `build_logs` rows.
 4. Optionally: deletes the `builds` rows (configurable — some deployments want
@@ -1001,8 +1002,8 @@ Build logs for active or queued builds are never GC'd regardless of age.
    inode lives until all FDs close). This eliminates the race where GC deletes
    the file between reads. This is a **design constraint on `logs/sse.rs`**.
 
-2. **Missing file → synthetic `event: done`.** If the log file does not exist
-   at stream start for a terminal build (already GC'd), emit a synthetic
+2. **Missing file → synthetic `event: done`.** If the log file does not exist at
+   stream start for a terminal build (already GC'd), emit a synthetic
    `event: done` immediately. The client receives a clean termination signal.
 
 ## Open Questions
@@ -1016,11 +1017,11 @@ Build logs for active or queued builds are never GC'd regardless of age.
   extension via `build_id`-namespaced messages, and the server's dispatch logic
   would need to track per-worker build count vs. declared capacity.
 - **Build artifact tracking.** Builds produce container images pushed to a
-  registry. This is handled by cbscore/podman inside the build container and
-  is orthogonal to the task queue design.
-- **Periodic builds.** The current system supports cron-scheduled builds.
-  The Rust port will need equivalent functionality. This requires a separate
-  design document covering scheduling, persistence, and management API.
+  registry. This is handled by cbscore/podman inside the build container and is
+  orthogonal to the task queue design.
+- **Periodic builds.** The current system supports cron-scheduled builds. The
+  Rust port will need equivalent functionality. This requires a separate design
+  document covering scheduling, persistence, and management API.
 - **Component versioning and content-addressing.** Currently components are
   filesystem-managed. Future component management API should define whether
   components are versioned and whether there is a content-addressed store.

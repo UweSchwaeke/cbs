@@ -6,11 +6,10 @@
 
 ## Summary
 
-The scaffold design is structurally sound. Crate layout,
-dependencies, error types, and the HTTP client wrapper are all
-appropriate for a Rust CLI. Two issues need fixing: the config
-file resolution order has a credential-exposure hazard, and the
-`put` method signature needs splitting.
+The scaffold design is structurally sound. Crate layout, dependencies, error
+types, and the HTTP client wrapper are all appropriate for a Rust CLI. Two
+issues need fixing: the config file resolution order has a credential-exposure
+hazard, and the `put` method signature needs splitting.
 
 **Verdict: Approve with conditions.**
 
@@ -26,39 +25,36 @@ None.
 
 ### M1 — `./cbc-config.json` fallback is a credential exposure risk
 
-The resolution order puts `./cbc-config.json` (current directory)
-as fallback position 3. If a user is in a shared directory that
-happens to contain a `cbc-config.json` left by someone else, they
-silently load a foreign token. The XDG path is the right default;
-the current-directory fallback should be removed or demoted to
-an explicit opt-in via `-c`.
+The resolution order puts `./cbc-config.json` (current directory) as fallback
+position 3. If a user is in a shared directory that happens to contain a
+`cbc-config.json` left by someone else, they silently load a foreign token. The
+XDG path is the right default; the current-directory fallback should be removed
+or demoted to an explicit opt-in via `-c`.
 
-**Fix:** Remove the cwd fallback from the resolution order.
-Keep only: (1) `-c <path>`, (2) `$XDG_CONFIG_HOME/cbc/config.json`.
+**Fix:** Remove the cwd fallback from the resolution order. Keep only: (1)
+`-c <path>`, (2) `$XDG_CONFIG_HOME/cbc/config.json`.
 
 ---
 
 ## Minor Issues
 
 - **`put` signature with `Option<&impl Serialize>` is awkward.**
-  `periodic enable`/`disable` send no body. Every call site must
-  pass `None::<&()>`. Split into `put_json()` (with body) and
-  `put_empty()` (no body).
+  `periodic enable`/`disable` send no body. Every call site must pass
+  `None::<&()>`. Split into `put_json()` (with body) and `put_empty()` (no
+  body).
 
-- **`Error::Auth(String)` duplicates `Error::Api` for 401/403.**
-  Consider collapsing `Auth` into `Api` and letting callers
-  pattern-match on `status`.
+- **`Error::Auth(String)` duplicates `Error::Api` for 401/403.** Consider
+  collapsing `Auth` into `Api` and letting callers pattern-match on `status`.
 
-- **`base_url: String` with manual `/api` concatenation is
-  fragile.** Use `url::Url` and `url.join()` to prevent
-  double-slash bugs.
+- **`base_url: String` with manual `/api` concatenation is fragile.** Use
+  `url::Url` and `url.join()` to prevent double-slash bugs.
 
-- **`dirs = "6"` — verify version.** The latest published `dirs`
-  is 5.x as of early 2026. Confirm before writing Cargo.toml.
+- **`dirs = "6"` — verify version.** The latest published `dirs` is 5.x as of
+  early 2026. Confirm before writing Cargo.toml.
 
-- **No `--json` flag for machine-readable output.** If downstream
-  automation is expected (CI pipelines), a JSON output mode should
-  be designed in from the start.
+- **No `--json` flag for machine-readable output.** If downstream automation is
+  expected (CI pipelines), a JSON output mode should be designed in from the
+  start.
 
 ---
 

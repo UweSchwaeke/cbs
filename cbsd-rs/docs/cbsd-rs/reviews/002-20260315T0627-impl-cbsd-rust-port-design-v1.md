@@ -15,13 +15,13 @@
 
 ## Summary
 
-The implementation is high quality and closely tracks the design documents
-and plans. All four commits compile, the schema matches the design with zero
+The implementation is high quality and closely tracks the design documents and
+plans. All four commits compile, the schema matches the design with zero
 divergences, the PASETO token implementation correctly freezes the canonical
 payload form, and the AuthUser extractor follows the right check sequence
-(decode → revocation → active → user load). One minor plan deviation
-(missing `config.rs` in cbsd-proto) and several idiomatic improvements are
-noted. No blockers.
+(decode → revocation → active → user load). One minor plan deviation (missing
+`config.rs` in cbsd-proto) and several idiomatic improvements are noted. No
+blockers.
 
 **Verdict: Implementation is sound. Proceed to Commit 4.**
 
@@ -35,9 +35,9 @@ noted. No blockers.
 
 All Phase 0 requirements fulfilled:
 
-- `cbsd-rs/CLAUDE.md` contains all 7 correctness invariants, skill
-  references, build commands, git conventions, architecture pointers, and
-  sqlx offline cache instructions
+- `cbsd-rs/CLAUDE.md` contains all 7 correctness invariants, skill references,
+  build commands, git conventions, architecture pointers, and sqlx offline cache
+  instructions
 - All 7 phase plan files created with progress tracking tables
 - Plan README with dependency graph and status table
 
@@ -52,8 +52,8 @@ No issues.
 All shared types are correctly implemented:
 
 - `Arch` enum with `arm64` serde alias ✓
-- `BuildDescriptor` preserving Python nesting (version, channel,
-  version_type, signed_off_by, dst_image, components[], build.BuildTarget) ✓
+- `BuildDescriptor` preserving Python nesting (version, channel, version_type,
+  signed_off_by, dst_image, components[], build.BuildTarget) ✓
 - `BuildState` (7 states), `Priority`, `BuildId(i64)` newtype ✓
 - All WS messages (4 ServerMessage variants, 8 WorkerMessage variants) ✓
 - `Welcome` includes `grace_period_secs` ✓
@@ -65,20 +65,20 @@ All shared types are correctly implemented:
 **Deviation: `config.rs` missing from cbsd-proto.**
 
 The plan specifies: "`config.rs` — Shared config types (server URL, TLS CA
-bundle path)." This file was not created. The shared config types will
-likely be needed when the worker crate is implemented (Commit 10).
+bundle path)." This file was not created. The shared config types will likely be
+needed when the worker crate is implemented (Commit 10).
 
-Severity: Low. The types can be added in a later commit without
-retroactive changes. The worker crate is a stub at this point.
+Severity: Low. The types can be added in a later commit without retroactive
+changes. The worker crate is a stub at this point.
 
 **Code quality notes:**
 
-- `BuildDescriptor::registry_host()` helper is a nice addition not
-  required by the plan — useful for registry scope extraction in Commit 5.
-- `BuildComponent.git_ref` correctly uses `#[serde(rename = "ref")]` to
-  match the Python JSON field name.
-- `BuildTarget` defaults (`artifact_type = "rpm"`, `arch = X86_64`) match
-  the design doc exactly.
+- `BuildDescriptor::registry_host()` helper is a nice addition not required by
+  the plan — useful for registry scope extraction in Commit 5.
+- `BuildComponent.git_ref` correctly uses `#[serde(rename = "ref")]` to match
+  the Python JSON field name.
+- `BuildTarget` defaults (`artifact_type = "rpm"`, `arch = X86_64`) match the
+  design doc exactly.
 
 ---
 
@@ -86,8 +86,8 @@ retroactive changes. The worker crate is a stub at this point.
 
 **Plan compliance: Complete.**
 
-**Schema (001_initial_schema.sql):**
-All 9 tables present and correct (users, tokens, api_keys, roles,
+**Schema (001_initial_schema.sql):** All 9 tables present and correct (users,
+tokens, api_keys, roles,
 
 role_caps, user_roles, user_role_scopes, builds, build_logs).
 
@@ -104,14 +104,15 @@ Key schema elements verified against design doc:
 - All 4 indexes: `idx_tokens_user`, `idx_builds_state`, `idx_builds_user`,
 
   `idx_builds_state_queued` ✓
+
 - All timestamps are `INTEGER` (Unix epoch) ✓
 
 **Zero schema divergences from design doc.**
 
 **Server scaffold:**
 
-- `create_pool()` sets all 4 pragmas (WAL, foreign_keys=ON,
-  busy_timeout=5000, synchronous=NORMAL) per-connection ✓
+- `create_pool()` sets all 4 pragmas (WAL, foreign_keys=ON, busy_timeout=5000,
+  synchronous=NORMAL) per-connection ✓
 - `max_connections = 4` (deadlock prevention) ✓
 
 - `create_if_missing(true)` on SqliteConnectOptions ✓
@@ -125,15 +126,14 @@ Key schema elements verified against design doc:
 - All config fields from design present ✓
 - Validation: `allowed_domains` empty guard ✓
 - Validation: `backoff_ceiling >= grace_period` guard ✓
-- `--drain` CLI flag present ✓
-**Shutdown signal handling:**
+- `--drain` CLI flag present ✓ **Shutdown signal handling:**
 
 - SIGTERM, SIGQUIT, Ctrl+C all handled ✓
 - Signal-specific log messages ✓
 - Correct `#[cfg(unix)]` guards ✓
 
-**sqlx offline cache:** Not committed (`.sqlx/` absent). This is
-**acceptable** because Commit 2 contains no `sqlx::query!` macros — only
+**sqlx offline cache:** Not committed (`.sqlx/` absent). This is **acceptable**
+because Commit 2 contains no `sqlx::query!` macros — only
 
 pool setup and migration embedding. The cache is needed starting Commit 3.
 
@@ -149,7 +149,8 @@ pool setup and migration embedding. The cache is needed starting Commit 3.
   (alphabetical) ✓
 
 - Fields: `expires: Option<i64>`, `user: String` (epoch integers) ✓
-- Canonical JSON verified by test: `{"expires":1710412200,"user":"alice@clyso.com"}` ✓
+- Canonical JSON verified by test:
+  `{"expires":1710412200,"user":"alice@clyso.com"}` ✓
 - Null expires test: `{"expires":null,"user":"alice@clyso.com"}` ✓
 - SHA-256 hash via `sha2::Sha256::digest()`, hex-encoded ✓
 - `max_token_ttl_seconds` clamping ✓
@@ -185,11 +186,11 @@ pool setup and migration embedding. The cache is needed starting Commit 3.
 
 ### ~~Issue 1 — FALSE POSITIVE (retracted)~~
 
-~~Originally flagged as "dead `hex` module shadows `hex` crate." Verified:
-there is no `hex` crate in any `Cargo.toml`. The manual `mod hex` in
-`paseto.rs` is the sole hex implementation and is intentional — the module
-doc explicitly says "avoids external `hex` crate dependency." This is the
-correct approach for two trivial functions.~~
+~~Originally flagged as "dead `hex` module shadows `hex` crate." Verified: there
+is no `hex` crate in any `Cargo.toml`. The manual `mod hex` in `paseto.rs` is
+the sole hex implementation and is intentional — the module doc explicitly says
+"avoids external `hex` crate dependency." This is the correct approach for two
+trivial functions.~~
 
 ### Issue 2 — `BuildState::Display` uses serde_json round-trip (build.rs:57–63)
 
@@ -205,8 +206,8 @@ impl std::fmt::Display for BuildState {
 }
 ```
 
-This allocates a `serde_json::Value` and a `String` on every `Display`
-call just to get the lowercase variant name. A simpler approach:
+This allocates a `serde_json::Value` and a `String` on every `Display` call just
+to get the lowercase variant name. A simpler approach:
 
 ```rust
 impl std::fmt::Display for BuildState {
@@ -224,16 +225,15 @@ impl std::fmt::Display for BuildState {
 }
 ```
 
-Zero allocations, no serde dependency in the Display path, and the match
-arms make the lowercase mapping explicit rather than relying on serde's
-`rename_all`. This is a minor quality nit — the current code is correct.
+Zero allocations, no serde dependency in the Display path, and the match arms
+make the lowercase mapping explicit rather than relying on serde's `rename_all`.
+This is a minor quality nit — the current code is correct.
 
 ### Issue 3 — `get_user` and `is_user_active` can be consolidated (users.rs)
 
-`is_user_active` (lines 56–63) runs a separate SQL query to check the
-`active` flag. But `get_user` (lines 42–53) already fetches `active` as
-part of `UserRecord`. In the AuthUser extractor, both are called
-sequentially:
+`is_user_active` (lines 56–63) runs a separate SQL query to check the `active`
+flag. But `get_user` (lines 42–53) already fetches `active` as part of
+`UserRecord`. In the AuthUser extractor, both are called sequentially:
 
 ```rust
 let active = db::users::is_user_active(&state.pool, &payload.user).await...;
@@ -241,8 +241,8 @@ let active = db::users::is_user_active(&state.pool, &payload.user).await...;
 let user = db::users::get_user(&state.pool, &payload.user).await...;
 ```
 
-This executes two SQL queries for the same user. A single `get_user` call
-could serve both purposes:
+This executes two SQL queries for the same user. A single `get_user` call could
+serve both purposes:
 
 ```rust
 let user = db::users::get_user(&state.pool, &payload.user).await...?
@@ -253,29 +253,27 @@ if !user.active {
 ```
 
 This halves the DB round-trips in the auth hot path. The `is_user_active`
-function may still be useful elsewhere (e.g., the last-admin guard in
-Commit 5), so it doesn't need to be removed — just not used in the
-extractor.
+function may still be useful elsewhere (e.g., the last-admin guard in Commit 5),
+so it doesn't need to be removed — just not used in the extractor.
 
 ### Issue 4 — `SeedConfig::Default` is manually implemented but could use `#[serde(default)]`
 
-`SeedConfig` (config.rs:133–150) has a manual `Default` impl that returns
-`None` / empty `Vec`. Since both fields already have `Option` / `Vec`
-types, `#[derive(Default)]` would produce identical behavior. The manual
-impl is not wrong, just unnecessary boilerplate. Same applies to
-`LoggingConfig` — the manual `Default` impl duplicates the `default_*`
-functions already used by serde.
+`SeedConfig` (config.rs:133–150) has a manual `Default` impl that returns `None`
+/ empty `Vec`. Since both fields already have `Option` / `Vec` types,
+`#[derive(Default)]` would produce identical behavior. The manual impl is not
+wrong, just unnecessary boilerplate. Same applies to `LoggingConfig` — the
+manual `Default` impl duplicates the `default_*` functions already used by
+serde.
 
 ### Issue 5 — `TimeoutsConfig::Default` duplicates serde default functions
 
 `TimeoutsConfig` has both `#[serde(default = "default_dispatch_ack_timeout")]`
-on each field AND a manual `Default` impl that calls the same functions.
-The `#[serde(default)]` at the struct level (already present on line 44 of
+on each field AND a manual `Default` impl that calls the same functions. The
+`#[serde(default)]` at the struct level (already present on line 44 of
 `ServerConfig`) means serde calls `TimeoutsConfig::default()` for missing
-fields. The per-field `#[serde(default = "...")]` annotations are
-redundant when the struct-level `#[serde(default)]` is also present on the
-parent. One or the other suffices — having both is not wrong but adds
-maintenance surface.
+fields. The per-field `#[serde(default = "...")]` annotations are redundant when
+the struct-level `#[serde(default)]` is also present on the parent. One or the
+other suffices — having both is not wrong but adds maintenance surface.
 
 ### Issue 6 — No `.sqlx/` directory committed with Commit 3
 
@@ -283,47 +281,46 @@ Commit 3 introduces the first `sqlx::query()` calls (in `db/users.rs` and
 `db/tokens.rs`). Per the plan and CLAUDE.md, any commit adding sqlx queries
 should include the updated `.sqlx/` offline cache. The cache is absent.
 
-This is not a correctness issue (the queries use `sqlx::query()` with
-string SQL, not `sqlx::query!()` compile-time macros), so the build
-succeeds without the cache. However, when compile-time checked queries are
-introduced in later commits, the cache will be needed. The plan's
-bootstrap procedure should be followed at the first commit that uses
-`sqlx::query!()` macros.
+This is not a correctness issue (the queries use `sqlx::query()` with string
+SQL, not `sqlx::query!()` compile-time macros), so the build succeeds without
+the cache. However, when compile-time checked queries are introduced in later
+commits, the cache will be needed. The plan's bootstrap procedure should be
+followed at the first commit that uses `sqlx::query!()` macros.
 
 ---
 
 ## Design Fidelity Summary
 
-| Design requirement | Status | Commit |
-|---|---|---|
-| 7 correctness invariants in CLAUDE.md | ✓ | 0 |
-| BuildDescriptor preserves Python nesting | ✓ | 1 |
-| `arm64` serde alias on Arch | ✓ | 1 |
-| `version_type` + `artifact_type` fields present | ✓ | 1 |
-| `Welcome.grace_period_secs` | ✓ | 1 |
-| `BuildOutput.start_seq` (per-line seq) | ✓ | 1 |
-| All 9 tables with correct schema | ✓ | 2 |
-| All 4 pragmas (WAL, FK, busy_timeout, synchronous) | ✓ | 2 |
-| `max_connections = 4` | ✓ | 2 |
-| `tower-sessions-sqlx-store` init with `.migrate()` | ✓ | 2 |
-| `descriptor_version` + `trace_id` columns | ✓ | 2 |
-| Config validation (domains, backoff ceiling) | ✓ | 2 |
-| `--drain` CLI flag | ✓ | 2 |
-| SIGTERM/SIGQUIT/Ctrl+C signal handling | ✓ | 2 |
-| PASETO `CBSD_TOKEN_PAYLOAD_V1` frozen | ✓ | 3 |
-| SHA-256 of raw UTF-8 token string | ✓ | 3 |
-| `max_token_ttl_seconds` clamping | ✓ | 3 |
-| AuthUser: Bearer → prefix check → decode → revocation → active → load | ✓ | 3 |
-| Error response `{"detail": "..."}` | ✓ | 3 |
-| `is_token_revoked` treats unknown as revoked | ✓ | 3 |
+| Design requirement                                                    | Status | Commit |
+| --------------------------------------------------------------------- | ------ | ------ |
+| 7 correctness invariants in CLAUDE.md                                 | ✓      | 0      |
+| BuildDescriptor preserves Python nesting                              | ✓      | 1      |
+| `arm64` serde alias on Arch                                           | ✓      | 1      |
+| `version_type` + `artifact_type` fields present                       | ✓      | 1      |
+| `Welcome.grace_period_secs`                                           | ✓      | 1      |
+| `BuildOutput.start_seq` (per-line seq)                                | ✓      | 1      |
+| All 9 tables with correct schema                                      | ✓      | 2      |
+| All 4 pragmas (WAL, FK, busy_timeout, synchronous)                    | ✓      | 2      |
+| `max_connections = 4`                                                 | ✓      | 2      |
+| `tower-sessions-sqlx-store` init with `.migrate()`                    | ✓      | 2      |
+| `descriptor_version` + `trace_id` columns                             | ✓      | 2      |
+| Config validation (domains, backoff ceiling)                          | ✓      | 2      |
+| `--drain` CLI flag                                                    | ✓      | 2      |
+| SIGTERM/SIGQUIT/Ctrl+C signal handling                                | ✓      | 2      |
+| PASETO `CBSD_TOKEN_PAYLOAD_V1` frozen                                 | ✓      | 3      |
+| SHA-256 of raw UTF-8 token string                                     | ✓      | 3      |
+| `max_token_ttl_seconds` clamping                                      | ✓      | 3      |
+| AuthUser: Bearer → prefix check → decode → revocation → active → load | ✓      | 3      |
+| Error response `{"detail": "..."}`                                    | ✓      | 3      |
+| `is_token_revoked` treats unknown as revoked                          | ✓      | 3      |
 
 ---
 
 ## Plan Progress
 
-| Phase | Plan Status | Actual Status | Notes |
-|---|---|---|---|
-| Phase 0 Commit 0 | Not started → Done | Done ✓ | Plan file updated |
-| Phase 1 Commit 1 | Not started → Done | Done ✓ | Plan file updated. Missing `config.rs` (minor) |
-| Phase 1 Commit 2 | Not started → Done | Done ✓ | Plan file updated. README status updated |
-| Phase 2 Commit 3 | Not started → Done | Done ✓ | Plan file updated |
+| Phase            | Plan Status        | Actual Status | Notes                                          |
+| ---------------- | ------------------ | ------------- | ---------------------------------------------- |
+| Phase 0 Commit 0 | Not started → Done | Done ✓        | Plan file updated                              |
+| Phase 1 Commit 1 | Not started → Done | Done ✓        | Plan file updated. Missing `config.rs` (minor) |
+| Phase 1 Commit 2 | Not started → Done | Done ✓        | Plan file updated. README status updated       |
+| Phase 2 Commit 3 | Not started → Done | Done ✓        | Plan file updated                              |

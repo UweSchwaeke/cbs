@@ -7,28 +7,25 @@
 
 ## Rationale for combining
 
-The scaffold (crate setup, CLI framework, config, HTTP client,
-error types) produces no usable commands on its own. Without
-`login` and `whoami`, every module is dead code — nothing
-exercises the config save path, the HTTP client, or the error
-display. Shipping scaffold alone would violate the "each commit
+The scaffold (crate setup, CLI framework, config, HTTP client, error types)
+produces no usable commands on its own. Without `login` and `whoami`, every
+module is dead code — nothing exercises the config save path, the HTTP client,
+or the error display. Shipping scaffold alone would violate the "each commit
 must be independently useful" rule.
 
-Combined, the first commit delivers a usable state: a user can
-run `cbc login <url>`, obtain a token, and verify with
-`cbc whoami`.
+Combined, the first commit delivers a usable state: a user can run
+`cbc login <url>`, obtain a token, and verify with `cbc whoami`.
 
 ## Progress
 
-| # | Commit | ~LOC | Status |
-|---|--------|------|--------|
-| 1 | `cbc: add project scaffold with login and whoami` | ~550 | TODO |
+| #   | Commit                                            | ~LOC | Status |
+| --- | ------------------------------------------------- | ---- | ------ |
+| 1   | `cbc: add project scaffold with login and whoami` | ~550 | TODO   |
 
 ## Commit 1: `cbc: add project scaffold with login and whoami`
 
-New `cbc` crate in the workspace. Implements the full
-scaffold (CLI, config, HTTP client, errors) plus the two
-auth commands (`login`, `whoami`).
+New `cbc` crate in the workspace. Implements the full scaffold (CLI, config,
+HTTP client, errors) plus the two auth commands (`login`, `whoami`).
 
 ### Files
 
@@ -76,8 +73,8 @@ dirs = "5"
 open = "5"
 ```
 
-No `reqwest-eventsource` yet — added in plan 03 when
-build log following is implemented.
+No `reqwest-eventsource` yet — added in plan 03 when build log following is
+implemented.
 
 #### `cbc/src/error.rs`
 
@@ -90,9 +87,8 @@ pub enum Error {
 }
 ```
 
-Implements `Display` and `std::error::Error`. The
-`Display` impl formats human-readable messages for
-stderr. Process exits with code 1 on any error
+Implements `Display` and `std::error::Error`. The `Display` impl formats
+human-readable messages for stderr. Process exits with code 1 on any error
 (handled in `main.rs`).
 
 #### `cbc/src/config.rs`
@@ -104,13 +100,11 @@ pub struct Config {
 }
 ```
 
-- `Config::load(path: Option<&Path>)` — resolution
-  order: CLI flag, then `dirs::config_dir()/cbc/
-  config.json`. Returns `Error::Config` if not found
+- `Config::load(path: Option<&Path>)` — resolution order: CLI flag, then
+  `dirs::config_dir()/cbc/ config.json`. Returns `Error::Config` if not found
   and command requires auth.
-- `Config::save(&self, path: &Path)` — writes JSON,
-  creates parent dirs, sets `0600` permissions on Unix
-  via `std::fs::set_permissions`.
+- `Config::save(&self, path: &Path)` — writes JSON, creates parent dirs, sets
+  `0600` permissions on Unix via `std::fs::set_permissions`.
 - `Config::default_path()` — returns the XDG path.
 
 #### `cbc/src/client.rs`
@@ -124,17 +118,16 @@ pub struct CbcClient {
 }
 ```
 
-- `CbcClient::new(host, token, debug)` — parses host,
-  appends `/api/`, sets Bearer header.
-- `CbcClient::unauthenticated(host, debug)` — no
-  token, for login health check and token validation.
-- Generic methods: `get<T>`, `post<B, T>`, `put_json`,
-  `put_empty`, `delete<T>`, `get_stream`,
-  `get_request`.
-- All methods check HTTP status. On 4xx/5xx, parse
-  `{"error": "..."}` body into `Error::Api`.
-- When `debug` is true, `eprintln!` the method, URL,
-  and response status for each request.
+- `CbcClient::new(host, token, debug)` — parses host, appends `/api/`, sets
+  Bearer header.
+- `CbcClient::unauthenticated(host, debug)` — no token, for login health check
+  and token validation.
+- Generic methods: `get<T>`, `post<B, T>`, `put_json`, `put_empty`, `delete<T>`,
+  `get_stream`, `get_request`.
+- All methods check HTTP status. On 4xx/5xx, parse `{"error": "..."}` body into
+  `Error::Api`.
+- When `debug` is true, `eprintln!` the method, URL, and response status for
+  each request.
 
 #### `cbc/src/main.rs`
 
@@ -158,22 +151,18 @@ enum Commands {
 }
 ```
 
-Only `Login` and `Whoami` variants for now. `Build`,
-`Periodic`, `Worker`, `Admin` are added by later plans.
+Only `Login` and `Whoami` variants for now. `Build`, `Periodic`, `Worker`,
+`Admin` are added by later plans.
 
 **`login` command flow:**
 
-1. Validate server: `GET /api/health` via
-   unauthenticated client. On failure:
+1. Validate server: `GET /api/health` via unauthenticated client. On failure:
    `"cannot reach server at <url>"`.
-2. Construct login URL:
-   `{url}/api/auth/login?client=cli`.
-3. `open::that(&login_url)` — open in browser.
-   Print the URL regardless (fallback for headless).
-4. Prompt: `"Paste the token here: "` — read line
-   from stdin.
-5. Validate token: `GET /api/auth/whoami` with
-   the pasted token.
+2. Construct login URL: `{url}/api/auth/login?client=cli`.
+3. `open::that(&login_url)` — open in browser. Print the URL regardless
+   (fallback for headless).
+4. Prompt: `"Paste the token here: "` — read line from stdin.
+5. Validate token: `GET /api/auth/whoami` with the pasted token.
 6. Save config to XDG path.
 7. Print: `"logged in as <email>"`.
 
@@ -192,20 +181,19 @@ Only `Login` and `Whoami` variants for now. `Build`,
       caps: *
    ```
 
-4. On 401: print `"session expired — run 'cbc login
-   {host}' to re-authenticate"` using the stored
-   host from config.
+4. On 401: print `"session expired — run 'cbc login {host}' to re-authenticate"`
+   using the stored host from config.
 
 ### LOC estimate
 
-| Component | ~Lines |
-|-----------|--------|
-| `error.rs` | ~50 |
-| `config.rs` | ~80 |
-| `client.rs` | ~180 |
-| `main.rs` (CLI + login + whoami) | ~180 |
-| `Cargo.toml` (crate + workspace) | ~30 |
-| **Total** | **~520** |
+| Component                        | ~Lines   |
+| -------------------------------- | -------- |
+| `error.rs`                       | ~50      |
+| `config.rs`                      | ~80      |
+| `client.rs`                      | ~180     |
+| `main.rs` (CLI + login + whoami) | ~180     |
+| `Cargo.toml` (crate + workspace) | ~30      |
+| **Total**                        | **~520** |
 
 ### Verification
 

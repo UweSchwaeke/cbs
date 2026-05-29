@@ -8,28 +8,30 @@
 - `988bfdc` — Commit 5b: Permission and admin route handlers
 - `0f6edf7` — Commit 6: Build queue, submission, listing, and components
 
-**Note:** Commits 4 and 5 were originally single commits that were split
-into two each per the granularity assessment. This review covers the
-split versions. Commit 4 fixes (HKDF, rate limiting, `load_authed_user`,
-default `"cli"`) were fixup'd into the split commits.
+**Note:** Commits 4 and 5 were originally single commits that were split into
+two each per the granularity assessment. This review covers the split versions.
+Commit 4 fixes (HKDF, rate limiting, `load_authed_user`, default `"cli"`) were
+fixup'd into the split commits.
 
 **Evaluated against:**
 
-- Plan: `cbsd-rs/docs/cbsd-rs/plans/003-20260318T1411-authentication.md` (Commit 4)
-- Plan: `cbsd-rs/docs/cbsd-rs/plans/002-20260318T1411-02-permissions-builds.md` (Commits 5–6)
-- Design: `cbsd-rs/docs/cbsd-rs/design/003-20260313T2129-cbsd-auth-permissions-design.md`
+- Plan: `cbsd-rs/docs/cbsd-rs/plans/003-20260318T1411-authentication.md`
+  (Commit 4)
+- Plan: `cbsd-rs/docs/cbsd-rs/plans/002-20260318T1411-02-permissions-builds.md`
+  (Commits 5–6)
+- Design:
+  `cbsd-rs/docs/cbsd-rs/design/003-20260313T2129-cbsd-auth-permissions-design.md`
 
 ---
 
 ## Summary
 
-Phases 2 (completion) and 3 are well-implemented across 5 commits totaling
-~3726 authored lines. The commit splits follow the recommended boundaries
-exactly — OAuth / API keys and DB+extractor / route handlers. All prior
-review fixes are incorporated. The last-admin guard is implemented across
-all 5 mutation paths with correct transactional semantics. One design
-deviation is noted (`role_is_scope_dependent` incorrectly treats `*` as
-scope-dependent).
+Phases 2 (completion) and 3 are well-implemented across 5 commits totaling ~3726
+authored lines. The commit splits follow the recommended boundaries exactly —
+OAuth / API keys and DB+extractor / route handlers. All prior review fixes are
+incorporated. The last-admin guard is implemented across all 5 mutation paths
+with correct transactional semantics. One design deviation is noted
+(`role_is_scope_dependent` incorrectly treats `*` as scope-dependent).
 
 **Verdict: Good implementation. Proceed to Phase 4.**
 
@@ -39,11 +41,12 @@ scope-dependent).
 
 ### Plan Compliance: Complete for OAuth scope
 
-- `auth/oauth.rs` (202 lines): Load secrets JSON, build Google auth URL
-  with `hd=` domain hint, exchange code for userinfo (two-step) ✓
+- `auth/oauth.rs` (202 lines): Load secrets JSON, build Google auth URL with
+  `hd=` domain hint, exchange code for userinfo (two-step) ✓
 - Login/callback route handlers in `routes/auth.rs` (267 lines) ✓
-- HKDF session key derivation in `main.rs`: `Hkdf::<Sha256>::new(None,
-  token_key_bytes).expand(b"cbsd-oauth-session-v1", ...)` → `.with_signed()` ✓
+- HKDF session key derivation in `main.rs`:
+  `Hkdf::<Sha256>::new(None, token_key_bytes).expand(b"cbsd-oauth-session-v1", ...)`
+  → `.with_signed()` ✓
 - `tower-governor` rate limiting on `/login` and `/callback` (10/60s/IP) ✓
 - Session state: `oauth_state` + `client_type` + `cli_port` ✓
 - Domain restriction at callback (server-side check) ✓
@@ -60,16 +63,15 @@ scope-dependent).
 
 ### Plan Compliance: Complete for API key scope
 
-- `auth/api_keys.rs` (309 lines): `ApiKeyCache` with `by_sha256`,
-  `by_prefix`, `by_owner` reverse maps. `CachedApiKey` includes
-  `key_prefix`. LRU eviction cleanup via `push()` return value.
-  `create_api_key()` and `verify_api_key()` with argon2 via
-  `spawn_blocking` ✓
-- `db/api_keys.rs` (142 lines): insert, find by prefix, list for user,
-  revoke by owner+prefix, revoke all for user ✓
+- `auth/api_keys.rs` (309 lines): `ApiKeyCache` with `by_sha256`, `by_prefix`,
+  `by_owner` reverse maps. `CachedApiKey` includes `key_prefix`. LRU eviction
+  cleanup via `push()` return value. `create_api_key()` and `verify_api_key()`
+  with argon2 via `spawn_blocking` ✓
+- `db/api_keys.rs` (142 lines): insert, find by prefix, list for user, revoke by
+  owner+prefix, revoke all for user ✓
 - Extractor API key path wired up (`cbsk_` prefix → `verify_api_key`) ✓
-- Auth route handlers: whoami, token revoke (self), bulk token revoke,
-  API key create/list/revoke ✓
+- Auth route handlers: whoami, token revoke (self), bulk token revoke, API key
+  create/list/revoke ✓
 - `AppState` extended with `api_key_cache: Arc<Mutex<ApiKeyCache>>` ✓
 - `load_authed_user()` helper shared between PASETO and API key paths ✓
 - Phase 2 plan progress table updated ✓
@@ -82,13 +84,12 @@ scope-dependent).
 
 Clean 3-file commit:
 
-- `db/roles.rs` (373 lines): 15 functions for role/cap/scope CRUD
-  including `get_effective_caps()`, `get_user_assignments_with_scopes()`,
-  `count_active_wildcard_holders()`, `set_user_roles()` in single
-  transaction ✓
-- `auth/extractors.rs` (+96 lines): `ScopeType` enum, `has_cap()` with
-  `*` wildcard, `has_any_cap()`, `require_scopes_all()` with
-  assignment-level AND semantics, `scope_pattern_matches()` ✓
+- `db/roles.rs` (373 lines): 15 functions for role/cap/scope CRUD including
+  `get_effective_caps()`, `get_user_assignments_with_scopes()`,
+  `count_active_wildcard_holders()`, `set_user_roles()` in single transaction ✓
+- `auth/extractors.rs` (+96 lines): `ScopeType` enum, `has_cap()` with `*`
+  wildcard, `has_any_cap()`, `require_scopes_all()` with assignment-level AND
+  semantics, `scope_pattern_matches()` ✓
 - `db/mod.rs` (+1 line): `pub mod roles` ✓
 
 No route handlers — independently testable DB + evaluation logic.
@@ -118,19 +119,19 @@ No route handlers — independently testable DB + evaluation logic.
 
 **Last-admin guard — all 5 mutation paths:**
 
-| Path | Implementation | Correct |
-|------|---------------|---------|
-| `PUT /permissions/users/{email}/roles` (replace) | `last_admin_guard()` after `set_user_roles()` | ✓ |
-| `DELETE /permissions/users/{email}/roles/{role}` | `last_admin_guard()` after `remove_user_role()` | ✓ |
-| `PUT /admin/users/{email}/deactivate` | In-transaction guard (count query inside tx) | ✓ |
-| `DELETE /permissions/roles/{name}` | Guard after delete if role had `*` | ✓* |
-| `PUT /permissions/roles/{name}` (cap update) | Guard after `set_role_caps()` if `*` removed, with rollback | ✓ |
+| Path                                             | Implementation                                              | Correct |
+| ------------------------------------------------ | ----------------------------------------------------------- | ------- |
+| `PUT /permissions/users/{email}/roles` (replace) | `last_admin_guard()` after `set_user_roles()`               | ✓       |
+| `DELETE /permissions/users/{email}/roles/{role}` | `last_admin_guard()` after `remove_user_role()`             | ✓       |
+| `PUT /admin/users/{email}/deactivate`            | In-transaction guard (count query inside tx)                | ✓       |
+| `DELETE /permissions/roles/{name}`               | Guard after delete if role had `*`                          | ✓\*     |
+| `PUT /permissions/roles/{name}` (cap update)     | Guard after `set_role_caps()` if `*` removed, with rollback | ✓       |
 
-*\*Role deletion guard runs after CASCADE — known limitation, accepted in
-design review.*
+_\*Role deletion guard runs after CASCADE — known limitation, accepted in design
+review._
 
-**`whoami` response updated:** Returns actual roles and effective caps. ✓
-Phase 3 plan progress table updated. ✓
+**`whoami` response updated:** Returns actual roles and effective caps. ✓ Phase
+3 plan progress table updated. ✓
 
 ---
 
@@ -141,11 +142,11 @@ Phase 3 plan progress table updated. ✓
 - `queue/mod.rs` (230 lines): 3-lane `BuildQueue` + `SharedBuildQueue`,
   `enqueue()`, `enqueue_front()`, `next_pending()`, `remove_by_id()`,
   `pending_counts()`, `contains()`, 6 unit tests ✓
-- `db/builds.rs` (164 lines): `insert_build()`, `get_build()`,
-  `list_builds()`, `update_build_state()`, `insert_build_log_row()`,
-  `row_to_build_record()` helper ✓
-- `routes/builds.rs` (364 lines): submit, list, get, revoke (QUEUED only),
-  log stubs ✓
+- `db/builds.rs` (164 lines): `insert_build()`, `get_build()`, `list_builds()`,
+  `update_build_state()`, `insert_build_log_row()`, `row_to_build_record()`
+  helper ✓
+- `routes/builds.rs` (364 lines): submit, list, get, revoke (QUEUED only), log
+  stubs ✓
 - `components/mod.rs` (90 lines): filesystem scan, `cbs.component.yaml`,
   `validate_component_name()` ✓
 - `routes/components.rs` (40 lines): `GET /api/components` ✓
@@ -167,16 +168,16 @@ fn role_is_scope_dependent(caps: &[String]) -> bool {
 }
 ```
 
-The design says: "Roles with `*` capability (admin) need no scopes — they
-are global by definition." A custom role with `["*"]` cannot be assigned
-without scopes due to this check.
+The design says: "Roles with `*` capability (admin) need no scopes — they are
+global by definition." A custom role with `["*"]` cannot be assigned without
+scopes due to this check.
 
 Severity: **Medium.** Fix: remove `|| c == "*"`.
 
 ### Observation — QUEUED revocation not atomic (Phase 3 only)
 
-Queue mutex released before DB state update. Benign in Phase 3 (no
-dispatch). Should be addressed when dispatch is wired in (Phase 4).
+Queue mutex released before DB state update. Benign in Phase 3 (no dispatch).
+Should be addressed when dispatch is wired in (Phase 4).
 
 ### Observation — `list_users_with_roles` N+1 queries
 
@@ -196,29 +197,29 @@ states).
 
 ## Design Fidelity Summary
 
-| Design requirement | Status | Commit |
-|---|---|---|
-| HKDF session key derivation | ✓ | 4a |
-| Rate limiting on login/callback | ✓ | 4a |
-| Domain restriction at callback | ✓ | 4a |
-| Session fixation prevention | ✓ | 4a |
-| CSP on token paste page | ✓ | 4a |
-| API key LRU cache with reverse indexes | ✓ | 4b |
-| Argon2 via spawn_blocking | ✓ | 4b |
-| Error response `{"detail": "..."}` | ✓ | 4a/4b |
-| Known caps validation (400 for unknown) | ✓ | 5b |
-| Scope-dependent role assignment rejection | ✓* | 5b |
-| Builtin role protection (409) | ✓ | 5b |
-| Last-admin guard: all 5 paths | ✓ | 5b |
-| Deactivation: idempotent, bulk revoke, LRU purge | ✓ | 5b |
-| Build queue: 3 lanes, SharedBuildQueue | ✓ | 6 |
-| Build submission: component + scope validation | ✓ | 6 |
-| Build submission: signed_off_by overwrite | ✓ | 6 |
-| Build listing: :own/:any with implicit filtering | ✓ | 6 |
-| Build get: :own ownership check | ✓ | 6 |
-| QUEUED revocation: remove + mark REVOKED | ✓ | 6 |
-| Component listing: auth-only, no cap required | ✓ | 6 |
-| Admin queue: reads in-memory state | ✓ | 6 |
-| `insert_build_log_row()` defined for Phase 4 | ✓ | 6 |
+| Design requirement                               | Status | Commit |
+| ------------------------------------------------ | ------ | ------ |
+| HKDF session key derivation                      | ✓      | 4a     |
+| Rate limiting on login/callback                  | ✓      | 4a     |
+| Domain restriction at callback                   | ✓      | 4a     |
+| Session fixation prevention                      | ✓      | 4a     |
+| CSP on token paste page                          | ✓      | 4a     |
+| API key LRU cache with reverse indexes           | ✓      | 4b     |
+| Argon2 via spawn_blocking                        | ✓      | 4b     |
+| Error response `{"detail": "..."}`               | ✓      | 4a/4b  |
+| Known caps validation (400 for unknown)          | ✓      | 5b     |
+| Scope-dependent role assignment rejection        | ✓\*    | 5b     |
+| Builtin role protection (409)                    | ✓      | 5b     |
+| Last-admin guard: all 5 paths                    | ✓      | 5b     |
+| Deactivation: idempotent, bulk revoke, LRU purge | ✓      | 5b     |
+| Build queue: 3 lanes, SharedBuildQueue           | ✓      | 6      |
+| Build submission: component + scope validation   | ✓      | 6      |
+| Build submission: signed_off_by overwrite        | ✓      | 6      |
+| Build listing: :own/:any with implicit filtering | ✓      | 6      |
+| Build get: :own ownership check                  | ✓      | 6      |
+| QUEUED revocation: remove + mark REVOKED         | ✓      | 6      |
+| Component listing: auth-only, no cap required    | ✓      | 6      |
+| Admin queue: reads in-memory state               | ✓      | 6      |
+| `insert_build_log_row()` defined for Phase 4     | ✓      | 6      |
 
-*\*`role_is_scope_dependent` incorrectly treats `*` as scope-dependent.*
+_\*`role_is_scope_dependent` incorrectly treats `_` as scope-dependent.\*

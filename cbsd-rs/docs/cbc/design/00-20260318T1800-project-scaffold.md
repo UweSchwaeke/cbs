@@ -2,8 +2,8 @@
 
 ## Overview
 
-New `cbc` crate in the `cbsd-rs` workspace. A Rust CLI client for
-the cbsd-rs REST API, replacing the Python `cbc` package.
+New `cbc` crate in the `cbsd-rs` workspace. A Rust CLI client for the cbsd-rs
+REST API, replacing the Python `cbc` package.
 
 ## Crate setup
 
@@ -46,8 +46,8 @@ open = "5"               # open URLs in default browser
 reqwest-eventsource = "0.6"  # SSE client (build logs)
 ```
 
-`cbsd-proto` is shared with the server — provides
-`BuildDescriptor`, `Priority`, `Arch`, `WorkerToken`, etc.
+`cbsd-proto` is shared with the server — provides `BuildDescriptor`, `Priority`,
+`Arch`, `WorkerToken`, etc.
 
 ## CLI framework
 
@@ -89,24 +89,22 @@ enum Commands {
 }
 ```
 
-`login` and `whoami` are top-level (frequent use). `build`,
-`periodic`, `worker`, `admin` are subcommand groups.
+`login` and `whoami` are top-level (frequent use). `build`, `periodic`,
+`worker`, `admin` are subcommand groups.
 
 ## Config file
 
 ### Resolution order
 
 1. `-c <path>` CLI flag (highest priority).
-2. `$XDG_CONFIG_HOME/cbc/config.json`
-   (typically `~/.config/cbc/config.json`).
+2. `$XDG_CONFIG_HOME/cbc/config.json` (typically `~/.config/cbc/config.json`).
 
-No current-directory fallback — loading a config from a
-shared directory is a credential exposure risk. Users who
-need a project-local config use `-c ./cbc-config.json`
-explicitly.
+No current-directory fallback — loading a config from a shared directory is a
+credential exposure risk. Users who need a project-local config use
+`-c ./cbc-config.json` explicitly.
 
-If no config found and the command requires auth, exit
-with: `"no config found — run 'cbc login <url>' first"`.
+If no config found and the command requires auth, exit with:
+`"no config found — run 'cbc login <url>' first"`.
 
 Use `dirs::config_dir()` for XDG resolution.
 
@@ -119,15 +117,14 @@ Use `dirs::config_dir()` for XDG resolution.
 }
 ```
 
-Minimal — just the server URL and the auth token. No
-nested objects, no token metadata. The token is opaque to
-the client; the server validates it.
+Minimal — just the server URL and the auth token. No nested objects, no token
+metadata. The token is opaque to the client; the server validates it.
 
 ### Storage
 
-On `cbc login`, the config file is written to the XDG
-location (`~/.config/cbc/config.json`). The directory is
-created if absent (`mkdir -p` equivalent).
+On `cbc login`, the config file is written to the XDG location
+(`~/.config/cbc/config.json`). The directory is created if absent (`mkdir -p`
+equivalent).
 
 File permissions: `0600` (owner read/write only) on Unix.
 
@@ -150,8 +147,8 @@ impl Config {
 }
 ```
 
-`load` follows the resolution order above. `save` writes
-JSON with `0600` permissions.
+`load` follows the resolution order above. `save` writes JSON with `0600`
+permissions.
 
 ## HTTP client wrapper
 
@@ -163,9 +160,8 @@ pub struct CbcClient {
 }
 ```
 
-`base_url` is a parsed `url::Url` (not a raw `String`).
-Paths are joined with `url.join()` to prevent
-double-slash bugs.
+`base_url` is a parsed `url::Url` (not a raw `String`). Paths are joined with
+`url.join()` to prevent double-slash bugs.
 
 ### Construction
 
@@ -182,9 +178,8 @@ impl CbcClient {
 }
 ```
 
-`new` appends `/api/` to the host, sets
-`Authorization: Bearer <token>` as default header.
-Configures TLS (rustls, system root certs).
+`new` appends `/api/` to the host, sets `Authorization: Bearer <token>` as
+default header. Configures TLS (rustls, system root certs).
 
 ### Methods
 
@@ -219,13 +214,11 @@ pub fn get_request(
 ) -> reqwest::RequestBuilder;
 ```
 
-`put` is split into `put_json` (with body) and
-`put_empty` (no body) — avoids `None::<&()>` at every
-call site for enable/disable endpoints.
+`put` is split into `put_json` (with body) and `put_empty` (no body) — avoids
+`None::<&()>` at every call site for enable/disable endpoints.
 
-All methods check the HTTP status code. On 4xx/5xx,
-parse the error body (`{"error": "message"}`) and return
-a typed error.
+All methods check the HTTP status code. On 4xx/5xx, parse the error body
+(`{"error": "message"}`) and return a typed error.
 
 ## Error types
 
@@ -242,22 +235,20 @@ pub enum Error {
 }
 ```
 
-`Auth` is not a separate variant — 401/403 are handled
-by `Api { status: 401, .. }`. Callers pattern-match on
-`status` when they need auth-specific behavior (e.g.,
-printing "session expired").
+`Auth` is not a separate variant — 401/403 are handled by
+`Api { status: 401, .. }`. Callers pattern-match on `status` when they need
+auth-specific behavior (e.g., printing "session expired").
 
-All errors implement `Display` and are printed to stderr.
-The process exits with code 1 on any error.
+All errors implement `Display` and are printed to stderr. The process exits with
+code 1 on any error.
 
 ## Debug output
 
 When `--debug` is set:
 
-- Print the full request URL and method before each
-  request.
+- Print the full request URL and method before each request.
 - Print the response status code.
 - Print the response body on error.
 
-Use `eprintln!` for debug output (not `tracing` — this
-is a CLI tool, not a long-running service).
+Use `eprintln!` for debug output (not `tracing` — this is a CLI tool, not a
+long-running service).

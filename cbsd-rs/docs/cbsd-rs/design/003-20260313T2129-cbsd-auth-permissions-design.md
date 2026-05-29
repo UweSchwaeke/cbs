@@ -32,37 +32,37 @@ implementation. Wire format is interoperable.
   short TTL creates friction without meaningful security benefit.
 - **Configurable per-token.** Admin or user can request a specific TTL at
   creation time.
-- **Revocation:** The server checks token validity against the database on
-  every request, not just the cryptographic signature. This means a revoked
-  token is rejected immediately, at the cost of one DB lookup per request
-  (negligible for this load).
+- **Revocation:** The server checks token validity against the database on every
+  request, not just the cryptographic signature. This means a revoked token is
+  rejected immediately, at the cost of one DB lookup per request (negligible for
+  this load).
 - **Token hash function:** PASETO tokens are hashed with **SHA-256** for the
-  `tokens.token_hash` column. Argon2 is **not** used for token hashes —
-  PASETO tokens are already cryptographically protected by symmetric
-  encryption, and argon2's deliberate slowness (100–500ms) would make every
-  authenticated API request unacceptably slow. Argon2 is reserved for API key
-  hashes only (see below).
+  `tokens.token_hash` column. Argon2 is **not** used for token hashes — PASETO
+  tokens are already cryptographically protected by symmetric encryption, and
+  argon2's deliberate slowness (100–500ms) would make every authenticated API
+  request unacceptably slow. Argon2 is reserved for API key hashes only (see
+  below).
 - **`max_token_ttl_seconds` server config:** Enforces an upper bound on token
-  TTL even if the client requests infinite. Default: `none` (no limit —
-  infinite TTL allowed). When set to a positive integer, tokens with TTL
-  exceeding the limit are clamped to the limit. Lets operators tighten policy
-  without code changes.
+  TTL even if the client requests infinite. Default: `none` (no limit — infinite
+  TTL allowed). When set to a positive integer, tokens with TTL exceeding the
+  limit are clamped to the limit. Lets operators tighten policy without code
+  changes.
 
 ### Service Account API Keys
 
 For CI pipelines, automation, and worker registration — any non-interactive
 client that cannot complete a browser-based OAuth flow.
 
-- Admin creates an API key via the REST API (`permissions:manage`).
-  Users can also create their own API keys (`apikeys:create:own`).
-- Key is a random opaque string (e.g., `cbsk_<32 random bytes as hex>`).
-  The `key_prefix` stores the first **12 characters of the random portion**
+- Admin creates an API key via the REST API (`permissions:manage`). Users can
+  also create their own API keys (`apikeys:create:own`).
+- Key is a random opaque string (e.g., `cbsk_<32 random bytes as hex>`). The
+  `key_prefix` stores the first **12 characters of the random portion**
   (post-`cbsk_` prefix), giving 48 bits of prefix space for identification.
 - Stored hashed (**argon2**) in the DB. Argon2 provides offline brute-force
   resistance. The plaintext is shown once at creation and never again.
-- **LRU verification cache:** To avoid paying argon2 (100–500ms) on every
-  HTTP request from CI pipelines or `cbc` using API keys, the server maintains
-  an in-memory cache with reverse indices:
+- **LRU verification cache:** To avoid paying argon2 (100–500ms) on every HTTP
+  request from CI pipelines or `cbc` using API keys, the server maintains an
+  in-memory cache with reverse indices:
 
   ```rust
   // Shared as Arc<tokio::sync::Mutex<ApiKeyCache>> in AppState.
@@ -82,8 +82,8 @@ client that cannot complete a browser-based OAuth flow.
   ```
 
   **Concrete eviction pattern** (the `lru` crate 0.12 has no `on_evict`
-  callback; eviction happens implicitly via `push()` which returns the
-  evicted entry):
+  callback; eviction happens implicitly via `push()` which returns the evicted
+  entry):
 
   ```rust
   fn insert(&mut self, sha256: [u8; 32], entry: CachedApiKey) {
@@ -101,12 +101,12 @@ client that cannot complete a browser-based OAuth flow.
   ```
 
   - **Lookup:** Acquire mutex. SHA-256 of raw API key → `CachedApiKey`.
-  - **Individual revocation** (`DELETE /auth/api-keys/{prefix}`): acquire
-    mutex. Use `by_prefix` to find SHA-256, pop from `by_sha256`, clean up
-    `by_owner`.
+  - **Individual revocation** (`DELETE /auth/api-keys/{prefix}`): acquire mutex.
+    Use `by_prefix` to find SHA-256, pop from `by_sha256`, clean up `by_owner`.
   - **Bulk deactivation** (`PUT /admin/users/{email}/deactivate`): acquire
     mutex. Drain `by_owner[email]`, pop each from `by_sha256`, clean up
     `by_prefix`.
+
 - API keys are sent as `Authorization: Bearer <key>`, same header as PASETO
   tokens. The server distinguishes them by prefix (`cbsk_` vs PASETO format).
 - API keys can have an optional TTL or be infinite.
@@ -127,10 +127,10 @@ allowed_domains:
 
 1. The Google authorization URL includes `hd=<first_domain>` as a hint (shows
    only matching accounts in the Google picker). This is defense-in-depth only.
-2. The **server-side check** is the real gate: at callback, after exchanging
-   the authorization code and extracting the email, the server verifies the
-   email domain against `allowed_domains`. If it doesn't match, the server
-   returns HTTP 403 without creating a user record or issuing a token.
+2. The **server-side check** is the real gate: at callback, after exchanging the
+   authorization code and extracting the email, the server verifies the email
+   domain against `allowed_domains`. If it doesn't match, the server returns
+   HTTP 403 without creating a user record or issuing a token.
 
 If `allowed_domains` is empty or absent, the server refuses to start unless
 `allow_any_google_account: true` is explicitly set. This prevents accidental
@@ -141,10 +141,10 @@ open access.
 ### Session state for OAuth
 
 OAuth requires server-side session state to store the CSRF `state` parameter
-between the login redirect and the callback. This is handled by
-`tower-sessions` with a **SQLite-backed session store**
-(`tower-sessions-sqlx-store`). Sessions are ephemeral and only used during the
-OAuth flow — they are not used for ongoing API authentication.
+between the login redirect and the callback. This is handled by `tower-sessions`
+with a **SQLite-backed session store** (`tower-sessions-sqlx-store`). Sessions
+are ephemeral and only used during the OAuth flow — they are not used for
+ongoing API authentication.
 
 **Why SQLite, not in-memory:** An in-memory store loses all in-flight OAuth
 sessions on server restart, causing CSRF validation failures for any user
@@ -154,14 +154,14 @@ short-lived and rare).
 **Session signing key:** Derived from the `token_secret_key` in server config
 via HKDF-SHA256 with context string `cbsd-oauth-session-v1`. This produces a
 distinct key from the PASETO signing key despite sharing the same input
-material. The derivation is deterministic — sessions survive server restarts
-as long as `token_secret_key` doesn't change.
+material. The derivation is deterministic — sessions survive server restarts as
+long as `token_secret_key` doesn't change.
 
 **Stored in session at `/login` time:** `oauth_state` (CSRF nonce),
 `client_type` (`cli` or `web`), and optionally `cli_port` (for localhost
-auto-redirect). The `client_type` is read at `/callback` time to determine
-the response format — Google's callback only carries `code` and `state`, so
-the client type must survive the round-trip via the session.
+auto-redirect). The `client_type` is read at `/callback` time to determine the
+response format — Google's callback only carries `code` and `state`, so the
+client type must survive the round-trip via the session.
 
 **Session fixation prevention:** At callback, after validating the `state`
 parameter, the server **regenerates the session ID** before issuing the PASETO
@@ -169,10 +169,10 @@ token. This prevents an attacker who set the session cookie before the OAuth
 flow from receiving the victim's token. `tower-sessions` supports session ID
 regeneration via `session.cycle_id()`.
 
-**OAuth session TTL:** Sessions used for the OAuth flow have a short TTL
-(10 minutes). An incomplete flow (user starts login but never completes the
-Google round-trip) leaves an orphaned session row that is automatically
-cleaned up after expiry.
+**OAuth session TTL:** Sessions used for the OAuth flow have a short TTL (10
+minutes). An incomplete flow (user starts login but never completes the Google
+round-trip) leaves an orphaned session row that is automatically cleaned up
+after expiry.
 
 ### Shared flow (CLI and Web UI)
 
@@ -192,8 +192,8 @@ cleaned up after expiry.
 When `?client=cli`:
 
 **MVP:** The callback renders an HTML page displaying the token as a copyable
-string. The user pastes it into the CLI tool (e.g., `cbc login` prompts for
-the token).
+string. The user pastes it into the CLI tool (e.g., `cbc login` prompts for the
+token).
 
 ```
 $ cbc login
@@ -205,17 +205,17 @@ Token saved to ~/.config/cbc/config.json
 
 **v1 enhancement: localhost auto-redirect.** The CLI starts a temporary HTTP
 server on `localhost:<port>` and encodes the port in the login URL as
-`?client=cli&cli_port=<port>`. The OAuth round-trip happens entirely against
-the server's registered redirect URI (the server's own callback URL — Google
-never sees `localhost`). At callback, the server detects `cli_port` in the
-session and renders a page with a JavaScript redirect to
+`?client=cli&cli_port=<port>`. The OAuth round-trip happens entirely against the
+server's registered redirect URI (the server's own callback URL — Google never
+sees `localhost`). At callback, the server detects `cli_port` in the session and
+renders a page with a JavaScript redirect to
 `http://localhost:<port>/callback?data=<base64>`. The CLI receives the token
 automatically, no manual paste needed.
 
-**Implementation constraint:** Google requires all redirect URIs registered
-in advance. The registered URI is always the server's own callback URL. The
-localhost redirect is a client-side hop (JavaScript/meta-refresh), not a
-Google redirect. This is the same pattern used by `gcloud auth login` and
+**Implementation constraint:** Google requires all redirect URIs registered in
+advance. The registered URI is always the server's own callback URL. The
+localhost redirect is a client-side hop (JavaScript/meta-refresh), not a Google
+redirect. This is the same pattern used by `gcloud auth login` and
 `gh auth login`.
 
 The paste-based flow remains available as a fallback for headless environments
@@ -230,16 +230,16 @@ exfiltration via injected scripts.
 
 When `?client=web`:
 
-The callback returns the PASETO token in the URL fragment
-(`#token=<base64>`) and redirects to the web UI root (`/`). The web UI
-extracts the token from the fragment, stores it in `localStorage`, and sends
-it as `Authorization: Bearer <token>` on all API requests — the same
-mechanism as the CLI. This avoids introducing a second auth path (session
-cookies + CSRF protection) for the web UI.
+The callback returns the PASETO token in the URL fragment (`#token=<base64>`)
+and redirects to the web UI root (`/`). The web UI extracts the token from the
+fragment, stores it in `localStorage`, and sends it as
+`Authorization: Bearer <token>` on all API requests — the same mechanism as the
+CLI. This avoids introducing a second auth path (session cookies + CSRF
+protection) for the web UI.
 
-The `tower-sessions` session cookie is used **only** during the OAuth
-round-trip (storing `oauth_state` and `client_type`). It is not used for
-ongoing API authentication.
+The `tower-sessions` session cookie is used **only** during the OAuth round-trip
+(storing `oauth_state` and `client_type`). It is not used for ongoing API
+authentication.
 
 ### Client type detection
 
@@ -281,33 +281,33 @@ The `RequireCap<C>` extractor:
 3. On failure: returns 403 Forbidden with a message indicating the missing
    capability.
 
-This is equivalent to the current Python `RequiredRouteCaps` FastAPI
-dependency, expressed as Rust types with compile-time capability constants.
+This is equivalent to the current Python `RequiredRouteCaps` FastAPI dependency,
+expressed as Rust types with compile-time capability constants.
 
 ### Scoped permission checks
 
-Some capabilities are scoped to a channel, registry, or repository. For
-example, a user may have `builds:create` only for channel `ces-devel/*`. The
-scope check happens inside the route handler after extracting the request body.
+Some capabilities are scoped to a channel, registry, or repository. For example,
+a user may have `builds:create` only for channel `ces-devel/*`. The scope check
+happens inside the route handler after extracting the request body.
 
 **Scope type field mapping:**
 
-| Scope type | Checked against | Source in BuildDescriptor |
-|------------|----------------|--------------------------|
-| `channel` | Build channel | `descriptor.channel` (e.g., `ces-devel`, `ces-prod`) |
-| `registry` | Destination image registry hostname | Extracted from `descriptor.dst_image.name` (e.g., `harbor.clyso.com` from `harbor.clyso.com/ces-devel/ceph:v19`) |
+| Scope type   | Checked against                                  | Source in BuildDescriptor                                                                                                                                                                                          |
+| ------------ | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `channel`    | Build channel                                    | `descriptor.channel` (e.g., `ces-devel`, `ces-prod`)                                                                                                                                                               |
+| `registry`   | Destination image registry hostname              | Extracted from `descriptor.dst_image.name` (e.g., `harbor.clyso.com` from `harbor.clyso.com/ces-devel/ceph:v19`)                                                                                                   |
 | `repository` | Allowlist of source repos the user can pull from | `descriptor.components[].repo` — only checked for components with a `repo` override. If a component has no `repo` override (uses the component's default), no repository scope check is needed for that component. |
 
 **Assignment-level AND semantics:** All scope checks for a single build
 submission must be satisfied by the **same assignment**. Independent per-type
-checks are NOT used — this prevents the confused-deputy problem where
-different assignments satisfy different scope types, authorizing combinations
-no single assignment permits.
+checks are NOT used — this prevents the confused-deputy problem where different
+assignments satisfy different scope types, authorizing combinations no single
+assignment permits.
 
 Example of what is **prevented**: Alice has assignment A (`channel=ces-devel/*`)
 and assignment B (`registry=harbor.clyso.com/ces-prod/*`). A build targeting
-`channel=ces-devel` pushing to `harbor.clyso.com/ces-prod` is **rejected** —
-no single assignment authorizes both the channel and the registry.
+`channel=ces-devel` pushing to `harbor.clyso.com/ces-prod` is **rejected** — no
+single assignment authorizes both the channel and the registry.
 
 **Handler implementation:**
 
@@ -347,8 +347,8 @@ async fn create_build(
 and returns Ok if **any one assignment** satisfies **all** scope checks. If no
 single assignment covers all checks, it returns 403.
 
-**Multi-role evaluation:** The user may have `builds:create` from multiple
-role assignments (e.g., `builder` assigned twice with different scopes). Each
+**Multi-role evaluation:** The user may have `builds:create` from multiple role
+assignments (e.g., `builder` assigned twice with different scopes). Each
 assignment is checked independently. The build is authorized if at least one
 assignment passes all scope checks.
 
@@ -425,8 +425,8 @@ Cap:
   *                           // all capabilities
 ```
 
-No negative capabilities. Roles define what is allowed, not what is denied.
-This is simpler to reason about and audit.
+No negative capabilities. Roles define what is allowed, not what is denied. This
+is simpler to reason about and audit.
 
 #### Scopes
 
@@ -439,10 +439,10 @@ Scope:
   pattern: string              // glob: "ces-devel/*", "harbor.clyso.com/ces/*", "*"
 ```
 
-**Scopes live on assignments, not roles.** A role defines *what you can do*
-(capabilities). The user-role assignment defines *where you can do it*
-(scopes). This allows the same `builder` role to be assigned to different users
-with different scopes, without creating separate roles per scope set.
+**Scopes live on assignments, not roles.** A role defines _what you can do_
+(capabilities). The user-role assignment defines _where you can do it_ (scopes).
+This allows the same `builder` role to be assigned to different users with
+different scopes, without creating separate roles per scope set.
 
 - Roles with `*` capability (admin) need no scopes — they are global by
   definition. The scope check is skipped entirely.
@@ -452,8 +452,8 @@ with different scopes, without creating separate roles per scope set.
 
 **Glob instead of regex:** The current YAML uses regex with quadruple-escaped
 dots (`^harbor\\\\.clyso\\\\.com/c[ce]s-devel/.*$`). Glob patterns cover all
-current use cases (`harbor.clyso.com/ces-devel/*`) and are much easier to
-write and audit.
+current use cases (`harbor.clyso.com/ces-devel/*`) and are much easier to write
+and audit.
 
 #### User-role assignments
 
@@ -478,38 +478,37 @@ UserRoleScope:
 
 Roles (capability-only):
 
-| Role | Capabilities |
-|------|-------------|
-| `admin` | `*` |
+| Role      | Capabilities                                                                                     |
+| --------- | ------------------------------------------------------------------------------------------------ |
+| `admin`   | `*`                                                                                              |
 | `builder` | `builds:create`, `builds:revoke:own`, `builds:list:own`, `builds:list:any`, `apikeys:create:own` |
-| `viewer` | `builds:list:any`, `workers:view` |
+| `viewer`  | `builds:list:any`, `workers:view`                                                                |
 
 Assignments:
 
-| user_email | role_name |
-|------------|-----------|
-| <joao@clyso.com>m> | admin |
-| <alice@clyso.com>m> | builder |
-| <bob@clyso.com>m> | builder |
-| <bob@clyso.com>m> | viewer |
+| user_email          | role_name |
+| ------------------- | --------- |
+| <joao@clyso.com>m>  | admin     |
+| <alice@clyso.com>m> | builder   |
+| <bob@clyso.com>m>   | builder   |
+| <bob@clyso.com>m>   | viewer    |
 
 Per-assignment scopes:
 
-| user_email | role_name | scope_type | pattern |
-|------------|-----------|------------|---------|
-| <alice@clyso.com>m> | builder | channel | ces-devel/* |
-| <alice@clyso.com>m> | builder | registry | harbor.clyso.com/ces-devel/* |
-| <bob@clyso.com>m> | builder | channel | * |
-| <bob@clyso.com>m> | builder | registry | harbor.clyso.com/* |
+| user_email          | role_name | scope_type | pattern                       |
+| ------------------- | --------- | ---------- | ----------------------------- |
+| <alice@clyso.com>m> | builder   | channel    | ces-devel/\*                  |
+| <alice@clyso.com>m> | builder   | registry   | harbor.clyso.com/ces-devel/\* |
+| <bob@clyso.com>m>   | builder   | channel    | \*                            |
+| <bob@clyso.com>m>   | builder   | registry   | harbor.clyso.com/\*           |
 
 Result:
 
 - **joao** — admin, `*` cap, no scope check. Can do everything everywhere.
 - **alice** — can build for `ces-devel/*` channels pushing to
   `harbor.clyso.com/ces-devel/*`. A build targeting `ces-prod` → 403.
-- **bob** — can build for any channel, any registry under
-  `harbor.clyso.com/*`. Also has `viewer` role (no scopes needed — its caps
-  are not scope-gated).
+- **bob** — can build for any channel, any registry under `harbor.clyso.com/*`.
+  Also has `viewer` role (no scopes needed — its caps are not scope-gated).
 
 #### API shape for assignment with scopes
 
@@ -539,18 +538,18 @@ directly. No separate route capability layer.
 
 The system ships with these built-in roles (seeded on first startup):
 
-| Role | Capabilities | Scope-dependent |
-|------|-------------|----------------|
-| `admin` | `*` | No (global) |
+| Role      | Capabilities                                                                                     | Scope-dependent                     |
+| --------- | ------------------------------------------------------------------------------------------------ | ----------------------------------- |
+| `admin`   | `*`                                                                                              | No (global)                         |
 | `builder` | `builds:create`, `builds:revoke:own`, `builds:list:own`, `builds:list:any`, `apikeys:create:own` | Yes — scopes required at assignment |
-| `viewer` | `builds:list:any`, `workers:view` | No (global) |
+| `viewer`  | `builds:list:any`, `workers:view`                                                                | No (global)                         |
 
 Admins can create additional custom roles.
 
 ### First-startup bootstrapping
 
-On first startup (empty database), the server executes a seeding sequence.
-This runs exactly once — it has no effect if any data already exists.
+On first startup (empty database), the server executes a seeding sequence. This
+runs exactly once — it has no effect if any data already exists.
 
 **Config:**
 
@@ -568,8 +567,8 @@ seed_worker_api_keys:
 2. Create user record for `seed_admin` email with `name = "Admin"` (placeholder
    — updated to the real name on first Google OAuth login).
 3. Assign the `admin` role to the seed admin user.
-4. For each entry in `seed_worker_api_keys`: create an API key owned by the
-   seed admin user. Print the plaintext key to stdout. Store the argon2 hash.
+4. For each entry in `seed_worker_api_keys`: create an API key owned by the seed
+   admin user. Print the plaintext key to stdout. Store the argon2 hash.
 
 **Result:** After first startup, workers can connect immediately using the
 printed API keys. The admin user record exists (required by the `api_keys`
@@ -585,39 +584,39 @@ database without a running server, enabling scripted provisioning.
 all times. This invariant is checked on **every mutation path** that could
 violate it:
 
-| Mutation | Guard |
-|----------|-------|
-| `PUT /permissions/users/{email}/roles` (replace all roles) | Check after replacement |
-| `DELETE /permissions/users/{email}/roles/{role}` (remove one role) | Check after removal |
-| `PUT /admin/users/{email}/deactivate` (deactivate user) | In transaction: set `active=0`, query remaining active `*` holders, rollback with 409 if count is zero |
-| `DELETE /permissions/roles/{name}` (delete role) | Check if role has `*` and CASCADE would remove last holder |
-| `PUT /permissions/roles/{name}` (update role capabilities) | See below |
+| Mutation                                                           | Guard                                                                                                  |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| `PUT /permissions/users/{email}/roles` (replace all roles)         | Check after replacement                                                                                |
+| `DELETE /permissions/users/{email}/roles/{role}` (remove one role) | Check after removal                                                                                    |
+| `PUT /admin/users/{email}/deactivate` (deactivate user)            | In transaction: set `active=0`, query remaining active `*` holders, rollback with 409 if count is zero |
+| `DELETE /permissions/roles/{name}` (delete role)                   | Check if role has `*` and CASCADE would remove last holder                                             |
+| `PUT /permissions/roles/{name}` (update role capabilities)         | See below                                                                                              |
 
 Any operation that would violate the invariant returns **HTTP 409 Conflict**.
 
 **Builtin role protection:** Builtin roles (`builtin = 1`) cannot have their
-capabilities modified — `PUT /permissions/roles/{name}` returns 409 for
-builtin roles. This prevents stripping `*` from the `admin` role. Custom
-roles with `*` are still subject to the last-admin invariant check on
-deletion or capability modification.
+capabilities modified — `PUT /permissions/roles/{name}` returns 409 for builtin
+roles. This prevents stripping `*` from the `admin` role. Custom roles with `*`
+are still subject to the last-admin invariant check on deletion or capability
+modification.
 
 **Role deletion with assignments:** `DELETE /permissions/roles/{name}` returns
-**409 Conflict** if any user-role assignments exist for the role. The admin
-must remove assignments first, or pass `?force=true` to trigger CASCADE
-deletion (still subject to the last-admin invariant check).
+**409 Conflict** if any user-role assignments exist for the role. The admin must
+remove assignments first, or pass `?force=true` to trigger CASCADE deletion
+(still subject to the last-admin invariant check).
 
 ### Ownership enforcement (`:own` vs `:any` capabilities)
 
 Several capabilities come in `:own` / `:any` pairs (e.g., `builds:revoke:own`
-and `builds:revoke:any`). The `RequireCap` extractor checks that the caller
-has **at least one** of the pair. The handler then enforces ownership:
+and `builds:revoke:any`). The `RequireCap` extractor checks that the caller has
+**at least one** of the pair. The handler then enforces ownership:
 
 **Pattern for single-resource endpoints (e.g., `DELETE /builds/{id}`):**
 
 1. The extractor verifies the user has `builds:revoke:own` OR
    `builds:revoke:any`. (Implemented as `AuthUser` + manual
-   `user.has_any_cap(&["builds:revoke:own", "builds:revoke:any"])` check,
-   since `RequireCap<C>` takes a single cap.)
+   `user.has_any_cap(&["builds:revoke:own", "builds:revoke:any"])` check, since
+   `RequireCap<C>` takes a single cap.)
 2. The handler loads the build resource.
 3. If the caller has only `:own`, the handler verifies
    `build.user_email == authenticated_user.email`. Mismatch → 403.
@@ -749,16 +748,16 @@ Deactivated users:
 - Cannot authenticate (any new token or API key attempt is rejected).
 - Retain their user record and build history for auditing.
 - Can be reactivated by an admin (`PUT /api/admin/users/{email}/activate`).
-  Reactivation restores the user record but does **not** un-revoke tokens or
-  API keys — the user must re-authenticate to get new credentials.
+  Reactivation restores the user record but does **not** un-revoke tokens or API
+  keys — the user must re-authenticate to get new credentials.
 
 There is no self-service account deletion.
 
 ### Token revocation details
 
-- **`POST /api/auth/token/revoke`** (no request body): Revokes the token used
-  in the current request's `Authorization: Bearer` header. Self-revocation
-  only — used for "logout" flows.
+- **`POST /api/auth/token/revoke`** (no request body): Revokes the token used in
+  the current request's `Authorization: Bearer` header. Self-revocation only —
+  used for "logout" flows.
 - **`POST /api/auth/tokens/revoke-all`** (body: `{"user_email": "..."}`,
   requires `permissions:manage`): Bulk-revokes all tokens for the specified
   user.
@@ -818,16 +817,16 @@ The `builds.descriptor_version` column tracks the JSON schema version of the
   deserialize, indicating a server upgrade may be needed. This prevents silent
   misinterpretation of newer descriptor formats by older server versions.
 
-When the `BuildDescriptor` schema evolves, a sqlx migration transforms
-existing blobs and bumps the default. Old server versions refuse to read
-new-format blobs rather than silently corrupting them.
+When the `BuildDescriptor` schema evolves, a sqlx migration transforms existing
+blobs and bumps the default. Old server versions refuse to read new-format blobs
+rather than silently corrupting them.
 
 ### Build ID continuity
 
-The Rust server uses SQLite `AUTOINCREMENT` for `builds.id`. On a fresh
-database this starts at 1. If migrating from the Python system, the initial
-migration must set the autoincrement counter to `MAX(existing_id) + 1` to
-avoid collisions with retained Python-era log files.
+The Rust server uses SQLite `AUTOINCREMENT` for `builds.id`. On a fresh database
+this starts at 1. If migrating from the Python system, the initial migration
+must set the autoincrement counter to `MAX(existing_id) + 1` to avoid collisions
+with retained Python-era log files.
 
 ## REST API — Auth & Permissions
 
@@ -855,8 +854,13 @@ POST /api/auth/token/revoke             → revoke a token
       ]
     }
   ],
-  "effective_caps": ["builds:create", "builds:revoke:own", "builds:list:own",
-                      "builds:list:any", "apikeys:create:own"]
+  "effective_caps": [
+    "builds:create",
+    "builds:revoke:own",
+    "builds:list:own",
+    "builds:list:any",
+    "apikeys:create:own"
+  ]
 }
 ```
 
@@ -865,26 +869,26 @@ This is the primary source for the user's display name. `cbc` should call
 `BuildDescriptor.signed_off_by`.
 
 **Server-side `signed_off_by` override:** The server ignores the client-
-submitted `signed_off_by` field in `BuildDescriptor` and overwrites it from
-the authenticated user's `users` table record. This prevents identity spoofing
-and ensures the build record always matches the authenticated user.
+submitted `signed_off_by` field in `BuildDescriptor` and overwrites it from the
+authenticated user's `users` table record. This prevents identity spoofing and
+ensures the build record always matches the authenticated user.
 
 #### PASETO payload schema (frozen)
 
 The encrypted PASETO v4.local payload uses the following schema, versioned as
-`CBSD_TOKEN_PAYLOAD_V1`. Both the Python `cbsdcore` and Rust `cbsd` must
-produce identical JSON byte sequences for the same logical payload.
+`CBSD_TOKEN_PAYLOAD_V1`. Both the Python `cbsdcore` and Rust `cbsd` must produce
+identical JSON byte sequences for the same logical payload.
 
 **Canonical JSON form (pinned):**
 
 ```json
-{"expires":1710412200,"user":"alice@clyso.com"}
+{ "expires": 1710412200, "user": "alice@clyso.com" }
 ```
 
 - Keys are **alphabetically ordered** (deterministic serialization).
-- `expires`: **Unix epoch seconds** (`i64`), or `null` for infinite TTL.
-  Not ISO 8601 — avoids `Z` vs `+00:00` divergence between Pydantic and
-  chrono. Epoch integers are unambiguous across all languages.
+- `expires`: **Unix epoch seconds** (`i64`), or `null` for infinite TTL. Not ISO
+  8601 — avoids `Z` vs `+00:00` divergence between Pydantic and chrono. Epoch
+  integers are unambiguous across all languages.
 - `user`: email address (string).
 - No `jti` field.
 - No whitespace in serialized JSON.
@@ -916,17 +920,17 @@ hardcoded expected bytes.
 which serializes `expires` as ISO 8601 (`"2024-03-14T12:30:00+00:00"`), not
 epoch integer. The Rust `CBSD_TOKEN_PAYLOAD_V1` uses epoch integers. **These
 formats are not hash-compatible.** All existing Python-issued tokens will have
-different SHA-256 hashes than the Rust server would compute for the same
-logical payload. This is acceptable because the chosen migration strategy is
-a hard cutover (users re-authenticate); zero-downtime token import is not
-supported for v1.
+different SHA-256 hashes than the Rust server would compute for the same logical
+payload. This is acceptable because the chosen migration strategy is a hard
+cutover (users re-authenticate); zero-downtime token import is not supported for
+v1.
 
 #### Token hash specification
 
-The `tokens.token_hash` column stores the **SHA-256 hash of the raw UTF-8
-PASETO token string** (the full `v4.local.xxx...` string as issued). This is a
-frozen specification — both the Python migration script and the Rust server
-must hash the same bytes.
+The `tokens.token_hash` column stores the **SHA-256 hash of the raw UTF-8 PASETO
+token string** (the full `v4.local.xxx...` string as issued). This is a frozen
+specification — both the Python migration script and the Rust server must hash
+the same bytes.
 
 #### Bulk token revocation
 
@@ -942,7 +946,9 @@ changes section below.
 ```json
 {
   "id": 42,
-  "descriptor": { /* BuildDescriptor JSON */ },
+  "descriptor": {
+    /* BuildDescriptor JSON */
+  },
   "descriptor_version": 1,
   "user_email": "alice@clyso.com",
   "priority": "normal",
@@ -956,10 +962,10 @@ changes section below.
 }
 ```
 
-**Field changes from Python:** `task_id` → dropped, `submitted` →
-`submitted_at` (epoch), `desc` → `descriptor`, `user` → `user_email`,
-states are lowercase (`"started"` not `"STARTED"`). These are added to the
-coordinated release breaking changes list.
+**Field changes from Python:** `task_id` → dropped, `submitted` → `submitted_at`
+(epoch), `desc` → `descriptor`, `user` → `user_email`, states are lowercase
+(`"started"` not `"STARTED"`). These are added to the coordinated release
+breaking changes list.
 
 ### Error response schema
 
@@ -967,7 +973,7 @@ All error responses use a consistent JSON shape matching the current Python
 server (FastAPI's default):
 
 ```json
-{"detail": "human-readable error message"}
+{ "detail": "human-readable error message" }
 ```
 
 HTTP status codes follow the convention documented per-endpoint. If the Rust
@@ -985,10 +991,10 @@ DELETE /api/auth/api-keys/{prefix}     → revoke API key by prefix (own keys, o
 
 Note: DELETE uses the `key_prefix` (first 12 chars of the random portion,
 post-`cbsk_`), not the internal integer ID. Prefix matching is **case-
-sensitive** and the canonical form is **lowercase hex**. The `UNIQUE(owner_
-email, key_prefix)` constraint prevents collisions per owner. Two different
-users may have keys with the same prefix — admin deletion scopes to the
-owner's email (either explicit parameter or the calling user).
+sensitive** and the canonical form is **lowercase hex**. The
+`UNIQUE(owner_ email, key_prefix)` constraint prevents collisions per owner. Two
+different users may have keys with the same prefix — admin deletion scopes to
+the owner's email (either explicit parameter or the calling user).
 
 ### Role management (requires permissions:manage)
 
@@ -1017,8 +1023,8 @@ with 400.
 
 **Request body disambiguation for `PUT` (replace-all):**
 
-- `{ "roles": [{"role": "builder", "scopes": [...]}] }` — include builder
-  with scopes (accepted if scopes non-empty).
+- `{ "roles": [{"role": "builder", "scopes": [...]}] }` — include builder with
+  scopes (accepted if scopes non-empty).
 - `{ "roles": [{"role": "builder", "scopes": []}] }` — include builder with
   empty scopes → **rejected** (400, scope-dependent role requires scopes).
 - `{ "roles": [{"role": "viewer"}] }` — omit builder entirely → builder
@@ -1028,8 +1034,8 @@ with 400.
 
 ### Permissions migration
 
-The current `permissions.yaml` can be converted to database records at
-migration time:
+The current `permissions.yaml` can be converted to database records at migration
+time:
 
 - Each YAML group becomes a role
 - Group `authorized_for` entries become role capabilities + scopes
@@ -1046,9 +1052,9 @@ by the current Python server is unknown to the new server's
 `SELECT ... FROM tokens WHERE token_hash = ?` lookup. All existing `cbc` users
 will receive 401 on their first API call after cutover.
 
-**Chosen approach:** Accept the cutover break. Notify users in advance that
-they must re-authenticate (`cbc login`) after the migration. The new server
-uses infinite-TTL tokens by default, so this is a one-time cost.
+**Chosen approach:** Accept the cutover break. Notify users in advance that they
+must re-authenticate (`cbc login`) after the migration. The new server uses
+infinite-TTL tokens by default, so this is a one-time cost.
 
 Note: Zero-downtime token import (migrating Python-era tokens into the Rust
 server's `tokens` table) is **not supported for v1**. The Python server
@@ -1057,32 +1063,31 @@ integers. SHA-256 hashes are incompatible between the two formats.
 
 ### API path compatibility
 
-The Rust server uses updated REST API paths (e.g., `POST /api/builds` instead
-of `POST /api/builds/new`). The `cbc` client has these paths hardcoded.
+The Rust server uses updated REST API paths (e.g., `POST /api/builds` instead of
+`POST /api/builds/new`). The `cbc` client has these paths hardcoded.
 
-**Chosen approach:** Coordinated release. A new `cbc` version with updated
-paths is released alongside the Rust server. The minimum compatible `cbc`
-version is documented in the server release notes.
+**Chosen approach:** Coordinated release. A new `cbc` version with updated paths
+is released alongside the Rust server. The minimum compatible `cbc` version is
+documented in the server release notes.
 
 Additionally, the Rust server introduces new build states (`dispatched`,
 `revoking`, `revoked`) that are absent from the current `cbsdcore.EntryState`
-enum. State names are lowercase (current Python uses uppercase). A
-new `cbsdcore` release must be published before or alongside the server
-release to prevent deserialization errors in `cbc build list`.
+enum. State names are lowercase (current Python uses uppercase). A new
+`cbsdcore` release must be published before or alongside the server release to
+prevent deserialization errors in `cbc build list`.
 
 **Additional breaking changes for `cbc`:**
 
-- `BuildArch.arm64` → canonical value `aarch64` (Rust server accepts `arm64`
-  as alias via `#[serde(alias)]` but serializes as `aarch64`).
+- `BuildArch.arm64` → canonical value `aarch64` (Rust server accepts `arm64` as
+  alias via `#[serde(alias)]` but serializes as `aarch64`).
 - Log streaming: `GET /builds/{id}/logs/follow` returns SSE
   (`text/event-stream`) instead of polled JSON.
 - Build state names are lowercase (`queued`, not `QUEUED`).
 - New states: `dispatched`, `revoking`, `revoked`.
 - `signed_off_by` in build descriptor is overwritten by the server.
 - `NewBuildResponse.state` is `"queued"` (lowercase), not `"PENDING"`.
-- `GET /builds/{id}` response field changes: `task_id` dropped,
-  `submitted` → `submitted_at` (epoch integer), `desc` → `descriptor`,
-  `user` → `user_email`.
+- `GET /builds/{id}` response field changes: `task_id` dropped, `submitted` →
+  `submitted_at` (epoch integer), `desc` → `descriptor`, `user` → `user_email`.
 - Error responses use `{"detail": "..."}` (same shape as Python/FastAPI).
 
 **Release ordering:**

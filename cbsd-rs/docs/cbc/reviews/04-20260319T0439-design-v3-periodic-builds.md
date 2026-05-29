@@ -2,19 +2,17 @@
 
 **Verdict: Approved.**
 
-The v2 concern is resolved: the descriptor construction step
-is explicitly documented ("constructs a `BuildDescriptor`
-struct from the CLI options, serializes it to
-`serde_json::Value`, and embeds it as the `descriptor` field
-in the POST body").
+The v2 concern is resolved: the descriptor construction step is explicitly
+documented ("constructs a `BuildDescriptor` struct from the CLI options,
+serializes it to `serde_json::Value`, and embeds it as the `descriptor` field in
+the POST body").
 
 No blockers. No major concerns.
 
 ## Minor Issues
 
-- `summary` cannot be cleared via update (server limitation
-  from null-preserving merge). Not documented but is a minor
-  operational detail.
+- `summary` cannot be cleared via update (server limitation from null-preserving
+  merge). Not documented but is a minor operational detail.
 
 ## Strengths
 

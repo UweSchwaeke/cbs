@@ -587,13 +587,12 @@ minimum the following land:
 3. **F9** — return 400 (not 409) for tokenless-robot activate.
 4. **F6** — collapse the three `tokio::spawn` blocks to inline await.
 5. **F12** — deduplicate `verify_api_key` / `verify_robot_token` and
-    `generate_*_material` behind a shared generic.
-6. **F13** — normalise `INSERT OR IGNORE` vs `INSERT` between create and
-    revive.
+   `generate_*_material` behind a shared generic.
+6. **F13** — normalise `INSERT OR IGNORE` vs `INSERT` between create and revive.
 
 ### Nice-to-have
 
 1. Build response `is_robot` field (design-required).
 2. `cbc --expires infinity` literal support.
 3. Plan update documenting the commit-8 default-channel server change and
-    flagging it as a breaking API change.
+   flagging it as a breaking API change.

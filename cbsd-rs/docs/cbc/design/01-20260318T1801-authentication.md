@@ -23,18 +23,15 @@ Paste the token here: █
 
 **Flow:**
 
-1. Validate the server is reachable:
-   `GET /api/health`. On failure:
+1. Validate the server is reachable: `GET /api/health`. On failure:
    `"cannot reach server at <url>"`.
-2. Construct the login URL:
-   `{url}/api/auth/login?client=cli`.
-3. Open the URL in the default browser via
-   `open::that()`. Print the URL regardless (fallback
-   for headless environments).
-4. Prompt the user to paste the token (the server's
-   callback page displays it as a copyable string).
-5. Validate the token: `GET /api/auth/whoami` with the
-   pasted token. On failure: `"invalid token"`.
+2. Construct the login URL: `{url}/api/auth/login?client=cli`.
+3. Open the URL in the default browser via `open::that()`. Print the URL
+   regardless (fallback for headless environments).
+4. Prompt the user to paste the token (the server's callback page displays it as
+   a copyable string).
+5. Validate the token: `GET /api/auth/whoami` with the pasted token. On failure:
+   `"invalid token"`.
 6. Save the config to `~/.config/cbc/config.json`:
    `{"host": "<url>", "token": "<pasted-token>"}`.
 7. Print: `"logged in as <email>"`.
@@ -43,10 +40,9 @@ Paste the token here: █
 
 - `URL` (required) — server base URL.
 
-**Out of scope (first iteration):** The server supports a
-`cli_port` parameter for automatic localhost redirect
-(avoids copy-paste). This requires the client to bind a
-local HTTP listener. Deferred to a future enhancement.
+**Out of scope (first iteration):** The server supports a `cli_port` parameter
+for automatic localhost redirect (avoids copy-paste). This requires the client
+to bind a local HTTP listener. Deferred to a future enhancement.
 
 ### `cbc whoami`
 
@@ -72,30 +68,26 @@ $ cbc whoami
 
 Requires a valid config file with token.
 
-Note: scopes are not shown in `whoami` output. Users
-with scope-restricted roles (e.g., `builds:create`
-scoped to a specific channel) should use
-`cbc admin users get <email>` for full role details
-including scope constraints.
+Note: scopes are not shown in `whoami` output. Users with scope-restricted roles
+(e.g., `builds:create` scoped to a specific channel) should use
+`cbc admin users get <email>` for full role details including scope constraints.
 
 ## Token lifecycle
 
-- Tokens are PASETO v4 with a server-configured TTL
-  (default 24 hours). The client does not manage
-  expiry — on 401, the user must `cbc login` again.
-- The client does not parse or validate tokens locally
-  — it sends them as-is in the `Authorization` header.
+- Tokens are PASETO v4 with a server-configured TTL (default 24 hours). The
+  client does not manage expiry — on 401, the user must `cbc login` again.
+- The client does not parse or validate tokens locally — it sends them as-is in
+  the `Authorization` header.
 - On 401 response from any command: print
-  `"session expired — run 'cbc login {host}' to
-  re-authenticate"` (using the stored host from config).
+  `"session expired — run 'cbc login {host}' to re-authenticate"` (using the
+  stored host from config).
 - No automatic token refresh.
 
 ## Config file interaction
 
-`cbc login` is the only command that writes the config.
-All other commands read it.
+`cbc login` is the only command that writes the config. All other commands read
+it.
 
-If the config file exists but the token is expired
-(server returns 401), the client does NOT delete the
-config — it preserves the `host` field so the user can
-`cbc login` again without re-typing the URL.
+If the config file exists but the token is expired (server returns 401), the
+client does NOT delete the config — it preserves the `host` field so the user
+can `cbc login` again without re-typing the URL.
