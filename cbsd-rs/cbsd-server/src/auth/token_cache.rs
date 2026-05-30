@@ -24,6 +24,7 @@ use argon2::password_hash::SaltString;
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use lru::LruCache;
 use rand::Rng;
+use secrecy::SecretString;
 use sha2::{Digest, Sha256};
 use sqlx::SqlitePool;
 use tokio::sync::Mutex;
@@ -240,12 +241,12 @@ impl From<db::robots::TokenCandidate> for CandidateRow {
 }
 
 /// Generate random bearer-token material with the given 5-char prefix.
-/// Returns `(plaintext, lookup_prefix, argon2_hash)`. Plaintext format is
-/// `<prefix><64 hex chars>`; lookup prefix is the first 12 hex chars after
-/// the literal prefix.
+/// Returns `(secret_plaintext, lookup_prefix, argon2_hash)`. Plaintext format
+/// is `<prefix><64 hex chars>` and is wrapped in `SecretString`; lookup prefix
+/// is the first 12 hex chars after the literal prefix.
 async fn generate_token_material(
     prefix: &'static str,
-) -> Result<(String, String, String), TokenError> {
+) -> Result<(SecretString, String, String), TokenError> {
     let random_bytes: [u8; 32] = rand::thread_rng().r#gen();
     let hex_part = hex_encode(&random_bytes);
     let raw = format!("{prefix}{hex_part}");
@@ -256,7 +257,7 @@ async fn generate_token_material(
         .await
         .map_err(|e| TokenError::HashError(e.to_string()))??;
 
-    Ok((raw, lookup_prefix, hash))
+    Ok((SecretString::from(raw), lookup_prefix, hash))
 }
 
 /// Shared verify plumbing for both `cbsk_` and `cbrk_` paths.
@@ -352,12 +353,13 @@ where
 
 /// Generate a new API key, hash it, and store it in the database.
 ///
-/// Returns `(plaintext_key, prefix)`. Plaintext is shown once, never stored.
+/// Returns `(secret_plaintext_key, prefix)`. Plaintext is shown once, never
+/// stored, and is wrapped in `SecretString`.
 pub async fn create_api_key(
     pool: &SqlitePool,
     name: &str,
     owner_email: &str,
-) -> Result<(String, String), TokenError> {
+) -> Result<(SecretString, String), TokenError> {
     let (raw_key, prefix, hash) = generate_api_key_material().await?;
     db::api_keys::insert_api_key(pool, name, owner_email, &hash, &prefix).await?;
     Ok((raw_key, prefix))
@@ -388,7 +390,7 @@ pub async fn verify_api_key(
 /// Performs Argon2id hashing in a blocking thread. The caller inserts the row
 /// into the DB (via pool or transaction). This keeps Argon2 off the async
 /// executor and out of any open transaction.
-pub async fn generate_api_key_material() -> Result<(String, String, String), TokenError> {
+pub async fn generate_api_key_material() -> Result<(SecretString, String, String), TokenError> {
     generate_token_material("cbsk_").await
 }
 
@@ -400,7 +402,7 @@ pub async fn generate_api_key_material() -> Result<(String, String, String), Tok
 ///
 /// Format: `cbrk_<64 hex chars>`. Prefix = first 12 hex chars after `cbrk_`.
 /// Caller is responsible for DB insertion (pool or transaction).
-pub async fn generate_robot_token_material() -> Result<(String, String, String), TokenError> {
+pub async fn generate_robot_token_material() -> Result<(SecretString, String, String), TokenError> {
     generate_token_material("cbrk_").await
 }
 

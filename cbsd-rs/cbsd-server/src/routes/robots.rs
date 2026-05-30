@@ -15,6 +15,7 @@
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
+use secrecy::ExposeSecret;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use utoipa_axum::router::OpenApiRouter;
@@ -348,7 +349,7 @@ async fn create_or_revive_robot(
             email: committed.email,
             active: committed.active,
             description: committed.description,
-            token: plaintext_token,
+            token: plaintext_token.expose_secret().to_string(),
             token_prefix,
             token_expires_at: expires_at,
             created_at: committed.created_at,
@@ -674,7 +675,7 @@ async fn create_or_rotate_token(
     Ok((
         StatusCode::CREATED,
         Json(RotateTokenResponse {
-            token: plaintext_token,
+            token: plaintext_token.expose_secret().to_string(),
             token_prefix,
             expires_at,
         }),

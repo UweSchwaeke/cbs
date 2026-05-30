@@ -25,6 +25,7 @@ use pasetors::keys::SymmetricKey;
 use pasetors::token::UntrustedToken;
 use pasetors::version4::V4;
 use pasetors::{Local, local};
+use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -44,12 +45,14 @@ pub struct CbsdTokenPayloadV1 {
 /// payload and the PASETO-level `exp` claim. The PASETO `exp` acts
 /// as a hard ceiling enforced by the `pasetors` library on decrypt.
 ///
-/// Returns `(raw_token_string, sha256_hex_hash)`.
+/// Returns `(secret_raw_token, sha256_hex_hash)`. The raw token is wrapped in
+/// `SecretString` so it cannot be accidentally serialized or logged; the hash
+/// is a non-reversible digest used for DB lookup and stays a plain `String`.
 pub fn token_create(
     email: &str,
     max_ttl_secs: u64,
     secret_key_hex: &str,
-) -> Result<(String, String), TokenError> {
+) -> Result<(SecretString, String), TokenError> {
     let now = chrono::Utc::now().timestamp();
     let expires_at = now + max_ttl_secs as i64;
 
@@ -80,7 +83,7 @@ pub fn token_create(
 
     let hash = hex::encode(Sha256::digest(raw_token.as_bytes()));
 
-    Ok((raw_token, hash))
+    Ok((SecretString::from(raw_token), hash))
 }
 
 /// Decode and validate a PASETO v4.local token.
@@ -175,6 +178,8 @@ mod hex {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use secrecy::ExposeSecret;
+    use tracing_test::traced_test;
 
     // 32-byte hex key for testing (64 hex chars = 32 bytes, PASETO v4 requirement)
     const TEST_KEY: &str = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
@@ -182,19 +187,36 @@ mod tests {
     #[test]
     fn create_and_decode_round_trip() {
         let (token, hash) = token_create("alice@clyso.com", 3600, TEST_KEY).unwrap();
-        assert!(token.starts_with("v4.local."));
+        assert!(token.expose_secret().starts_with("v4.local."));
         assert_eq!(hash.len(), 64); // SHA-256 hex
 
-        let payload = token_decode(&token, TEST_KEY).unwrap();
+        let payload = token_decode(token.expose_secret(), TEST_KEY).unwrap();
         assert_eq!(payload.user, "alice@clyso.com");
         assert!(payload.expires.is_some());
+    }
+
+    #[traced_test]
+    #[test]
+    fn secret_token_is_redacted_in_tracing_output() {
+        // audit-rem D10 / F13: a wrapped secret emitted into a `tracing`
+        // field must not surface its inner value in captured log output.
+        let secret = SecretString::from("super-secret-paseto-token");
+        tracing::info!(token = ?secret, "emitting a wrapped token");
+        assert!(
+            !logs_contain("super-secret-paseto-token"),
+            "wrapped token value must not appear in tracing output"
+        );
+        assert!(
+            logs_contain("emitting a wrapped token"),
+            "tracing capture must be active (positive control)"
+        );
     }
 
     #[test]
     fn create_with_ttl() {
         let now = chrono::Utc::now().timestamp();
         let (token, _) = token_create("bob@clyso.com", 7200, TEST_KEY).unwrap();
-        let payload = token_decode(&token, TEST_KEY).unwrap();
+        let payload = token_decode(token.expose_secret(), TEST_KEY).unwrap();
         let exp = payload.expires.unwrap();
         assert!(exp >= now + 7199);
         assert!(exp <= now + 7201);
@@ -205,7 +227,7 @@ mod tests {
         let (token, _) = token_create("alice@clyso.com", 3600, TEST_KEY).unwrap();
         let other_key = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
         assert!(matches!(
-            token_decode(&token, other_key),
+            token_decode(token.expose_secret(), other_key),
             Err(TokenError::InvalidToken)
         ));
     }
@@ -213,7 +235,7 @@ mod tests {
     #[test]
     fn token_hash_deterministic() {
         let (token, hash1) = token_create("alice@clyso.com", 3600, TEST_KEY).unwrap();
-        let hash2 = token_hash(&token);
+        let hash2 = token_hash(token.expose_secret());
         assert_eq!(hash1, hash2);
     }
 

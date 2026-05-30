@@ -16,6 +16,7 @@ use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use base64::Engine;
+use secrecy::ExposeSecret;
 use serde::Deserialize;
 use serde::Serialize;
 use utoipa::ToSchema;
@@ -451,7 +452,12 @@ async fn register_worker(
         auth_error(StatusCode::INTERNAL_SERVER_ERROR, "database error")
     })?;
 
-    let token = build_worker_token(&worker_id, &body.name, &plaintext_key, &body.arch);
+    let token = build_worker_token(
+        &worker_id,
+        &body.name,
+        plaintext_key.expose_secret(),
+        &body.arch,
+    );
 
     tracing::info!(
         worker_id = %worker_id,
@@ -679,7 +685,12 @@ async fn regenerate_worker_token(
     // Force-disconnect so the worker must reconnect with the new key.
     force_disconnect_worker(&state, &id).await;
 
-    let token = build_worker_token(&id, &worker.name, &plaintext_key, &worker.arch);
+    let token = build_worker_token(
+        &id,
+        &worker.name,
+        plaintext_key.expose_secret(),
+        &worker.arch,
+    );
 
     tracing::info!(
         "user {} regenerated token for worker '{}' (id={})",

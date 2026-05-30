@@ -13,6 +13,7 @@
 use std::sync::Arc;
 
 use rand::Rng;
+use secrecy::ExposeSecret;
 use tokio_tungstenite::tungstenite;
 use tungstenite::client::IntoClientRequest;
 
@@ -42,8 +43,9 @@ async fn connect(config: &ResolvedWorkerConfig) -> Result<WsStream, ConnectionEr
         .into_client_request()
         .map_err(ConnectionError::Request)?;
 
-    let header_value = http::HeaderValue::from_str(&format!("Bearer {}", config.api_key))
-        .map_err(|e| ConnectionError::InvalidHeader(e.to_string()))?;
+    let header_value =
+        http::HeaderValue::from_str(&format!("Bearer {}", config.api_key.expose_secret()))
+            .map_err(|e| ConnectionError::InvalidHeader(e.to_string()))?;
     request
         .headers_mut()
         .insert(http::header::AUTHORIZATION, header_value);

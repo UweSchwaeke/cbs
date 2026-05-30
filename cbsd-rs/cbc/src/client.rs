@@ -12,6 +12,7 @@
 
 use reqwest::Method;
 use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
+use secrecy::{ExposeSecret, SecretString};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use url::Url;
@@ -26,11 +27,16 @@ pub struct CbcClient {
 
 impl CbcClient {
     /// Create an authenticated client.
-    pub fn new(host: &str, token: &str, debug: bool, no_tls_verify: bool) -> Result<Self, Error> {
+    pub fn new(
+        host: &str,
+        token: &SecretString,
+        debug: bool,
+        no_tls_verify: bool,
+    ) -> Result<Self, Error> {
         let base_url = parse_base_url(host)?;
 
         let mut headers = HeaderMap::new();
-        let auth_value = format!("Bearer {token}");
+        let auth_value = format!("Bearer {}", token.expose_secret());
         headers.insert(
             AUTHORIZATION,
             HeaderValue::from_str(&auth_value)

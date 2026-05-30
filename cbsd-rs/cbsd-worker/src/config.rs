@@ -13,6 +13,7 @@
 use std::path::PathBuf;
 
 use base64::Engine;
+use secrecy::SecretString;
 use serde::Deserialize;
 
 /// Logging configuration for the worker binary.
@@ -106,7 +107,7 @@ pub struct WorkerConfig {
 /// Resolved worker configuration with all identity fields guaranteed present.
 pub struct ResolvedWorkerConfig {
     pub server_url: String,
-    pub api_key: String,
+    pub api_key: SecretString,
     /// For local logging only — not sent over the wire.
     pub worker_name: String,
     pub arch: cbsd_proto::Arch,
@@ -239,7 +240,7 @@ impl WorkerConfig {
 
             return Ok(ResolvedWorkerConfig {
                 server_url: self.server_url,
-                api_key: token.api_key,
+                api_key: SecretString::from(token.api_key),
                 worker_name: token.worker_name,
                 arch,
                 dev_mode: is_dev,
@@ -276,7 +277,7 @@ impl WorkerConfig {
 
         Ok(ResolvedWorkerConfig {
             server_url: self.server_url,
-            api_key,
+            api_key: SecretString::from(api_key),
             worker_name,
             arch,
             dev_mode: is_dev,

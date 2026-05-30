@@ -28,6 +28,7 @@ use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Redirect, Response};
 use base64::Engine;
+use secrecy::ExposeSecret;
 use serde::{Deserialize, Serialize};
 use tower_governor::GovernorLayer;
 use tower_governor::errors::GovernorError;
@@ -342,7 +343,8 @@ async fn callback(
     })?;
 
     // Encode token as base64 for transport
-    let token_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(raw_token.as_bytes());
+    let token_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .encode(raw_token.expose_secret().as_bytes());
 
     // Respond based on client type
     if client_type == "cli" {
@@ -360,7 +362,7 @@ async fn callback(
         // The browser gets a session cookie; the token never leaves
         // the server.
         session
-            .insert("paseto_token", &raw_token)
+            .insert("paseto_token", raw_token.expose_secret())
             .await
             .map_err(|e| {
                 tracing::error!("session insert failed: {e}");
@@ -634,7 +636,7 @@ async fn create_api_key_handler(
     Ok((
         StatusCode::CREATED,
         Json(CreateApiKeyResponse {
-            key,
+            key: key.expose_secret().to_string(),
             prefix,
             name: body.name,
         }),

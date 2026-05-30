@@ -25,6 +25,7 @@ use std::path::PathBuf;
 
 use base64::Engine;
 use clap::{Parser, Subcommand};
+use secrecy::SecretString;
 use serde::Deserialize;
 
 use crate::client::CbcClient;
@@ -144,6 +145,7 @@ async fn cmd_login(url: &str, debug: bool, no_tls_verify: bool) -> Result<(), Er
             .map_err(|e| Error::Config(format!("invalid token encoding: {e}")))?,
     )
     .map_err(|e| Error::Config(format!("invalid token: {e}")))?;
+    let token = SecretString::from(token);
 
     // Validate the token.
     let client = CbcClient::new(url, &token, debug, no_tls_verify)?;

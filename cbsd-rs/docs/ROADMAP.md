@@ -87,6 +87,25 @@ label as a coarse ordering hint, not a binding commitment.
 - Trigger: near term, before any production deployment grants periodic caps to
   non-admin users.
 
+### Wrap config-time secrets (PASETO signing key, OAuth client secret)
+
+- Priority: M
+- Origin: secret-wrap implementation reviews of commit 14 (audit-rem D10 / F13);
+  carried as the open question across the v1–v3 iterations.
+- Motivation: commit 14 wrapped in-memory _token_ material (PASETO raw tokens,
+  API and robot keys, the worker `api_key`, the cbc bearer) in
+  `secrecy::SecretString`, but the process-lifetime config secrets were out of
+  its scope and remain plain `String`: `SecretsConfig.token_secret_key` (the
+  PASETO v4 symmetric signing key) and the Google OAuth2 client secret loaded
+  from the configured secrets file. Design 019's secret contract lists "PASETO
+  key bytes" as a `Secret<T>` use case, so this is unfinished audit-remediation
+  surface, not a non-goal.
+- Scope: wrap `token_secret_key` (and the OAuth client secret once loaded) in
+  `secrecy` types; expose via `.expose_secret()` only at the encrypt/verify and
+  OAuth-exchange boundaries; ensure no `Debug` or log path emits the key bytes.
+- Trigger: alongside or after commit 15's tracing/`Debug` redaction sweep,
+  before Phase 2 closes.
+
 ### Native TLS termination in `cbsd-server`
 
 - Motivation: `cbsd-server` currently has no native TLS support and relies on an

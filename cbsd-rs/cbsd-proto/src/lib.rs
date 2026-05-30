@@ -26,10 +26,52 @@ pub use build::{
 ///
 /// Not annotated with `ToSchema` — this is an internal registration payload,
 /// not part of the documented REST API surface.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+///
+/// SECURITY: this is a transport-only DTO that, by design, carries a plaintext
+/// `api_key`, so its fields stay plain `String` (the design's "separate the
+/// wire DTO from the in-memory secret holder" option). The long-lived in-memory
+/// holder is the worker's `ResolvedWorkerConfig.api_key: SecretString`. `Debug`
+/// is hand-written to redact `api_key`; do not add a `Display` or any log path
+/// that emits the raw key.
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct WorkerToken {
     pub worker_id: String,
     pub worker_name: String,
     pub api_key: String,
     pub arch: String,
+}
+
+impl std::fmt::Debug for WorkerToken {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WorkerToken")
+            .field("worker_id", &self.worker_id)
+            .field("worker_name", &self.worker_name)
+            .field("api_key", &"<redacted>")
+            .field("arch", &self.arch)
+            .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn worker_token_debug_redacts_api_key() {
+        let token = WorkerToken {
+            worker_id: "w-1".to_string(),
+            worker_name: "builder".to_string(),
+            api_key: "cbsk_super_secret_value".to_string(),
+            arch: "x86_64".to_string(),
+        };
+        let rendered = format!("{token:?}");
+        assert!(
+            !rendered.contains("cbsk_super_secret_value"),
+            "api_key must not appear in WorkerToken Debug output: {rendered}"
+        );
+        assert!(
+            rendered.contains("<redacted>"),
+            "api_key should render as <redacted>: {rendered}"
+        );
+    }
 }
