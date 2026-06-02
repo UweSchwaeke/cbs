@@ -856,6 +856,15 @@ Tests:
 No portion of any bearer token, PASETO raw token, session token, robot token, or
 API key may be written to logs at any level.
 
+**Lookup-prefix carve-out** (resolved during the commit-15 review): the
+12-character API-key / robot-token lookup prefix is a non-secret routing index.
+It is stored unencrypted in `api_keys.key_prefix`, returned in key-creation API
+responses, and carried in URL paths, so it MAY appear in key-lifecycle log lines
+(create / rotate / revoke). The prohibition above targets the raw token (the
+full presented bearer string) and the Argon2 credential hash, which must never
+appear in any log at any level; on the auth path the raw presented token is
+redacted to a non-reversible per-process diagnostic identifier.
+
 The "by construction" guarantee here is **construction-tight**: it must hold for
 every formatting surface — `Debug`, `Display`, `serde::Serialize`,
 `std::fmt::Pointer`, custom `tracing::Value` impls — not only the two that
