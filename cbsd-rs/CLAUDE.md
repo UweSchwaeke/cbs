@@ -55,7 +55,7 @@ After any migration or query change:
 
 
 ```bash
-DATABASE_URL=sqlite:///tmp/cbsd-dev.db cargo sqlx prepare --workspace
+DATABASE_URL=sqlite:///tmp/cbsd-dev.db cargo sqlx prepare --workspace -- --all-targets
 ```
 
 CI builds use `SQLX_OFFLINE=true` (reads from committed `.sqlx/` cache).
@@ -189,14 +189,20 @@ The `.sqlx/` directory lives at the workspace root (`cbsd-rs/.sqlx/`).
 
 1. Ensure a dev DB exists: `DATABASE_URL=sqlite:///tmp/cbsd-dev.db`
 2. Run migrations: `cargo sqlx migrate run`
-3. Prepare cache: `cargo sqlx prepare --workspace`
+3. Prepare cache: `cargo sqlx prepare --workspace -- --all-targets`
 4. Verify: `SQLX_OFFLINE=true cargo build --workspace`
 5. Include `.sqlx/` changes in the commit
 
+> **`-- --all-targets` is required.** Several `sqlx::query!` macros live in
+> `#[cfg(test)]` modules. Without it, `cargo sqlx prepare` checks only non-test
+> targets, never expands those macros, and deletes their `.sqlx/` files as
+> "unused" — silently breaking the `SQLX_OFFLINE=true` build for tests. Run
+> `cargo sqlx prepare --workspace --check -- --all-targets` to verify the cache
+> without rewriting it.
 
 **Bootstrap (first time):**
 
 1. `cargo sqlx database create`
 2. `cargo sqlx migrate run`
 3. Write query code
-4. `cargo sqlx prepare --workspace`
+4. `cargo sqlx prepare --workspace -- --all-targets`
