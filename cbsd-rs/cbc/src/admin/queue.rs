@@ -14,7 +14,7 @@
 
 use serde::Deserialize;
 
-use crate::client::CbcClient;
+use crate::client::{CbcClient, ClientOpts};
 use crate::config::Config;
 use crate::error::Error;
 
@@ -36,13 +36,9 @@ struct QueueStatus {
 // admin queue
 // ---------------------------------------------------------------------------
 
-pub async fn run(
-    config_path: Option<&std::path::Path>,
-    debug: bool,
-    no_tls_verify: bool,
-) -> Result<(), Error> {
+pub async fn run(config_path: Option<&std::path::Path>, opts: ClientOpts) -> Result<(), Error> {
     let config = Config::load(config_path)?;
-    let client = CbcClient::new(&config.host, &config.token, debug, no_tls_verify)?;
+    let client = CbcClient::new(&config.host, &config.token, opts)?;
 
     let status: QueueStatus = client.get("admin/queue").await?;
 

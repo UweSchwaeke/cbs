@@ -15,7 +15,7 @@
 use clap::{Args, Subcommand};
 use serde::{Deserialize, Serialize};
 
-use crate::client::CbcClient;
+use crate::client::{CbcClient, ClientOpts};
 use crate::config::Config;
 use crate::error::Error;
 
@@ -170,15 +170,14 @@ pub(crate) fn parse_scope(s: &str) -> Result<ScopeItem, Error> {
 pub async fn run(
     args: RolesArgs,
     config_path: Option<&std::path::Path>,
-    debug: bool,
-    no_tls_verify: bool,
+    opts: ClientOpts,
 ) -> Result<(), Error> {
     match args.command {
-        RolesCommands::List => cmd_list(config_path, debug, no_tls_verify).await,
-        RolesCommands::Create(a) => cmd_create(a, config_path, debug, no_tls_verify).await,
-        RolesCommands::Get(a) => cmd_get(a, config_path, debug, no_tls_verify).await,
-        RolesCommands::Update(a) => cmd_update(a, config_path, debug, no_tls_verify).await,
-        RolesCommands::Delete(a) => cmd_delete(a, config_path, debug, no_tls_verify).await,
+        RolesCommands::List => cmd_list(config_path, opts).await,
+        RolesCommands::Create(a) => cmd_create(a, config_path, opts).await,
+        RolesCommands::Get(a) => cmd_get(a, config_path, opts).await,
+        RolesCommands::Update(a) => cmd_update(a, config_path, opts).await,
+        RolesCommands::Delete(a) => cmd_delete(a, config_path, opts).await,
     }
 }
 
@@ -186,13 +185,9 @@ pub async fn run(
 // admin roles list
 // ---------------------------------------------------------------------------
 
-async fn cmd_list(
-    config_path: Option<&std::path::Path>,
-    debug: bool,
-    no_tls_verify: bool,
-) -> Result<(), Error> {
+async fn cmd_list(config_path: Option<&std::path::Path>, opts: ClientOpts) -> Result<(), Error> {
     let config = Config::load(config_path)?;
-    let client = CbcClient::new(&config.host, &config.token, debug, no_tls_verify)?;
+    let client = CbcClient::new(&config.host, &config.token, opts)?;
 
     let roles: Vec<RoleListItem> = client.get("permissions/roles").await?;
 
@@ -218,11 +213,10 @@ async fn cmd_list(
 async fn cmd_create(
     args: CreateArgs,
     config_path: Option<&std::path::Path>,
-    debug: bool,
-    no_tls_verify: bool,
+    opts: ClientOpts,
 ) -> Result<(), Error> {
     let config = Config::load(config_path)?;
-    let client = CbcClient::new(&config.host, &config.token, debug, no_tls_verify)?;
+    let client = CbcClient::new(&config.host, &config.token, opts)?;
 
     let scopes: Vec<ScopeItem> = args
         .scope
@@ -250,11 +244,10 @@ async fn cmd_create(
 async fn cmd_get(
     args: GetArgs,
     config_path: Option<&std::path::Path>,
-    debug: bool,
-    no_tls_verify: bool,
+    opts: ClientOpts,
 ) -> Result<(), Error> {
     let config = Config::load(config_path)?;
-    let client = CbcClient::new(&config.host, &config.token, debug, no_tls_verify)?;
+    let client = CbcClient::new(&config.host, &config.token, opts)?;
 
     let role: RoleDetail = client
         .get(&format!("permissions/roles/{}", args.name))
@@ -301,11 +294,10 @@ async fn cmd_get(
 async fn cmd_update(
     args: UpdateArgs,
     config_path: Option<&std::path::Path>,
-    debug: bool,
-    no_tls_verify: bool,
+    opts: ClientOpts,
 ) -> Result<(), Error> {
     let config = Config::load(config_path)?;
-    let client = CbcClient::new(&config.host, &config.token, debug, no_tls_verify)?;
+    let client = CbcClient::new(&config.host, &config.token, opts)?;
 
     let scopes: Vec<ScopeItem> = args
         .scope
@@ -353,11 +345,10 @@ async fn cmd_update(
 async fn cmd_delete(
     args: DeleteArgs,
     config_path: Option<&std::path::Path>,
-    debug: bool,
-    no_tls_verify: bool,
+    opts: ClientOpts,
 ) -> Result<(), Error> {
     let config = Config::load(config_path)?;
-    let client = CbcClient::new(&config.host, &config.token, debug, no_tls_verify)?;
+    let client = CbcClient::new(&config.host, &config.token, opts)?;
 
     if !args.yes_i_really_mean_it {
         eprintln!("this is a destructive operation; pass --yes-i-really-mean-it to confirm");

@@ -20,7 +20,7 @@ use crate::builds::{
     BuildDescriptorArgs, WhoamiResponse, apply_repo_overrides, format_timestamp, parse_arch,
     parse_components, parse_priority, parse_version_type,
 };
-use crate::client::CbcClient;
+use crate::client::{CbcClient, ClientOpts};
 use crate::config::Config;
 use crate::error::Error;
 
@@ -234,17 +234,16 @@ struct SimpleResponse {
 pub async fn run(
     args: PeriodicArgs,
     config_path: Option<&std::path::Path>,
-    debug: bool,
-    no_tls_verify: bool,
+    opts: ClientOpts,
 ) -> Result<(), Error> {
     match args.command {
-        PeriodicCommands::New(a) => cmd_new(*a, config_path, debug, no_tls_verify).await,
-        PeriodicCommands::List => cmd_list(config_path, debug, no_tls_verify).await,
-        PeriodicCommands::Get(a) => cmd_get(a, config_path, debug, no_tls_verify).await,
-        PeriodicCommands::Update(a) => cmd_update(*a, config_path, debug, no_tls_verify).await,
-        PeriodicCommands::Delete(a) => cmd_delete(a, config_path, debug, no_tls_verify).await,
-        PeriodicCommands::Enable(a) => cmd_enable(a, config_path, debug, no_tls_verify).await,
-        PeriodicCommands::Disable(a) => cmd_disable(a, config_path, debug, no_tls_verify).await,
+        PeriodicCommands::New(a) => cmd_new(*a, config_path, opts).await,
+        PeriodicCommands::List => cmd_list(config_path, opts).await,
+        PeriodicCommands::Get(a) => cmd_get(a, config_path, opts).await,
+        PeriodicCommands::Update(a) => cmd_update(*a, config_path, opts).await,
+        PeriodicCommands::Delete(a) => cmd_delete(a, config_path, opts).await,
+        PeriodicCommands::Enable(a) => cmd_enable(a, config_path, opts).await,
+        PeriodicCommands::Disable(a) => cmd_disable(a, config_path, opts).await,
     }
 }
 
@@ -255,11 +254,10 @@ pub async fn run(
 async fn cmd_new(
     args: PeriodicNewArgs,
     config_path: Option<&std::path::Path>,
-    debug: bool,
-    no_tls_verify: bool,
+    opts: ClientOpts,
 ) -> Result<(), Error> {
     let config = Config::load(config_path)?;
-    let client = CbcClient::new(&config.host, &config.token, debug, no_tls_verify)?;
+    let client = CbcClient::new(&config.host, &config.token, opts)?;
 
     // Get current user for signed_off_by.
     let whoami: WhoamiResponse = client.get("auth/whoami").await?;
@@ -345,13 +343,9 @@ async fn cmd_new(
 // periodic list
 // ---------------------------------------------------------------------------
 
-async fn cmd_list(
-    config_path: Option<&std::path::Path>,
-    debug: bool,
-    no_tls_verify: bool,
-) -> Result<(), Error> {
+async fn cmd_list(config_path: Option<&std::path::Path>, opts: ClientOpts) -> Result<(), Error> {
     let config = Config::load(config_path)?;
-    let client = CbcClient::new(&config.host, &config.token, debug, no_tls_verify)?;
+    let client = CbcClient::new(&config.host, &config.token, opts)?;
 
     let tasks: Vec<PeriodicListItem> = client.get("periodic").await?;
 
@@ -396,11 +390,10 @@ async fn cmd_list(
 async fn cmd_get(
     args: PeriodicGetArgs,
     config_path: Option<&std::path::Path>,
-    debug: bool,
-    no_tls_verify: bool,
+    opts: ClientOpts,
 ) -> Result<(), Error> {
     let config = Config::load(config_path)?;
-    let client = CbcClient::new(&config.host, &config.token, debug, no_tls_verify)?;
+    let client = CbcClient::new(&config.host, &config.token, opts)?;
 
     let task: PeriodicDetail = client.get(&format!("periodic/{}", args.id)).await?;
 
@@ -519,8 +512,7 @@ async fn cmd_get(
 async fn cmd_update(
     args: PeriodicUpdateArgs,
     config_path: Option<&std::path::Path>,
-    debug: bool,
-    no_tls_verify: bool,
+    opts: ClientOpts,
 ) -> Result<(), Error> {
     // Ensure at least one option is provided.
     let has_field = args.cron.is_some()
@@ -545,7 +537,7 @@ async fn cmd_update(
     }
 
     let config = Config::load(config_path)?;
-    let client = CbcClient::new(&config.host, &config.token, debug, no_tls_verify)?;
+    let client = CbcClient::new(&config.host, &config.token, opts)?;
 
     // Build a JSON object with only the provided fields.
     let mut body = serde_json::Map::new();
@@ -742,8 +734,7 @@ async fn cmd_update(
 async fn cmd_delete(
     args: PeriodicDeleteArgs,
     config_path: Option<&std::path::Path>,
-    debug: bool,
-    no_tls_verify: bool,
+    opts: ClientOpts,
 ) -> Result<(), Error> {
     if !args.yes_i_really_mean_it {
         eprintln!("this is a destructive operation; pass --yes-i-really-mean-it to confirm");
@@ -751,7 +742,7 @@ async fn cmd_delete(
     }
 
     let config = Config::load(config_path)?;
-    let client = CbcClient::new(&config.host, &config.token, debug, no_tls_verify)?;
+    let client = CbcClient::new(&config.host, &config.token, opts)?;
 
     let _resp: SimpleResponse = client.delete(&format!("periodic/{}", args.id)).await?;
     println!("periodic task {} deleted", args.id);
@@ -765,11 +756,10 @@ async fn cmd_delete(
 async fn cmd_enable(
     args: PeriodicEnableArgs,
     config_path: Option<&std::path::Path>,
-    debug: bool,
-    no_tls_verify: bool,
+    opts: ClientOpts,
 ) -> Result<(), Error> {
     let config = Config::load(config_path)?;
-    let client = CbcClient::new(&config.host, &config.token, debug, no_tls_verify)?;
+    let client = CbcClient::new(&config.host, &config.token, opts)?;
 
     let _resp: SimpleResponse = client
         .put_empty(&format!("periodic/{}/enable", args.id))
@@ -785,11 +775,10 @@ async fn cmd_enable(
 async fn cmd_disable(
     args: PeriodicDisableArgs,
     config_path: Option<&std::path::Path>,
-    debug: bool,
-    no_tls_verify: bool,
+    opts: ClientOpts,
 ) -> Result<(), Error> {
     let config = Config::load(config_path)?;
-    let client = CbcClient::new(&config.host, &config.token, debug, no_tls_verify)?;
+    let client = CbcClient::new(&config.host, &config.token, opts)?;
 
     let _resp: SimpleResponse = client
         .put_empty(&format!("periodic/{}/disable", args.id))

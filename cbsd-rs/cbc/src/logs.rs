@@ -19,7 +19,7 @@ use reqwest_eventsource::{Event, EventSource};
 use serde::Deserialize;
 use tokio::io::AsyncWriteExt;
 
-use crate::client::CbcClient;
+use crate::client::{CbcClient, ClientOpts};
 use crate::config::Config;
 use crate::error::Error;
 
@@ -97,13 +97,12 @@ struct BuildStateResponse {
 pub async fn run(
     args: LogsArgs,
     config_path: Option<&std::path::Path>,
-    debug: bool,
-    no_tls_verify: bool,
+    opts: ClientOpts,
 ) -> Result<(), Error> {
     match args.command {
-        LogsCommands::Tail(a) => cmd_tail(a, config_path, debug, no_tls_verify).await,
-        LogsCommands::Follow(a) => cmd_follow(a, config_path, debug, no_tls_verify).await,
-        LogsCommands::Get(a) => cmd_get(a, config_path, debug, no_tls_verify).await,
+        LogsCommands::Tail(a) => cmd_tail(a, config_path, opts).await,
+        LogsCommands::Follow(a) => cmd_follow(a, config_path, opts).await,
+        LogsCommands::Get(a) => cmd_get(a, config_path, opts).await,
     }
 }
 
@@ -114,11 +113,10 @@ pub async fn run(
 async fn cmd_tail(
     args: TailArgs,
     config_path: Option<&std::path::Path>,
-    debug: bool,
-    no_tls_verify: bool,
+    opts: ClientOpts,
 ) -> Result<(), Error> {
     let config = Config::load(config_path)?;
-    let client = CbcClient::new(&config.host, &config.token, debug, no_tls_verify)?;
+    let client = CbcClient::new(&config.host, &config.token, opts)?;
 
     let resp: TailResponse = client
         .get(&format!("builds/{}/logs/tail?n={}", args.id, args.n))
@@ -152,11 +150,10 @@ const MAX_RETRIES: u32 = 3;
 async fn cmd_follow(
     args: FollowArgs,
     config_path: Option<&std::path::Path>,
-    debug: bool,
-    no_tls_verify: bool,
+    opts: ClientOpts,
 ) -> Result<(), Error> {
     let config = Config::load(config_path)?;
-    let client = CbcClient::new(&config.host, &config.token, debug, no_tls_verify)?;
+    let client = CbcClient::new(&config.host, &config.token, opts)?;
 
     let request =
         client.request_builder(Method::GET, &format!("builds/{}/logs/follow", args.id))?;
@@ -204,11 +201,10 @@ async fn cmd_follow(
 async fn cmd_get(
     args: GetArgs,
     config_path: Option<&std::path::Path>,
-    debug: bool,
-    no_tls_verify: bool,
+    opts: ClientOpts,
 ) -> Result<(), Error> {
     let config = Config::load(config_path)?;
-    let client = CbcClient::new(&config.host, &config.token, debug, no_tls_verify)?;
+    let client = CbcClient::new(&config.host, &config.token, opts)?;
 
     let output_path = args
         .output

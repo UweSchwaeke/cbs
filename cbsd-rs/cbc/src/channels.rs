@@ -15,7 +15,7 @@
 use clap::{Args, Subcommand};
 use serde::Deserialize;
 
-use crate::client::CbcClient;
+use crate::client::{CbcClient, ClientOpts};
 use crate::config::Config;
 use crate::error::Error;
 
@@ -63,11 +63,10 @@ struct TypeResponse {
 pub async fn run(
     args: ChannelArgs,
     config_path: Option<&std::path::Path>,
-    debug: bool,
-    no_tls_verify: bool,
+    opts: ClientOpts,
 ) -> Result<(), Error> {
     match args.command {
-        ChannelCommands::List => cmd_list(config_path, debug, no_tls_verify).await,
+        ChannelCommands::List => cmd_list(config_path, opts).await,
     }
 }
 
@@ -75,13 +74,9 @@ pub async fn run(
 // channel list
 // ---------------------------------------------------------------------------
 
-async fn cmd_list(
-    config_path: Option<&std::path::Path>,
-    debug: bool,
-    no_tls_verify: bool,
-) -> Result<(), Error> {
+async fn cmd_list(config_path: Option<&std::path::Path>, opts: ClientOpts) -> Result<(), Error> {
     let config = Config::load(config_path)?;
-    let client = CbcClient::new(&config.host, &config.token, debug, no_tls_verify)?;
+    let client = CbcClient::new(&config.host, &config.token, opts)?;
 
     let channels: Vec<ChannelResponse> = client.get("channels").await?;
 

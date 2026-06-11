@@ -19,6 +19,43 @@ use url::Url;
 
 use crate::error::Error;
 
+/// Client-construction flags, bundled so the CLI threads a single value
+/// through every command rather than a growing list of positional `bool`s
+/// (which are trivially transposable at call sites).
+///
+/// Every field is a plain `bool` and carries no secret material — the bearer
+/// token is passed separately to [`CbcClient::new`] as a `&SecretString`, so
+/// deriving `Debug` here cannot leak credentials.
+#[derive(Clone, Copy, Debug)]
+pub struct ClientOpts {
+    /// Print HTTP requests/responses to stderr.
+    pub debug: bool,
+    /// Disable TLS certificate verification (development with self-signed
+    /// certificates). Orthogonal to `insecure_http`: this only relaxes cert
+    /// checking for `https`, it does not permit the `http` scheme.
+    pub no_tls_verify: bool,
+    /// Permit plain `http://` hosts. Without this, non-`https` hosts are
+    /// rejected at URL-parse time. Bearer tokens are sent in cleartext when
+    /// this is set.
+    pub insecure_http: bool,
+}
+
+impl ClientOpts {
+    /// Operator-facing warnings implied by these options. Returned rather than
+    /// printed so the decision is unit-testable; the CLI entry point emits
+    /// each once per invocation.
+    pub fn warnings(&self) -> Vec<&'static str> {
+        let mut out = Vec::new();
+        if self.no_tls_verify {
+            out.push("warning: TLS certificate verification is disabled");
+        }
+        if self.insecure_http {
+            out.push("warning: --insecure-http is set; bearer tokens are sent in cleartext");
+        }
+        out
+    }
+}
+
 pub struct CbcClient {
     inner: reqwest::Client,
     base_url: Url,
@@ -27,13 +64,8 @@ pub struct CbcClient {
 
 impl CbcClient {
     /// Create an authenticated client.
-    pub fn new(
-        host: &str,
-        token: &SecretString,
-        debug: bool,
-        no_tls_verify: bool,
-    ) -> Result<Self, Error> {
-        let base_url = parse_base_url(host)?;
+    pub fn new(host: &str, token: &SecretString, opts: ClientOpts) -> Result<Self, Error> {
+        let base_url = parse_base_url(host, opts.insecure_http)?;
 
         let mut headers = HeaderMap::new();
         let auth_value = format!("Bearer {}", token.expose_secret());
@@ -44,7 +76,7 @@ impl CbcClient {
         );
 
         let inner = reqwest::Client::builder()
-            .danger_accept_invalid_certs(no_tls_verify)
+            .danger_accept_invalid_certs(opts.no_tls_verify)
             .default_headers(headers)
             .build()
             .map_err(|e| Error::Connection(format!("cannot build HTTP client: {e}")))?;
@@ -52,23 +84,23 @@ impl CbcClient {
         Ok(Self {
             inner,
             base_url,
-            debug,
+            debug: opts.debug,
         })
     }
 
     /// Create an unauthenticated client (for pre-login health checks).
-    pub fn unauthenticated(host: &str, debug: bool, no_tls_verify: bool) -> Result<Self, Error> {
-        let base_url = parse_base_url(host)?;
+    pub fn unauthenticated(host: &str, opts: ClientOpts) -> Result<Self, Error> {
+        let base_url = parse_base_url(host, opts.insecure_http)?;
 
         let inner = reqwest::Client::builder()
-            .danger_accept_invalid_certs(no_tls_verify)
+            .danger_accept_invalid_certs(opts.no_tls_verify)
             .build()
             .map_err(|e| Error::Connection(format!("cannot build HTTP client: {e}")))?;
 
         Ok(Self {
             inner,
             base_url,
-            debug,
+            debug: opts.debug,
         })
     }
 
@@ -219,15 +251,102 @@ impl CbcClient {
     }
 }
 
-/// Ensure the host URL ends with `/api/`.
-fn parse_base_url(host: &str) -> Result<Url, Error> {
+/// Validate the host URL's scheme and ensure its path ends with `/api/`.
+///
+/// `https` is always accepted. `http` is accepted only when `insecure_http`
+/// is set — bearer tokens then travel in cleartext. Any other scheme, and
+/// `http` without the opt-in, is rejected.
+fn parse_base_url(host: &str, insecure_http: bool) -> Result<Url, Error> {
     let mut s = host.to_string();
     if !s.ends_with('/') {
         s.push('/');
     }
     let mut url =
         Url::parse(&s).map_err(|e| Error::Config(format!("invalid host URL '{host}': {e}")))?;
+
+    let scheme = url.scheme();
+    let allowed = scheme == "https" || (scheme == "http" && insecure_http);
+    if !allowed {
+        return Err(Error::Config(format!("host must be https; got: {scheme}")));
+    }
+
     // Append "api/" to the path so all relative joins resolve under /api/.
     url.set_path(&format!("{}api/", url.path()));
     Ok(url)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn https_host_is_accepted() {
+        let url = parse_base_url("https://cbs.example", false).expect("https accepted");
+        assert_eq!(url.scheme(), "https");
+        assert!(url.path().ends_with("/api/"));
+    }
+
+    #[test]
+    fn http_host_is_rejected_without_opt_in() {
+        let err =
+            parse_base_url("http://cbs.example", false).expect_err("http rejected without opt-in");
+        match err {
+            Error::Config(msg) => assert_eq!(msg, "host must be https; got: http"),
+            other => panic!("expected Error::Config, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn http_host_is_accepted_with_opt_in() {
+        let url = parse_base_url("http://cbs.example", true).expect("opt-in permits http");
+        assert_eq!(url.scheme(), "http");
+        assert!(url.path().ends_with("/api/"));
+    }
+
+    #[test]
+    fn other_schemes_are_rejected_even_with_opt_in() {
+        let err = parse_base_url("ftp://cbs.example", true)
+            .expect_err("opt-in widens only to http, not arbitrary schemes");
+        match err {
+            Error::Config(msg) => assert_eq!(msg, "host must be https; got: ftp"),
+            other => panic!("expected Error::Config, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn warnings_reflect_set_flags() {
+        let none = ClientOpts {
+            debug: false,
+            no_tls_verify: false,
+            insecure_http: false,
+        };
+        assert!(none.warnings().is_empty());
+
+        let tls = ClientOpts {
+            debug: false,
+            no_tls_verify: true,
+            insecure_http: false,
+        };
+        assert_eq!(
+            tls.warnings(),
+            vec!["warning: TLS certificate verification is disabled"]
+        );
+
+        let http = ClientOpts {
+            debug: false,
+            no_tls_verify: false,
+            insecure_http: true,
+        };
+        assert_eq!(
+            http.warnings(),
+            vec!["warning: --insecure-http is set; bearer tokens are sent in cleartext"]
+        );
+
+        let both = ClientOpts {
+            debug: true,
+            no_tls_verify: true,
+            insecure_http: true,
+        };
+        assert_eq!(both.warnings().len(), 2);
+    }
 }

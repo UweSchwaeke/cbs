@@ -58,10 +58,16 @@ impl Config {
 
     /// Persist this configuration to disk as JSON.
     ///
-    /// Creates parent directories if needed and restricts file permissions to
-    /// 0600 on Unix.
+    /// Creates parent directories if needed and writes atomically: the JSON is
+    /// written to a sibling temp file created with mode `0600` (Unix), then
+    /// renamed over the target. Rename within a directory is atomic on POSIX,
+    /// so a concurrent reader never observes a partially written or
+    /// world-readable config — only the previous contents or the new ones,
+    /// always mode `0600`. The previous implementation wrote the file and
+    /// then `chmod`-ed it, leaving a window in which the token was
+    /// world-readable under a typical `0o022` umask (audit-rem D8 / F11).
     pub fn save(&self, path: &Path) -> Result<(), Error> {
-        if let Some(parent) = path.parent() {
+        if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
             std::fs::create_dir_all(parent).map_err(|e| {
                 Error::Config(format!("cannot create directory {}: {e}", parent.display()))
             })?;
@@ -74,18 +80,59 @@ impl Config {
         let json = serde_json::to_string_pretty(&file)
             .map_err(|e| Error::Config(format!("cannot serialize config: {e}")))?;
 
-        std::fs::write(path, &json)
-            .map_err(|e| Error::Config(format!("cannot write {}: {e}", path.display())))?;
+        // A unique name per call (pid + counter) keeps `create_new(true)` from
+        // colliding with a concurrent save in the same directory.
+        let tmp_path = temp_path_for(path);
 
+        let mut open_opts = std::fs::OpenOptions::new();
+        open_opts.write(true).create_new(true);
         #[cfg(unix)]
         {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).map_err(
-                |e| Error::Config(format!("cannot set permissions on {}: {e}", path.display())),
-            )?;
+            use std::os::unix::fs::OpenOptionsExt;
+            open_opts.mode(0o600);
+        }
+        let mut tmp = open_opts.open(&tmp_path).map_err(|e| {
+            Error::Config(format!(
+                "cannot create temp file {}: {e}",
+                tmp_path.display()
+            ))
+        })?;
+
+        // From here on, every error path must clean up the temp file. Compute
+        // the write outcome, then funnel both it and the rename through the
+        // shared cleanup below.
+        let write_result = {
+            use std::io::Write as _;
+            tmp.write_all(json.as_bytes())
+                .map_err(|e| Error::Config(format!("cannot write {}: {e}", tmp_path.display())))
+        };
+        // Close the handle before renaming (required on Windows, harmless on
+        // Unix).
+        drop(tmp);
+
+        let result = write_result.and_then(|()| {
+            std::fs::rename(&tmp_path, path).map_err(|e| {
+                Error::Config(format!(
+                    "cannot replace {} with {}: {e}",
+                    path.display(),
+                    tmp_path.display()
+                ))
+            })
+        });
+
+        if result.is_err() {
+            // Best-effort cleanup; the caller still sees the original error.
+            match std::fs::remove_file(&tmp_path) {
+                Ok(()) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => eprintln!(
+                    "warning: failed to clean up temp file {}: {e}",
+                    tmp_path.display()
+                ),
+            }
         }
 
-        Ok(())
+        result
     }
 
     /// Return the default config file path: `$XDG_CONFIG_HOME/cbc/config.json`
@@ -94,6 +141,29 @@ impl Config {
     /// Returns `None` when the platform config directory cannot be determined.
     pub fn default_path() -> Option<PathBuf> {
         dirs::config_dir().map(|d| d.join("cbc").join("config.json"))
+    }
+}
+
+/// Build a unique sibling temp path for `path`
+/// (e.g. `…/config.json.<pid>.<n>.tmp`) for the atomic write-then-rename in
+/// [`Config::save`]. The per-process counter makes concurrent saves choose
+/// distinct names, so `create_new(true)` does not collide.
+fn temp_path_for(path: &Path) -> PathBuf {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let pid = std::process::id();
+
+    let mut name = path
+        .file_name()
+        .map(|f| f.to_os_string())
+        .unwrap_or_else(|| std::ffi::OsString::from("config.json"));
+    name.push(format!(".{pid}.{n}.tmp"));
+
+    match path.parent().filter(|p| !p.as_os_str().is_empty()) {
+        Some(parent) => parent.join(name),
+        None => PathBuf::from(name),
     }
 }
 
@@ -142,5 +212,98 @@ mod tests {
         let loaded = Config::load(Some(&path)).expect("load config");
         assert_eq!(loaded.host, "https://cbs.example");
         assert_eq!(loaded.token.expose_secret(), "cbsk_round_trip_value");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn save_writes_file_with_mode_0600() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().expect("create tempdir");
+        let path = dir.path().join("config.json");
+
+        let cfg = Config {
+            host: "https://cbs.example".to_string(),
+            token: SecretString::from("cbsk_mode"),
+        };
+        cfg.save(&path).expect("save config");
+
+        let mode = std::fs::metadata(&path)
+            .expect("stat config")
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(mode, 0o600, "config file mode is {mode:o}, expected 600");
+    }
+
+    // The window the previous write-then-chmod implementation left open (file
+    // visible at 0644 before the chmod) must not exist: a reader watching the
+    // target never sees anything but mode 0600.
+    #[cfg(unix)]
+    #[test]
+    fn save_never_exposes_permissive_mode_to_concurrent_readers() {
+        use std::os::unix::fs::PermissionsExt;
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let dir = tempfile::tempdir().expect("create tempdir");
+        let path = dir.path().join("config.json");
+
+        let cfg = Config {
+            host: "https://cbs.example".to_string(),
+            token: SecretString::from("cbsk_atomic"),
+        };
+        // Establish the target so the reader always sees a named file.
+        cfg.save(&path).expect("initial save");
+
+        let stop = Arc::new(AtomicBool::new(false));
+        let reader_stop = Arc::clone(&stop);
+        let reader_path = path.clone();
+        let reader = std::thread::spawn(move || {
+            while !reader_stop.load(Ordering::Relaxed) {
+                if let Ok(meta) = std::fs::metadata(&reader_path) {
+                    let mode = meta.permissions().mode() & 0o777;
+                    assert_eq!(mode, 0o600, "reader observed mode {mode:o}");
+                }
+            }
+        });
+
+        for _ in 0..200 {
+            cfg.save(&path).expect("concurrent save");
+        }
+        stop.store(true, Ordering::Relaxed);
+        reader
+            .join()
+            .expect("reader observed a permissive (non-0600) config mode");
+    }
+
+    #[test]
+    fn save_cleans_up_temp_file_when_rename_fails() {
+        let dir = tempfile::tempdir().expect("create tempdir");
+        // Make the target a directory so the final rename(file -> dir) fails
+        // after the temp file has been created and written.
+        let path = dir.path().join("config.json");
+        std::fs::create_dir(&path).expect("create directory at target path");
+
+        let cfg = Config {
+            host: "https://cbs.example".to_string(),
+            token: SecretString::from("cbsk_cleanup"),
+        };
+        let err = cfg
+            .save(&path)
+            .expect_err("saving onto a directory target must fail");
+        assert!(matches!(err, Error::Config(_)));
+
+        // The temp file must not survive the failed save.
+        let leftover_tmp: Vec<String> = std::fs::read_dir(dir.path())
+            .expect("read tempdir")
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.ends_with(".tmp"))
+            .collect();
+        assert!(
+            leftover_tmp.is_empty(),
+            "temp file(s) left behind after failed save: {leftover_tmp:?}"
+        );
     }
 }

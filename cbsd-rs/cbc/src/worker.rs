@@ -16,7 +16,7 @@ use clap::{Args, Subcommand};
 use serde::{Deserialize, Serialize};
 
 use crate::builds::format_timestamp;
-use crate::client::CbcClient;
+use crate::client::{CbcClient, ClientOpts};
 use crate::config::Config;
 use crate::error::Error;
 
@@ -108,16 +108,13 @@ struct DeregisterResponse {
 pub async fn run(
     args: WorkerArgs,
     config_path: Option<&std::path::Path>,
-    debug: bool,
-    no_tls_verify: bool,
+    opts: ClientOpts,
 ) -> Result<(), Error> {
     match args.command {
-        WorkerCommands::List => cmd_list(config_path, debug, no_tls_verify).await,
-        WorkerCommands::Register(a) => cmd_register(a, config_path, debug, no_tls_verify).await,
-        WorkerCommands::Deregister(a) => cmd_deregister(a, config_path, debug, no_tls_verify).await,
-        WorkerCommands::RegenerateToken(a) => {
-            cmd_regenerate_token(a, config_path, debug, no_tls_verify).await
-        }
+        WorkerCommands::List => cmd_list(config_path, opts).await,
+        WorkerCommands::Register(a) => cmd_register(a, config_path, opts).await,
+        WorkerCommands::Deregister(a) => cmd_deregister(a, config_path, opts).await,
+        WorkerCommands::RegenerateToken(a) => cmd_regenerate_token(a, config_path, opts).await,
     }
 }
 
@@ -175,13 +172,9 @@ async fn resolve_worker_id(client: &CbcClient, prefix: &str) -> Result<(String, 
 // worker list
 // ---------------------------------------------------------------------------
 
-async fn cmd_list(
-    config_path: Option<&std::path::Path>,
-    debug: bool,
-    no_tls_verify: bool,
-) -> Result<(), Error> {
+async fn cmd_list(config_path: Option<&std::path::Path>, opts: ClientOpts) -> Result<(), Error> {
     let config = Config::load(config_path)?;
-    let client = CbcClient::new(&config.host, &config.token, debug, no_tls_verify)?;
+    let client = CbcClient::new(&config.host, &config.token, opts)?;
 
     let workers: Vec<WorkerInfo> = client.get("workers").await?;
 
@@ -228,8 +221,7 @@ async fn cmd_list(
 async fn cmd_register(
     args: RegisterArgs,
     config_path: Option<&std::path::Path>,
-    debug: bool,
-    no_tls_verify: bool,
+    opts: ClientOpts,
 ) -> Result<(), Error> {
     // Client-side arch validation.
     if args.arch != "x86_64" && args.arch != "aarch64" {
@@ -240,7 +232,7 @@ async fn cmd_register(
     }
 
     let config = Config::load(config_path)?;
-    let client = CbcClient::new(&config.host, &config.token, debug, no_tls_verify)?;
+    let client = CbcClient::new(&config.host, &config.token, opts)?;
 
     let body = RegisterWorkerBody {
         name: args.name.clone(),
@@ -269,8 +261,7 @@ async fn cmd_register(
 async fn cmd_deregister(
     args: DeregisterArgs,
     config_path: Option<&std::path::Path>,
-    debug: bool,
-    no_tls_verify: bool,
+    opts: ClientOpts,
 ) -> Result<(), Error> {
     if !args.yes_i_really_mean_it {
         eprintln!("this is a destructive operation; pass --yes-i-really-mean-it to confirm");
@@ -278,7 +269,7 @@ async fn cmd_deregister(
     }
 
     let config = Config::load(config_path)?;
-    let client = CbcClient::new(&config.host, &config.token, debug, no_tls_verify)?;
+    let client = CbcClient::new(&config.host, &config.token, opts)?;
 
     let (resolved_id, name) = resolve_worker_id(&client, &args.id).await?;
 
@@ -304,11 +295,10 @@ async fn cmd_deregister(
 async fn cmd_regenerate_token(
     args: RegenerateTokenArgs,
     config_path: Option<&std::path::Path>,
-    debug: bool,
-    no_tls_verify: bool,
+    opts: ClientOpts,
 ) -> Result<(), Error> {
     let config = Config::load(config_path)?;
-    let client = CbcClient::new(&config.host, &config.token, debug, no_tls_verify)?;
+    let client = CbcClient::new(&config.host, &config.token, opts)?;
 
     let (resolved_id, name) = resolve_worker_id(&client, &args.id).await?;
 

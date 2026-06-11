@@ -16,7 +16,7 @@ use chrono::NaiveDate;
 use clap::{Args, Subcommand};
 use serde::{Deserialize, Serialize};
 
-use crate::client::CbcClient;
+use crate::client::{CbcClient, ClientOpts};
 use crate::config::Config;
 use crate::error::Error;
 
@@ -378,40 +378,31 @@ fn build_expires_wire(expires: Option<String>, no_expires: bool) -> Result<Optio
 pub async fn run(
     args: RobotsArgs,
     config_path: Option<&std::path::Path>,
-    debug: bool,
-    no_tls_verify: bool,
+    opts: ClientOpts,
 ) -> Result<(), Error> {
     match args.command {
-        RobotsCommands::Create(a) => cmd_create(a, config_path, debug, no_tls_verify).await,
-        RobotsCommands::List => cmd_list(config_path, debug, no_tls_verify).await,
-        RobotsCommands::Get(a) => cmd_get(a, config_path, debug, no_tls_verify).await,
-        RobotsCommands::SetDescription(a) => {
-            cmd_set_description(a, config_path, debug, no_tls_verify).await
-        }
-        RobotsCommands::Enable(a) => cmd_enable(a, config_path, debug, no_tls_verify).await,
-        RobotsCommands::Disable(a) => cmd_disable(a, config_path, debug, no_tls_verify).await,
+        RobotsCommands::Create(a) => cmd_create(a, config_path, opts).await,
+        RobotsCommands::List => cmd_list(config_path, opts).await,
+        RobotsCommands::Get(a) => cmd_get(a, config_path, opts).await,
+        RobotsCommands::SetDescription(a) => cmd_set_description(a, config_path, opts).await,
+        RobotsCommands::Enable(a) => cmd_enable(a, config_path, opts).await,
+        RobotsCommands::Disable(a) => cmd_disable(a, config_path, opts).await,
         RobotsCommands::Roles(a) => match a.command {
-            RolesCommands::Set(sa) => cmd_roles_set(sa, config_path, debug, no_tls_verify).await,
-            RolesCommands::Add(sa) => cmd_roles_add(sa, config_path, debug, no_tls_verify).await,
-            RolesCommands::Remove(sa) => {
-                cmd_roles_remove(sa, config_path, debug, no_tls_verify).await
-            }
+            RolesCommands::Set(sa) => cmd_roles_set(sa, config_path, opts).await,
+            RolesCommands::Add(sa) => cmd_roles_add(sa, config_path, opts).await,
+            RolesCommands::Remove(sa) => cmd_roles_remove(sa, config_path, opts).await,
         },
         RobotsCommands::DefaultChannel(a) => match a.command {
-            DefaultChannelCommands::Set(sa) => {
-                cmd_default_channel_set(sa, config_path, debug, no_tls_verify).await
-            }
+            DefaultChannelCommands::Set(sa) => cmd_default_channel_set(sa, config_path, opts).await,
             DefaultChannelCommands::Clear(sa) => {
-                cmd_default_channel_clear(sa, config_path, debug, no_tls_verify).await
+                cmd_default_channel_clear(sa, config_path, opts).await
             }
         },
         RobotsCommands::Token(a) => match a.command {
-            TokenCommands::New(sa) => cmd_token_new(sa, config_path, debug, no_tls_verify).await,
-            TokenCommands::Revoke(sa) => {
-                cmd_token_revoke(sa, config_path, debug, no_tls_verify).await
-            }
+            TokenCommands::New(sa) => cmd_token_new(sa, config_path, opts).await,
+            TokenCommands::Revoke(sa) => cmd_token_revoke(sa, config_path, opts).await,
         },
-        RobotsCommands::Delete(a) => cmd_delete(a, config_path, debug, no_tls_verify).await,
+        RobotsCommands::Delete(a) => cmd_delete(a, config_path, opts).await,
     }
 }
 
@@ -422,11 +413,10 @@ pub async fn run(
 async fn cmd_create(
     args: CreateArgs,
     config_path: Option<&std::path::Path>,
-    debug: bool,
-    no_tls_verify: bool,
+    opts: ClientOpts,
 ) -> Result<(), Error> {
     let config = Config::load(config_path)?;
-    let client = CbcClient::new(&config.host, &config.token, debug, no_tls_verify)?;
+    let client = CbcClient::new(&config.host, &config.token, opts)?;
 
     let expires = build_expires_wire(args.expires, args.no_expires)?;
 
@@ -479,13 +469,9 @@ async fn cmd_create(
 // admin robots list
 // ---------------------------------------------------------------------------
 
-async fn cmd_list(
-    config_path: Option<&std::path::Path>,
-    debug: bool,
-    no_tls_verify: bool,
-) -> Result<(), Error> {
+async fn cmd_list(config_path: Option<&std::path::Path>, opts: ClientOpts) -> Result<(), Error> {
     let config = Config::load(config_path)?;
-    let client = CbcClient::new(&config.host, &config.token, debug, no_tls_verify)?;
+    let client = CbcClient::new(&config.host, &config.token, opts)?;
 
     let robots: Vec<RobotListItem> = client.get("admin/robots").await?;
 
@@ -521,11 +507,10 @@ async fn cmd_list(
 async fn cmd_get(
     args: NameArgs,
     config_path: Option<&std::path::Path>,
-    debug: bool,
-    no_tls_verify: bool,
+    opts: ClientOpts,
 ) -> Result<(), Error> {
     let config = Config::load(config_path)?;
-    let client = CbcClient::new(&config.host, &config.token, debug, no_tls_verify)?;
+    let client = CbcClient::new(&config.host, &config.token, opts)?;
 
     match client
         .get::<RobotDetailResponse>(&format!("admin/robots/{}", args.name))
@@ -587,11 +572,10 @@ async fn cmd_get(
 async fn cmd_set_description(
     args: SetDescriptionArgs,
     config_path: Option<&std::path::Path>,
-    debug: bool,
-    no_tls_verify: bool,
+    opts: ClientOpts,
 ) -> Result<(), Error> {
     let config = Config::load(config_path)?;
-    let client = CbcClient::new(&config.host, &config.token, debug, no_tls_verify)?;
+    let client = CbcClient::new(&config.host, &config.token, opts)?;
 
     let body = SetDescriptionBody {
         description: args.description,
@@ -612,11 +596,10 @@ async fn cmd_set_description(
 async fn cmd_enable(
     args: NameArgs,
     config_path: Option<&std::path::Path>,
-    debug: bool,
-    no_tls_verify: bool,
+    opts: ClientOpts,
 ) -> Result<(), Error> {
     let config = Config::load(config_path)?;
-    let client = CbcClient::new(&config.host, &config.token, debug, no_tls_verify)?;
+    let client = CbcClient::new(&config.host, &config.token, opts)?;
 
     let email = name_to_synthetic_email(&args.name);
 
@@ -649,11 +632,10 @@ async fn cmd_enable(
 async fn cmd_disable(
     args: NameArgs,
     config_path: Option<&std::path::Path>,
-    debug: bool,
-    no_tls_verify: bool,
+    opts: ClientOpts,
 ) -> Result<(), Error> {
     let config = Config::load(config_path)?;
-    let client = CbcClient::new(&config.host, &config.token, debug, no_tls_verify)?;
+    let client = CbcClient::new(&config.host, &config.token, opts)?;
 
     let email = name_to_synthetic_email(&args.name);
 
@@ -686,11 +668,10 @@ async fn cmd_disable(
 async fn cmd_roles_set(
     args: RolesSetArgs,
     config_path: Option<&std::path::Path>,
-    debug: bool,
-    no_tls_verify: bool,
+    opts: ClientOpts,
 ) -> Result<(), Error> {
     let config = Config::load(config_path)?;
-    let client = CbcClient::new(&config.host, &config.token, debug, no_tls_verify)?;
+    let client = CbcClient::new(&config.host, &config.token, opts)?;
 
     let email = name_to_synthetic_email(&args.name);
     let body = ReplaceRolesBody {
@@ -712,11 +693,10 @@ async fn cmd_roles_set(
 async fn cmd_roles_add(
     args: RolesAddArgs,
     config_path: Option<&std::path::Path>,
-    debug: bool,
-    no_tls_verify: bool,
+    opts: ClientOpts,
 ) -> Result<(), Error> {
     let config = Config::load(config_path)?;
-    let client = CbcClient::new(&config.host, &config.token, debug, no_tls_verify)?;
+    let client = CbcClient::new(&config.host, &config.token, opts)?;
 
     let email = name_to_synthetic_email(&args.name);
     let body = AddRoleBody {
@@ -738,11 +718,10 @@ async fn cmd_roles_add(
 async fn cmd_roles_remove(
     args: RolesRemoveArgs,
     config_path: Option<&std::path::Path>,
-    debug: bool,
-    no_tls_verify: bool,
+    opts: ClientOpts,
 ) -> Result<(), Error> {
     let config = Config::load(config_path)?;
-    let client = CbcClient::new(&config.host, &config.token, debug, no_tls_verify)?;
+    let client = CbcClient::new(&config.host, &config.token, opts)?;
 
     let email = name_to_synthetic_email(&args.name);
     let _: SimpleResponse = client
@@ -760,11 +739,10 @@ async fn cmd_roles_remove(
 async fn cmd_default_channel_set(
     args: DefaultChannelSetArgs,
     config_path: Option<&std::path::Path>,
-    debug: bool,
-    no_tls_verify: bool,
+    opts: ClientOpts,
 ) -> Result<(), Error> {
     let config = Config::load(config_path)?;
-    let client = CbcClient::new(&config.host, &config.token, debug, no_tls_verify)?;
+    let client = CbcClient::new(&config.host, &config.token, opts)?;
 
     let email = name_to_synthetic_email(&args.name);
     let body = SetDefaultChannelBody {
@@ -790,11 +768,10 @@ async fn cmd_default_channel_set(
 async fn cmd_default_channel_clear(
     args: NameArgs,
     config_path: Option<&std::path::Path>,
-    debug: bool,
-    no_tls_verify: bool,
+    opts: ClientOpts,
 ) -> Result<(), Error> {
     let config = Config::load(config_path)?;
-    let client = CbcClient::new(&config.host, &config.token, debug, no_tls_verify)?;
+    let client = CbcClient::new(&config.host, &config.token, opts)?;
 
     let email = name_to_synthetic_email(&args.name);
     let body = SetDefaultChannelBody { channel_id: None };
@@ -818,11 +795,10 @@ async fn cmd_default_channel_clear(
 async fn cmd_token_new(
     args: TokenNewArgs,
     config_path: Option<&std::path::Path>,
-    debug: bool,
-    no_tls_verify: bool,
+    opts: ClientOpts,
 ) -> Result<(), Error> {
     let config = Config::load(config_path)?;
-    let client = CbcClient::new(&config.host, &config.token, debug, no_tls_verify)?;
+    let client = CbcClient::new(&config.host, &config.token, opts)?;
 
     let expires = build_expires_wire(args.expires, args.no_expires)?;
 
@@ -868,8 +844,7 @@ async fn cmd_token_new(
 async fn cmd_token_revoke(
     args: TokenRevokeArgs,
     config_path: Option<&std::path::Path>,
-    debug: bool,
-    no_tls_verify: bool,
+    opts: ClientOpts,
 ) -> Result<(), Error> {
     if !args.yes_i_really_mean_it {
         eprintln!("this is a destructive operation; pass --yes-i-really-mean-it to confirm");
@@ -877,7 +852,7 @@ async fn cmd_token_revoke(
     }
 
     let config = Config::load(config_path)?;
-    let client = CbcClient::new(&config.host, &config.token, debug, no_tls_verify)?;
+    let client = CbcClient::new(&config.host, &config.token, opts)?;
 
     let resp: serde_json::Value = client
         .delete(&format!("admin/robots/{}/token", args.name))
@@ -898,8 +873,7 @@ async fn cmd_token_revoke(
 async fn cmd_delete(
     args: DeleteArgs,
     config_path: Option<&std::path::Path>,
-    debug: bool,
-    no_tls_verify: bool,
+    opts: ClientOpts,
 ) -> Result<(), Error> {
     if !args.yes_i_really_mean_it {
         eprintln!("this is a destructive operation; pass --yes-i-really-mean-it to confirm");
@@ -907,7 +881,7 @@ async fn cmd_delete(
     }
 
     let config = Config::load(config_path)?;
-    let client = CbcClient::new(&config.host, &config.token, debug, no_tls_verify)?;
+    let client = CbcClient::new(&config.host, &config.token, opts)?;
 
     match client
         .delete::<serde_json::Value>(&format!("admin/robots/{}", args.name))

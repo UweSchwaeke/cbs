@@ -19,7 +19,7 @@ use cbsd_proto::{
 use clap::{Args, Subcommand};
 use serde::{Deserialize, Serialize};
 
-use crate::client::CbcClient;
+use crate::client::{CbcClient, ClientOpts};
 use crate::config::Config;
 use crate::error::Error;
 use crate::logs::LogsArgs;
@@ -196,16 +196,15 @@ struct RevokeResponse {
 pub async fn run(
     args: BuildArgs,
     config_path: Option<&std::path::Path>,
-    debug: bool,
-    no_tls_verify: bool,
+    opts: ClientOpts,
 ) -> Result<(), Error> {
     match args.command {
-        BuildCommands::New(a) => cmd_new(*a, config_path, debug, no_tls_verify).await,
-        BuildCommands::List(a) => cmd_list(a, config_path, debug, no_tls_verify).await,
-        BuildCommands::Get(a) => cmd_get(a, config_path, debug, no_tls_verify).await,
-        BuildCommands::Revoke(a) => cmd_revoke(a, config_path, debug, no_tls_verify).await,
-        BuildCommands::Components => cmd_components(config_path, debug, no_tls_verify).await,
-        BuildCommands::Logs(a) => crate::logs::run(a, config_path, debug, no_tls_verify).await,
+        BuildCommands::New(a) => cmd_new(*a, config_path, opts).await,
+        BuildCommands::List(a) => cmd_list(a, config_path, opts).await,
+        BuildCommands::Get(a) => cmd_get(a, config_path, opts).await,
+        BuildCommands::Revoke(a) => cmd_revoke(a, config_path, opts).await,
+        BuildCommands::Components => cmd_components(config_path, opts).await,
+        BuildCommands::Logs(a) => crate::logs::run(a, config_path, opts).await,
     }
 }
 
@@ -216,11 +215,10 @@ pub async fn run(
 async fn cmd_new(
     args: BuildNewArgs,
     config_path: Option<&std::path::Path>,
-    debug: bool,
-    no_tls_verify: bool,
+    opts: ClientOpts,
 ) -> Result<(), Error> {
     let config = Config::load(config_path)?;
-    let client = CbcClient::new(&config.host, &config.token, debug, no_tls_verify)?;
+    let client = CbcClient::new(&config.host, &config.token, opts)?;
 
     // Get current user for signed_off_by.
     let whoami: WhoamiResponse = client.get("auth/whoami").await?;
@@ -312,11 +310,10 @@ async fn cmd_new(
 async fn cmd_list(
     args: BuildListArgs,
     config_path: Option<&std::path::Path>,
-    debug: bool,
-    no_tls_verify: bool,
+    opts: ClientOpts,
 ) -> Result<(), Error> {
     let config = Config::load(config_path)?;
-    let client = CbcClient::new(&config.host, &config.token, debug, no_tls_verify)?;
+    let client = CbcClient::new(&config.host, &config.token, opts)?;
 
     // Build query path.
     let mut query_parts: Vec<String> = Vec::new();
@@ -367,11 +364,10 @@ async fn cmd_list(
 async fn cmd_get(
     args: BuildGetArgs,
     config_path: Option<&std::path::Path>,
-    debug: bool,
-    no_tls_verify: bool,
+    opts: ClientOpts,
 ) -> Result<(), Error> {
     let config = Config::load(config_path)?;
-    let client = CbcClient::new(&config.host, &config.token, debug, no_tls_verify)?;
+    let client = CbcClient::new(&config.host, &config.token, opts)?;
 
     let build: BuildRecord = client.get(&format!("builds/{}", args.id)).await?;
 
@@ -506,11 +502,10 @@ async fn cmd_get(
 async fn cmd_revoke(
     args: BuildRevokeArgs,
     config_path: Option<&std::path::Path>,
-    debug: bool,
-    no_tls_verify: bool,
+    opts: ClientOpts,
 ) -> Result<(), Error> {
     let config = Config::load(config_path)?;
-    let client = CbcClient::new(&config.host, &config.token, debug, no_tls_verify)?;
+    let client = CbcClient::new(&config.host, &config.token, opts)?;
 
     let resp: RevokeResponse = client.delete(&format!("builds/{}", args.id)).await?;
     println!("{}", resp.detail);
@@ -524,11 +519,10 @@ async fn cmd_revoke(
 
 async fn cmd_components(
     config_path: Option<&std::path::Path>,
-    debug: bool,
-    no_tls_verify: bool,
+    opts: ClientOpts,
 ) -> Result<(), Error> {
     let config = Config::load(config_path)?;
-    let client = CbcClient::new(&config.host, &config.token, debug, no_tls_verify)?;
+    let client = CbcClient::new(&config.host, &config.token, opts)?;
 
     let components: Vec<ComponentInfo> = client.get("components").await?;
 

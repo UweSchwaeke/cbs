@@ -108,7 +108,7 @@ cache, `Cargo.lock`) are excluded per the `git-commits` skill.
 | 14  | 2     | `cbsd-rs`        | wrap token material in `Secret<T>`                                | ~650 |            |
 | 15  | 2     | `cbsd-rs`        | redact token material from `tracing` call sites                   | ~200 | ⚠ at floor |
 | 16  | 2     | `cbsd-rs/server` | index `api_keys.key_prefix` for O(log n) lookups                  | ~50  | ⚠ tiny     |
-| 17  | 2     | `cbsd-rs/cbc`    | enforce HTTPS host and write config atomically                    | ~250 |            |
+| 17  | 2     | `cbsd-rs/cbc`    | enforce HTTPS host and write config atomically                    | ~350 |            |
 | 18  | 2     | `cbsd-rs/proto`  | add SI-18 regression test for `ServerMessage`                     | ~250 |            |
 | 19  | 3     | `cbsd-rs/worker` | report `Building` during accepted-phase reconnect                 | ~250 |            |
 | 20  | 3     | `cbsd-rs/server` | resolve dead workers by DB state and receipt                      | ~400 |            |
@@ -783,18 +783,33 @@ regeneration. Combining with other commits would mix unrelated topics.
 explicitly set (independent of `-k`/`--no-tls-verify`). `Config::save` writes
 atomically with mode `0o600` via temp-file + rename.
 
-**Packages**: `cbsd-rs/cbc` (`client.rs` URL parsing, `main.rs` flag,
-`config.rs` atomic save).
+**Packages**: `cbsd-rs/cbc`. The core logic lives in `client.rs` (URL parsing +
+the new `ClientOpts`), `main.rs` (`--insecure-http` global flag + warning), and
+`config.rs` (atomic save). The `--insecure-http` flag is plumbed via a new
+`client::ClientOpts` struct that bundles `debug`, `no_tls_verify`, and
+`insecure_http` (audit-rem D8); threading that one value replaces the two
+parallel positional `bool`s currently passed through ~70 command functions, so
+the commit also touches every `cbc` command module (`builds.rs`, `periodic.rs`,
+`worker.rs`, `logs.rs`, `channels.rs`, `admin/*`). This wide-but-mechanical
+churn (two params → one struct) is inherent to closing F11 — `insecure_http`
+must reach `CbcClient::new` through the same ~70 functions whether it travels as
+a struct field or as a third positional `bool`; the original 3-file scope below
+underestimated this. `ClientOpts` is chosen over the third positional `bool`
+because it avoids leaving three transposable `bool`s at every call site and
+absorbs future flags as fields, not signature changes.
 
-**Notable pitfalls**: see audit-rem D8. Key items: `--insecure-http` is
-independent of `--no-tls-verify`; per-command warning when `--insecure-http` is
-set; `OpenOptions::create_new(true).mode(0o600)` for the temp file; `fs::rename`
-over target; best-effort temp-file cleanup on error; Windows non-atomic-rename
-caveat documented but not blocking (cbc is Linux-primary).
+**Notable pitfalls**: see audit-rem D8. Key items: `ClientOpts` bundles the
+three flags and is threaded as one value; `--insecure-http` is independent of
+`--no-tls-verify` and warns once per invocation in `run()`; `parse_base_url`
+gains an `insecure_http` parameter plus the scheme check (`https` ok; `http`
+only with the opt-in; else error); `OpenOptions::create_new(true).mode(0o600)`
+for the temp file; `fs::rename` over target; best-effort temp-file cleanup on
+error; Windows non-atomic-rename caveat documented but not blocking (cbc is
+Linux-primary).
 
-**Tests**: scheme rejection (https accepted, http/ftp rejected);
-`--insecure-http` permits http with warning; atomic-save race test; error-path
-temp-file cleanup.
+**Tests**: scheme rejection (https accepted, http rejected without opt-in, ftp
+rejected even with it); `--insecure-http` permits http with warning; atomic-save
+race test; error-path temp-file cleanup.
 
 ---
 

@@ -21,6 +21,7 @@ pub mod users;
 
 use clap::{Args, Subcommand};
 
+use crate::client::ClientOpts;
 use crate::error::Error;
 
 // ---------------------------------------------------------------------------
@@ -64,24 +65,16 @@ struct UserSetDefaultChannelArgs {
 pub async fn run(
     args: AdminArgs,
     config_path: Option<&std::path::Path>,
-    debug: bool,
-    no_tls_verify: bool,
+    opts: ClientOpts,
 ) -> Result<(), Error> {
     match args.command {
-        AdminCommands::Roles(a) => roles::run(a, config_path, debug, no_tls_verify).await,
-        AdminCommands::Users(a) => users::run(a, config_path, debug, no_tls_verify).await,
-        AdminCommands::Robots(a) => robots::run(a, config_path, debug, no_tls_verify).await,
-        AdminCommands::Queue => queue::run(config_path, debug, no_tls_verify).await,
-        AdminCommands::Channel(a) => channels::run(a, config_path, debug, no_tls_verify).await,
+        AdminCommands::Roles(a) => roles::run(a, config_path, opts).await,
+        AdminCommands::Users(a) => users::run(a, config_path, opts).await,
+        AdminCommands::Robots(a) => robots::run(a, config_path, opts).await,
+        AdminCommands::Queue => queue::run(config_path, opts).await,
+        AdminCommands::Channel(a) => channels::run(a, config_path, opts).await,
         AdminCommands::UserSetDefaultChannel(a) => {
-            channels::set_user_default_channel(
-                config_path,
-                debug,
-                no_tls_verify,
-                &a.email,
-                a.channel_id,
-            )
-            .await
+            channels::set_user_default_channel(config_path, opts, &a.email, a.channel_id).await
         }
     }
 }

@@ -753,12 +753,33 @@ chmod, the file is world-readable (typical default umask `0o022` produces
 
 Decisions:
 
-- `parse_base_url` rejects any URL whose scheme is not `https`, returning
+- `parse_base_url` gains an `insecure_http: bool` parameter (sourced from
+  `ClientOpts::insecure_http`, see below) and validates the URL scheme: `https`
+  is always accepted; `http` is accepted only when `insecure_http` is set; any
+  other scheme — and `http` without the opt-in — is rejected with
   `Error::Config("host must be https; got: <scheme>")`.
 - Add an explicit opt-in flag `--insecure-http` (long form only, no short alias)
-  that allows `http://` hosts. The flag is independent of `--no-tls-verify`, and
-  when set the CLI emits a `WARN`-style message on every command:
+  that allows `http://` hosts. It is a `global = true` flag on the top-level
+  `Cli`, parallel to the existing `--no-tls-verify`/`-k` and independent of it
+  (`-k` toggles cert validation for `https`; `--insecure-http` permits the
+  `http` scheme). When set, `run()` emits a `WARN`-style message once per
+  invocation, alongside the existing `-k` warning:
   `warning: --insecure-http is set; bearer tokens are sent in cleartext`.
+- **Plumbing — `ClientOpts` (chosen over threading parallel bools):** the three
+  client-construction flags (`debug`, `no_tls_verify`, `insecure_http`) are
+  bundled into a single `client::ClientOpts` struct
+  (`#[derive(Clone, Copy, Debug)]`; all-`bool`, no secret material — the token
+  stays a separate `&SecretString` argument to `CbcClient::new`). `run()` builds
+  one `ClientOpts` from the global `Cli` flags and threads that single value
+  through every command function to `CbcClient::new` /
+  `CbcClient::unauthenticated`, which unpack it (`opts.no_tls_verify` for cert
+  validation, `opts.insecure_http` into `parse_base_url`, `opts.debug` stored on
+  the client). This replaces the two parallel positional `bool`s (`debug`,
+  `no_tls_verify`) currently threaded through ~70 command functions across the
+  `cbc` crate. The alternative — adding `insecure_http` as a third positional
+  `bool` — touches the same functions but leaves three transposable `bool`s at
+  every call site; the struct is self-documenting and absorbs future flags as
+  fields rather than as signature changes.
 - The `Config` struct is unchanged on disk; the validation lives in the URL
   parsing path so legacy config files with `http://` either fail loudly or
   require the explicit flag.
@@ -790,9 +811,11 @@ Decisions:
 
 Tests:
 
-- `parse_base_url("http://x")` → error with the documented message.
-- `parse_base_url("https://x")` → ok.
-- `parse_base_url("ftp://x")` → error.
+- `parse_base_url("http://x", false)` → error with the documented message.
+- `parse_base_url("http://x", true)` → ok (the opt-in permits `http`).
+- `parse_base_url("https://x", false)` → ok.
+- `parse_base_url("ftp://x", true)` → error (the opt-in widens only to `http`,
+  not to arbitrary schemes).
 - CLI with `--insecure-http http://x` → command succeeds in test mode and emits
   the warning on stderr.
 - `Config::save` test using a `tempfile` directory: verify the final file mode

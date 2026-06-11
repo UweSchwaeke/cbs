@@ -15,7 +15,7 @@
 use clap::{Args, Subcommand};
 use serde::{Deserialize, Serialize};
 
-use crate::client::CbcClient;
+use crate::client::{CbcClient, ClientOpts};
 use crate::config::Config;
 use crate::error::Error;
 
@@ -173,24 +173,17 @@ struct RoleDetail {
 pub async fn run(
     args: UsersArgs,
     config_path: Option<&std::path::Path>,
-    debug: bool,
-    no_tls_verify: bool,
+    opts: ClientOpts,
 ) -> Result<(), Error> {
     match args.command {
-        UsersCommands::List => cmd_list(config_path, debug, no_tls_verify).await,
-        UsersCommands::Get(a) => cmd_get(a, config_path, debug, no_tls_verify).await,
-        UsersCommands::Activate(a) => cmd_activate(a, config_path, debug, no_tls_verify).await,
-        UsersCommands::Deactivate(a) => cmd_deactivate(a, config_path, debug, no_tls_verify).await,
+        UsersCommands::List => cmd_list(config_path, opts).await,
+        UsersCommands::Get(a) => cmd_get(a, config_path, opts).await,
+        UsersCommands::Activate(a) => cmd_activate(a, config_path, opts).await,
+        UsersCommands::Deactivate(a) => cmd_deactivate(a, config_path, opts).await,
         UsersCommands::Roles(a) => match a.command {
-            UserRolesCommands::Set(sa) => {
-                cmd_roles_set(sa, config_path, debug, no_tls_verify).await
-            }
-            UserRolesCommands::Add(sa) => {
-                cmd_roles_add(sa, config_path, debug, no_tls_verify).await
-            }
-            UserRolesCommands::Remove(sa) => {
-                cmd_roles_remove(sa, config_path, debug, no_tls_verify).await
-            }
+            UserRolesCommands::Set(sa) => cmd_roles_set(sa, config_path, opts).await,
+            UserRolesCommands::Add(sa) => cmd_roles_add(sa, config_path, opts).await,
+            UserRolesCommands::Remove(sa) => cmd_roles_remove(sa, config_path, opts).await,
         },
     }
 }
@@ -199,13 +192,9 @@ pub async fn run(
 // admin users list
 // ---------------------------------------------------------------------------
 
-async fn cmd_list(
-    config_path: Option<&std::path::Path>,
-    debug: bool,
-    no_tls_verify: bool,
-) -> Result<(), Error> {
+async fn cmd_list(config_path: Option<&std::path::Path>, opts: ClientOpts) -> Result<(), Error> {
     let config = Config::load(config_path)?;
-    let client = CbcClient::new(&config.host, &config.token, debug, no_tls_verify)?;
+    let client = CbcClient::new(&config.host, &config.token, opts)?;
 
     let users: Vec<UserWithRoles> = client.get("admin/entities?type=user").await?;
 
@@ -238,8 +227,7 @@ async fn cmd_list(
 async fn cmd_get(
     args: GetArgs,
     config_path: Option<&std::path::Path>,
-    debug: bool,
-    no_tls_verify: bool,
+    opts: ClientOpts,
 ) -> Result<(), Error> {
     if args.email.starts_with("robot+") {
         eprintln!(
@@ -250,7 +238,7 @@ async fn cmd_get(
     }
 
     let config = Config::load(config_path)?;
-    let client = CbcClient::new(&config.host, &config.token, debug, no_tls_verify)?;
+    let client = CbcClient::new(&config.host, &config.token, opts)?;
 
     let users: Vec<UserWithRoles> = client.get("admin/entities?type=user").await?;
 
@@ -332,11 +320,10 @@ async fn cmd_get(
 async fn cmd_activate(
     args: ActivateArgs,
     config_path: Option<&std::path::Path>,
-    debug: bool,
-    no_tls_verify: bool,
+    opts: ClientOpts,
 ) -> Result<(), Error> {
     let config = Config::load(config_path)?;
-    let client = CbcClient::new(&config.host, &config.token, debug, no_tls_verify)?;
+    let client = CbcClient::new(&config.host, &config.token, opts)?;
 
     let _resp: SimpleResponse = client
         .put_empty(&format!("admin/entity/{}/activate", args.email))
@@ -353,11 +340,10 @@ async fn cmd_activate(
 async fn cmd_deactivate(
     args: DeactivateArgs,
     config_path: Option<&std::path::Path>,
-    debug: bool,
-    no_tls_verify: bool,
+    opts: ClientOpts,
 ) -> Result<(), Error> {
     let config = Config::load(config_path)?;
-    let client = CbcClient::new(&config.host, &config.token, debug, no_tls_verify)?;
+    let client = CbcClient::new(&config.host, &config.token, opts)?;
 
     match client
         .put_empty::<DeactivateResponse>(&format!("admin/entity/{}/deactivate", args.email))
@@ -390,11 +376,10 @@ async fn cmd_deactivate(
 async fn cmd_roles_set(
     args: RolesSetArgs,
     config_path: Option<&std::path::Path>,
-    debug: bool,
-    no_tls_verify: bool,
+    opts: ClientOpts,
 ) -> Result<(), Error> {
     let config = Config::load(config_path)?;
-    let client = CbcClient::new(&config.host, &config.token, debug, no_tls_verify)?;
+    let client = CbcClient::new(&config.host, &config.token, opts)?;
 
     if args.role.is_empty() {
         return Err(Error::Other("at least one --role is required".to_string()));
@@ -419,11 +404,10 @@ async fn cmd_roles_set(
 async fn cmd_roles_add(
     args: RolesAddArgs,
     config_path: Option<&std::path::Path>,
-    debug: bool,
-    no_tls_verify: bool,
+    opts: ClientOpts,
 ) -> Result<(), Error> {
     let config = Config::load(config_path)?;
-    let client = CbcClient::new(&config.host, &config.token, debug, no_tls_verify)?;
+    let client = CbcClient::new(&config.host, &config.token, opts)?;
 
     let body = AddUserRoleBody {
         role: args.role.clone(),
@@ -444,11 +428,10 @@ async fn cmd_roles_add(
 async fn cmd_roles_remove(
     args: RolesRemoveArgs,
     config_path: Option<&std::path::Path>,
-    debug: bool,
-    no_tls_verify: bool,
+    opts: ClientOpts,
 ) -> Result<(), Error> {
     let config = Config::load(config_path)?;
-    let client = CbcClient::new(&config.host, &config.token, debug, no_tls_verify)?;
+    let client = CbcClient::new(&config.host, &config.token, opts)?;
 
     let _resp: SimpleResponse = client
         .delete(&format!("admin/entity/{}/roles/{}", args.email, args.role,))
