@@ -16,14 +16,16 @@
 _CHECKMARK="\u2713"
 _INFOMARK="\u2139"
 
-[[ ! -e ".git" ]] &&
-  echo "error: must be run from the repository's root" >/dev/stderr && exit 1
+[[ ! -e ".git" ]] && {
+  echo "error: must be run from the repository's root" >&2
+  exit 1
+}
 
 default_remote="$(git remote -v 2>/dev/null | grep 'push' | head -n 1 | cut -f1)"
 
 usage() {
   default_remote_str="${default_remote:-N/A}"
-  cat <<EOF >/dev/stderr
+  cat <<EOF >&2
 usage: $(basename "$0") <version> [options...]
 
 Add an annotated tag to the current branch with the provided version.
@@ -34,21 +36,27 @@ Versions must always be in the format 'vMAJOR.minor.patch', where 'MAJOR',
 'minor', and 'patch', are integers greater or equal to zero.
 
 Options:
+  --no-update-latest    Do not update latest major version tag
   -r | --remote NAME    Name of remote to push to (default: ${default_remote_str})
   -h | --help           Show this message
 
 EOF
 }
 
+update_latest_major=1
 push_remote="${default_remote}"
 positional_args=()
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --no-update-latest)
+      update_latest_major=0
+      ;;
     -r | --remote)
-      [[ -z $2 ]] &&
-        echo "error: missing argument for '--remote'" >/dev/stderr &&
+      [[ -z $2 ]] && {
+        echo "error: missing argument for '--remote'" >&2
         exit 1
+      }
       push_remote="${2}"
       shift 1
       ;;
@@ -57,7 +65,7 @@ while [[ $# -gt 0 ]]; do
       exit 0
       ;;
     -*)
-      echo "error: unknown argument '${1}'" >/dev/stderr
+      echo "error: unknown argument '${1}'" >&2
       exit 1
       ;;
     *)
@@ -69,67 +77,79 @@ while [[ $# -gt 0 ]]; do
 done
 
 cur_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
-[[ -z "${cur_branch}" ]] &&
-  echo "error: unable to obtain current git branch" >/dev/stderr &&
+[[ -z ${cur_branch} ]] && {
+  echo "error: unable to obtain current git branch" >&2
   exit 1
+}
 
-[[ "${cur_branch}" != "main" ]] &&
-  echo "error: can only release while on 'main' branch" >/dev/stderr &&
+[[ ${cur_branch} != "main" ]] && {
+  echo "error: can only release while on 'main' branch" >&2
   exit 1
+}
 
-[[ -z "${push_remote}" ]] &&
-  echo "error: missing push remote" >/dev/stderr &&
-  usage &&
+[[ -z ${push_remote} ]] && {
+  echo "error: missing push remote" >&2
+  usage
   exit 1
+}
 
-[[ ${#positional_args[@]} -eq 0 ]] &&
-  echo "error: missing 'version' argument" >/dev/stderr &&
-  usage &&
+[[ ${#positional_args[@]} -eq 0 ]] && {
+  echo "error: missing 'version' argument" >&2
+  usage
   exit 1
+}
 
-[[ ${#positional_args[@]} -gt 1 ]] &&
-  echo "error: too many arguments provided" >/dev/stderr &&
-  usage &&
+[[ ${#positional_args[@]} -gt 1 ]] && {
+  echo "error: too many arguments provided" >&2
+  usage
   exit 1
+}
 
 version="${positional_args[0]}"
 
 version_regex='^v[0-9]+\.[0-9]+\.[0-9]+(-[a-z]+[0-9]+)?$'
-[[ ! "${version}" =~ ${version_regex} ]] &&
-  echo "error: malformed version, should be in format vMAJOR.minor.patch" >/dev/stderr &&
+[[ ! ${version} =~ ${version_regex} ]] && {
+  echo "error: malformed version, should be in format vMAJOR.minor.patch" >&2
   exit 1
+}
+
+version_stream="$(echo "${version}" | cut -d'.' -f1)"
+
+echo -e "${_INFOMARK} update current main branch from remote '${push_remote}'"
+if ! git remote update "${push_remote}" >&/dev/null; then
+  echo "error: unable to update remote '${push_remote}'" >&2
+  exit 1
+fi
+
+if ! git pull "${push_remote}" main:main >&/dev/null; then
+  echo "error: unable to pull latest remote main from '${push_remote}'" >&2
+  exit 1
+fi
 
 tag_found="$(git tag -l "${version}" 2>/dev/null)"
-[[ -n "${tag_found}" ]] && [[ "${tag_found}" == "${version}" ]] &&
-  echo "error: version '${version}' already exists" >/dev/stderr &&
+[[ -n ${tag_found} && ${tag_found} == "${version}" ]] && {
+  echo "error: version '${version}' already exists" >&2
   exit 1
+}
 
 git_user="$(git config user.name 2>/dev/null)"
 git_email="$(git config user.email 2>/dev/null)"
 git_signing_key="$(git config user.signingkey 2>/dev/null)"
 
-[[ -z "${git_user}" ]] &&
-  echo "error: missing git user name, must be set before releasing" >/dev/null &&
+[[ -z ${git_user} ]] && {
+  echo "error: missing git user name, must be set before releasing" >&2
   exit 1
+}
 
-[[ -z "${git_email}" ]] &&
-  echo "error: missing git user email, must be set before releasing" >/dev/null &&
+[[ -z ${git_email} ]] && {
+  echo "error: missing git user email, must be set before releasing" >&2
   exit 1
+}
 
-[[ -z "${git_signing_key}" ]] &&
-  echo "error: missing git user signing key, must be set before releasing" >/dev/null &&
+[[ -z ${git_signing_key} ]] && {
+  echo "error: missing git user signing key, must be set before releasing" >&2
   exit 1
-
-echo -e "${_INFOMARK} update current main branch from remote '${push_remote}'"
-if ! git remote update "${push_remote}" >/dev/null 2>&1; then
-  echo "error: unable to update remote '${push_remote}'"
-  exit 1
-fi
-
-if ! git pull "${push_remote}" main:main >/dev/null 2>&1; then
-  echo "error: unable to pull latest remote main from remote '${push_remote}'"
-  exit 1
-fi
+}
 
 tmp_msg_file="$(mktemp)"
 cat <<EOF >"${tmp_msg_file}"
@@ -149,10 +169,29 @@ rm "${tmp_msg_file}"
 echo -e "${_CHECKMARK} created tag '${version}'"
 echo -e "${_INFOMARK} pushing to remote '${push_remote}'..."
 
-if ! git push "${push_remote}" tag "${version}"; then
-  echo "error: unable to push tag '${version}' to remote '${push_remote}'" >/dev/null
+if ! git push "${push_remote}" tag "${version}" >&/dev/null; then
+  echo "error: unable to push tag '${version}' to remote '${push_remote}'" >&2
   exit 1
 fi
 
 echo -e "${_CHECKMARK} pushed tag '${version}' to '${push_remote}'"
+
+if [[ ${update_latest_major} -eq 1 ]]; then
+  latest_major_tag="latest-${version_stream}"
+  echo -e "${_INFOMARK} updating latest major version tag '${latest_major_tag}' to '${version}'"
+
+  git tag -f "${latest_major_tag}" "${version}" >&/dev/null || {
+    echo "error: unable to update latest major version tag '${latest_major_tag}'" >&2
+    exit 1
+  }
+
+  git push "${push_remote}" --force tag "${latest_major_tag}" >&/dev/null || {
+    echo "error: unable to push latest major version tag '${latest_major_tag}' to remote '${push_remote}'" >&2
+    exit 1
+  }
+
+  echo -e "${_CHECKMARK} updated latest major version tag '${latest_major_tag}'" \
+    "to '${version}' and pushed to '${push_remote}'"
+fi
+
 exit 0

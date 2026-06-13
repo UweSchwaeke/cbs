@@ -13,8 +13,8 @@
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
 
-[[ ! -e ".git" ]] &&
-  echo "error: must be run from repository root" >/dev/stderr && exit 1
+[[ ! -e ".git" ]] \
+  && echo "error: must be run from repository root" >/dev/stderr && exit 1
 
 if ! podman --version >/dev/null 2>&1; then
   echo "error: podman is not installed" >/dev/stderr
@@ -22,9 +22,9 @@ if ! podman --version >/dev/null 2>&1; then
 fi
 
 repo_tag="$(git describe --always 2>/dev/null)"
-[[ -z "${repo_tag}" ]] &&
-  echo "error: failed to determine git commit hash" >/dev/stderr &&
-  exit 1
+[[ -z ${repo_tag} ]] \
+  && echo "error: failed to determine git commit hash" >/dev/stderr \
+  && exit 1
 
 server_image="cbs/cbsd-server"
 worker_image="cbs/cbsd-worker"
@@ -60,26 +60,26 @@ force_rebuild=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -s | --server)
-      [[ -z $2 ]] &&
-        echo "error: missing argument for '--server'" >/dev/stderr &&
-        usage &&
-        exit 1
+      [[ -z $2 ]] \
+        && echo "error: missing argument for '--server'" >/dev/stderr \
+        && usage \
+        && exit 1
       server_image_tagged="${2}"
       shift 1
       ;;
     -w | --worker)
-      [[ -z $2 ]] &&
-        echo "error: missing argument for '--worker'" >/dev/stderr &&
-        usage &&
-        exit 1
+      [[ -z $2 ]] \
+        && echo "error: missing argument for '--worker'" >/dev/stderr \
+        && usage \
+        && exit 1
       worker_image_tagged="${2}"
       shift 1
       ;;
     -r | --registry)
-      [[ -z $2 ]] &&
-        echo "error: missing argument for '--registry'" >/dev/stderr &&
-        usage &&
-        exit 1
+      [[ -z $2 ]] \
+        && echo "error: missing argument for '--registry'" >/dev/stderr \
+        && usage \
+        && exit 1
       registry="${2}"
       shift 1
       ;;
@@ -111,21 +111,21 @@ while [[ $# -gt 0 ]]; do
   shift 1
 done
 
-[[ ${build_server} -eq 0 && ${build_worker} -eq 0 ]] &&
-  echo "error: at least one of '--no-server' or '--no-worker' must be omitted" >/dev/stderr &&
-  usage &&
-  exit 1
+[[ ${build_server} -eq 0 && ${build_worker} -eq 0 ]] \
+  && echo "error: at least one of '--no-server' or '--no-worker' must be omitted" >/dev/stderr \
+  && usage \
+  && exit 1
 
 build_image() {
   target="${1}"
-  [[ -z "${target}" ]] &&
-    echo "error: missing build target" >/dev/stderr &&
-    exit 1
+  [[ -z ${target} ]] \
+    && echo "error: missing build target" >/dev/stderr \
+    && exit 1
 
   image_dst="${2}"
-  [[ -z "${image_dst}" ]] &&
-    echo "error: missing image name" >/dev/stderr &&
-    exit 1
+  [[ -z ${image_dst} ]] \
+    && echo "error: missing image name" >/dev/stderr \
+    && exit 1
 
   no_cache_arg=""
   [[ $force_rebuild -eq 1 ]] && no_cache_arg="--no-cache"
@@ -159,16 +159,16 @@ if [[ $update_latest -eq 1 ]]; then
   if [[ ${build_server} -eq 1 ]]; then
     echo "tagging server image as latest: ${server_image_latest}"
     podman tag "${server_image_dst}" "${server_image_latest}" || (
-      echo "error: failed to tag server image '${server_image_latest}'" >/dev/stderr &&
-        exit 1
+      echo "error: failed to tag server image '${server_image_latest}'" >/dev/stderr \
+        && exit 1
     )
   fi
 
   if [[ ${build_worker} -eq 1 ]]; then
     echo "tagging worker image as latest: ${worker_image_latest}"
     podman tag "${worker_image_dst}" "${worker_image_latest}" || (
-      echo "error: failed to tag worker image '${worker_image_latest}'" >/dev/stderr &&
-        exit 1
+      echo "error: failed to tag worker image '${worker_image_latest}'" >/dev/stderr \
+        && exit 1
     )
   fi
 fi
@@ -183,15 +183,15 @@ if [[ ${push} -eq 1 ]]; then
   if [[ ${build_server} -eq 1 ]]; then
     echo "pushing server image: ${server_image_dst}"
     podman push "${server_image_dst}" || (
-      echo "error: failed to push server image '${server_image_dst}'" >/dev/stderr &&
-        exit 1
+      echo "error: failed to push server image '${server_image_dst}'" >/dev/stderr \
+        && exit 1
     )
 
     if [[ ${update_latest} -eq 1 ]]; then
       echo "pushing server image latest tag: ${server_image_latest}"
       podman push "${server_image_latest}" || (
-        echo "error: failed to push server image latest tag '${server_image_latest}'" >/dev/stderr &&
-          exit 1
+        echo "error: failed to push server image latest tag '${server_image_latest}'" >/dev/stderr \
+          && exit 1
       )
     fi
   fi
@@ -199,15 +199,15 @@ if [[ ${push} -eq 1 ]]; then
   if [[ ${build_worker} -eq 1 ]]; then
     echo "pushing worker image: ${worker_image_dst}"
     podman push "${worker_image_dst}" || (
-      echo "error: failed to push worker image '${worker_image_dst}'" >/dev/stderr &&
-        exit 1
+      echo "error: failed to push worker image '${worker_image_dst}'" >/dev/stderr \
+        && exit 1
     )
 
     if [[ $update_latest -eq 1 ]]; then
       echo "pushing worker image latest tag: ${worker_image_latest}"
       podman push "${worker_image_latest}" || (
-        echo "error: failed to push worker image latest tag '${worker_image_latest}'" >/dev/stderr &&
-          exit 1
+        echo "error: failed to push worker image latest tag '${worker_image_latest}'" >/dev/stderr \
+          && exit 1
       )
     fi
   fi

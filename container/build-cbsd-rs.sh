@@ -33,6 +33,7 @@ fi
 
 CONTAINERFILE="${SCRIPT_DIR}/ContainerFile.cbsd-rs"
 GIT_VERSION="$(git -C "${REPO_ROOT}" describe --always --match='' 2>/dev/null || echo unknown)"
+GIT_TAG="$(git -C "${REPO_ROOT}" describe --tags --match='v*' 2>/dev/null || echo "v${GIT_VERSION}")"
 
 registry="harbor.clyso.com"
 image_org="cbs"
@@ -51,7 +52,7 @@ Targets:
   all       Build server, worker, and UI images
 
 Options:
-  --tag TAG               Image tag (default: git describe output)
+  --tag TAG               Image tag (default: ${GIT_TAG})
   -r|--registry URL       Container registry (default: ${registry})
   --server-image IMAGE    Override server image name (default: ${image_org}/cbsd-rs-server)
   --worker-image IMAGE    Override worker image name (default: ${image_org}/cbsd-rs-worker)
@@ -63,7 +64,7 @@ Options:
 EOF
 }
 
-TAG="${GIT_VERSION}"
+TAG="${GIT_TAG}"
 PUSH=0
 UPDATE_LATEST=0
 FORCE_REBUILD=0
@@ -71,14 +72,14 @@ TARGETS=()
 
 while [[ $# -gt 0 ]]; do
   case $1 in
-    server|worker|ui|all)
+    server | worker | ui | all)
       TARGETS+=("$1")
       ;;
     --tag)
       TAG="${2:?--tag requires a value}"
       shift
       ;;
-    -r|--registry)
+    -r | --registry)
       registry="${2:?--registry requires a value}"
       shift
       ;;
@@ -103,7 +104,7 @@ while [[ $# -gt 0 ]]; do
     --force-rebuild)
       FORCE_REBUILD=1
       ;;
-    -h|--help)
+    -h | --help)
       usage
       exit 0
       ;;
@@ -130,7 +131,7 @@ resolve_image_name() {
   case "${target}" in
     server) override="${server_image}" ;;
     worker) override="${worker_image}" ;;
-    ui)     override="${ui_image}" ;;
+    ui) override="${ui_image}" ;;
   esac
 
   if [[ -n "${override}" ]]; then
