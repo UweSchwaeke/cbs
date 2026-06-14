@@ -351,6 +351,7 @@ dependencies = [
  "chrono",
  "serde",
  "serde_json",
+ "strum",
  "utoipa",
 ]
 
