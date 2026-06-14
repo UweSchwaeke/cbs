@@ -272,7 +272,7 @@ async fn handle_connection(
 
     // Step 3: Connection migration — check for existing entry with same
     // registered_worker_id (reconnection or stale double-connect).
-    let old_connection_to_cleanup: Option<(String, bool)> = {
+    let old_connection_to_cleanup: Option<(String, bool, Vec<i64>)> = {
         let mut queue = state.queue.lock().await;
         let old = queue.workers.iter().find_map(|(cid, ws)| {
             if ws.registered_worker_id() == Some(&registered_worker_id) && *cid != connection_id {
@@ -282,10 +282,14 @@ async fn handle_connection(
             }
         });
 
-        if let Some((old_cid, was_connected)) = &old {
-            // Migrate active build references from old to new connection
+        let result = if let Some((old_cid, was_connected)) = old {
+            // Migrate active build references from old to new connection,
+            // capturing which builds were owned by the old connection so D13
+            // can send a migration-supersede revoke on the old sender below.
+            let mut migrated_builds = Vec::new();
             for ab in queue.active.values_mut() {
-                if ab.connection_id == *old_cid {
+                if ab.connection_id == old_cid {
+                    migrated_builds.push(ab.build_id);
                     ab.connection_id = connection_id.clone();
                 }
             }
@@ -296,10 +300,14 @@ async fn handle_connection(
                 old_connection = %old_cid,
                 new_connection = %connection_id,
                 was_connected = was_connected,
+                migrated_builds = migrated_builds.len(),
                 "migrated worker '{}' to new connection",
                 worker_name,
             );
-        }
+            Some((old_cid, was_connected, migrated_builds))
+        } else {
+            None
+        };
 
         // Register new connection
         queue.register_worker(
@@ -314,17 +322,22 @@ async fn handle_connection(
             },
         );
 
-        old
+        result
     };
     // Queue lock released here.
 
     // Clean up old connection's sender (after releasing queue lock to avoid
     // lock inversion — cleanup_worker acquires worker_senders first, then queue).
-    if let Some((old_cid, was_connected)) = old_connection_to_cleanup {
-        {
-            let mut senders = state.worker_senders.lock().await;
-            senders.remove(&old_cid);
-        }
+    if let Some((old_cid, was_connected, migrated_builds)) = old_connection_to_cleanup {
+        // audit-rem D13 (option A): best-effort stop-work to the superseded
+        // connection, then remove its sender — a single helper under one lock so
+        // the send-before-remove ordering can't be lost to a refactor. A no-op
+        // revoke in the common reconnect case where the old socket is already
+        // gone (single-connection worker); the sender is removed either way. See
+        // design 019 v2.
+        dispatch::revoke_and_remove_superseded(&state.worker_senders, &old_cid, &migrated_builds)
+            .await;
+
         if was_connected {
             // Stale double-connect: re-queue any orphaned build from old connection.
             handle_worker_dead(&state, &old_cid).await;

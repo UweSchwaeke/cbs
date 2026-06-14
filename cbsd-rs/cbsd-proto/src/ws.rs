@@ -35,7 +35,18 @@ pub enum ServerMessage {
     /// Cancel a build (running or not yet accepted). If the worker receives
     /// this before sending `build_accepted`, it responds with
     /// `build_finished(revoked)` immediately.
-    BuildRevoke { build_id: BuildId },
+    ///
+    /// `reason` labels why the server sent the revoke (audit-rem D13). It is a
+    /// server-side annotation only: the current worker ignores it and applies
+    /// its normal revoke handling regardless (option A — see design 019 v2).
+    /// The field is optional and `skip`-serialized when absent, so the wire
+    /// shape is unchanged for the pre-D13 case and an older peer simply ignores
+    /// it (SI-18: no `deny_unknown_fields`).
+    BuildRevoke {
+        build_id: BuildId,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reason: Option<BuildRevokeReason>,
+    },
 
     /// Connection accepted. Sent after validating the worker's `hello`.
     Welcome {
@@ -85,6 +96,25 @@ pub enum WorkerBuildAction {
 pub enum UnauthorizedBuildReason {
     /// The build is not currently assigned to the reporting connection.
     NotAssigned,
+}
+
+/// Why the server sent a [`ServerMessage::BuildRevoke`] (audit-rem D13). This
+/// is a server-side label for observability and protocol forward-compatibility;
+/// the current worker ignores it (option A — see design 019 v2). It exists so a
+/// future multi-connection worker could distinguish a migration supersede from
+/// an admin revoke without a wire change.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BuildRevokeReason {
+    /// Operator/admin-initiated revoke (also the meaning of an absent reason).
+    Admin,
+    /// Sent (best-effort) on the OLD connection during a same-worker reconnect
+    /// migration so a still-writable superseded connection stops work. The
+    /// single-connection worker normally never reads this — the old socket is
+    /// already dropped by the time it is sent (see design 019 v2).
+    MigrationSupersede,
+    /// Reporter-directed stray revoke from the WCP unauthorized-action path.
+    UnauthorizedAction,
 }
 
 // ---------------------------------------------------------------------------
@@ -430,6 +460,66 @@ mod tests {
         assert!(json.contains(r#""min_version":1"#));
     }
 
+    // audit-rem D13: BuildRevoke.reason wire compatibility (both directions).
+
+    #[test]
+    fn build_revoke_absent_reason_deserializes_to_none() {
+        // Old server → new worker: no `reason` field on the wire.
+        let parsed: ServerMessage =
+            serde_json::from_str(r#"{"type":"build_revoke","build_id":7}"#).unwrap();
+        match parsed {
+            ServerMessage::BuildRevoke { build_id, reason } => {
+                assert_eq!(build_id, BuildId(7));
+                assert_eq!(reason, None, "absent reason must deserialize to None");
+            }
+            other => panic!("expected BuildRevoke, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn build_revoke_none_reason_omits_field_on_wire() {
+        // New server, uncategorized revoke → wire shape identical to pre-D13.
+        let msg = ServerMessage::BuildRevoke {
+            build_id: BuildId(7),
+            reason: None,
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(
+            !json.contains("reason"),
+            "None reason must be skip-serialized for wire compatibility: {json}"
+        );
+    }
+
+    #[test]
+    fn build_revoke_some_reason_round_trips() {
+        let msg = ServerMessage::BuildRevoke {
+            build_id: BuildId(7),
+            reason: Some(BuildRevokeReason::MigrationSupersede),
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains(r#""reason":"migration_supersede""#));
+        let parsed: ServerMessage = serde_json::from_str(&json).unwrap();
+        assert!(matches!(
+            parsed,
+            ServerMessage::BuildRevoke {
+                reason: Some(BuildRevokeReason::MigrationSupersede),
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn build_revoke_unknown_reason_value_is_rejected() {
+        // An unknown *value* for the known `reason` field is rejected by serde
+        // regardless of deny_unknown_fields (which SI-18 forbids on the type).
+        let result: Result<ServerMessage, _> =
+            serde_json::from_str(r#"{"type":"build_revoke","build_id":7,"reason":"bogus"}"#);
+        assert!(
+            result.is_err(),
+            "unknown BuildRevokeReason value must be rejected"
+        );
+    }
+
     // -----------------------------------------------------------------------
     // SI-18 / D13-T6: `ServerMessage` must accept unknown fields, or a newer
     // peer's added field breaks deserialization on an older peer mid-rolling-
@@ -538,6 +628,7 @@ mod tests {
             },
             ServerMessageTag::BuildRevoke => ServerMessage::BuildRevoke {
                 build_id: BuildId(0),
+                reason: None,
             },
             ServerMessageTag::Welcome => ServerMessage::Welcome {
                 protocol_version: 2,

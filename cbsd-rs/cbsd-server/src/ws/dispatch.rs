@@ -18,7 +18,7 @@
 //! sends `BuildNew` + binary tarball to the worker.
 
 use axum::extract::ws::Message;
-use cbsd_proto::ws::ServerMessage;
+use cbsd_proto::ws::{BuildRevokeReason, ServerMessage};
 use cbsd_proto::{BuildId, Priority};
 use sqlx::SqlitePool;
 
@@ -638,8 +638,56 @@ pub async fn send_reporter_directed_revoke(
     connection_id: &str,
     build_id: BuildId,
 ) {
-    let msg = ServerMessage::BuildRevoke { build_id };
+    let msg = ServerMessage::BuildRevoke {
+        build_id,
+        reason: Some(BuildRevokeReason::UnauthorizedAction),
+    };
     send_text_to_connection(worker_senders, connection_id, &msg).await;
+}
+
+/// Audit-rem D13 (option A): best-effort stop-work to a superseded same-worker
+/// connection, then remove its sender — in that order, under a single
+/// `worker_senders` lock so the send-before-remove ordering cannot be lost to a
+/// later refactor. Sends `BuildRevoke { reason: MigrationSupersede }` on the OLD
+/// sender for each migrated build, then drops the sender entry.
+///
+/// Reporter-directed cleanup only — does NOT touch DB / queue / ack-timer /
+/// log-watcher state; the new connection is already the authoritative owner.
+/// Delivery is genuinely best-effort: in the common reconnect case the old
+/// connection is already gone (the worker runs one connection at a time and has
+/// dropped the old socket), so the revoke is a no-op and only the sender removal
+/// takes effect. See design 019 v2.
+pub async fn revoke_and_remove_superseded(
+    worker_senders: &WorkerSenders,
+    old_connection_id: &str,
+    build_ids: &[i64],
+) {
+    let mut senders = worker_senders.lock().await;
+    if let Some(tx) = senders.get(old_connection_id) {
+        for &build_id in build_ids {
+            let msg = ServerMessage::BuildRevoke {
+                build_id: BuildId(build_id),
+                reason: Some(BuildRevokeReason::MigrationSupersede),
+            };
+            let json =
+                serde_json::to_string(&msg).expect("ServerMessage serialization cannot fail");
+            let revoke_send_ok = tx.send(Message::Text(json.into())).is_ok();
+            tracing::info!(
+                build_id,
+                old_connection = %old_connection_id,
+                revoke_send_ok,
+                "D13: migration-supersede revoke sent on superseded connection"
+            );
+        }
+    } else {
+        tracing::info!(
+            old_connection = %old_connection_id,
+            "D13: superseded connection's sender already gone; migration revoke is a no-op"
+        );
+    }
+    // Always remove the superseded sender, AFTER attempting the revoke. Holding
+    // a single lock for send-then-remove makes that ordering un-reorderable.
+    senders.remove(old_connection_id);
 }
 
 /// Send a `BuildRevoke` message to the worker running a build, transition the
@@ -670,6 +718,7 @@ pub async fn send_build_revoke(state: &AppState, build_id: i64) -> Result<(), Di
     // Send BuildRevoke to the worker.
     let msg = ServerMessage::BuildRevoke {
         build_id: BuildId(build_id),
+        reason: Some(BuildRevokeReason::Admin),
     };
     let json_text = serde_json::to_string(&msg).expect("ServerMessage serialization cannot fail");
 
@@ -1295,6 +1344,47 @@ mod tests {
             matches!(parsed, ServerMessage::BuildRevoke { .. }),
             "expected BuildRevoke, got {parsed:?}"
         );
+    }
+
+    #[tokio::test]
+    async fn revoke_and_remove_superseded_sends_then_removes() {
+        let senders: WorkerSenders = Arc::new(Mutex::new(HashMap::new()));
+        let mut rx = register_sender(&senders, "old-conn").await;
+
+        revoke_and_remove_superseded(&senders, "old-conn", &[7, 9]).await;
+
+        // The revokes were delivered — which proves they were sent BEFORE the
+        // sender was removed (a remove-first ordering would drop the sender and
+        // the rx would receive nothing).
+        for expected in [7i64, 9] {
+            let msg = rx.try_recv().expect("a revoke per migrated build");
+            let Message::Text(text) = msg else {
+                panic!("expected Text frame, got {msg:?}");
+            };
+            let parsed: ServerMessage = serde_json::from_str(text.as_str()).expect("parse");
+            match parsed {
+                ServerMessage::BuildRevoke { build_id, reason } => {
+                    assert_eq!(build_id, BuildId(expected));
+                    assert_eq!(reason, Some(BuildRevokeReason::MigrationSupersede));
+                }
+                other => panic!("expected BuildRevoke, got {other:?}"),
+            }
+        }
+        // ...and the superseded sender is gone afterward.
+        assert!(
+            !senders.lock().await.contains_key("old-conn"),
+            "superseded sender must be removed after the revoke"
+        );
+    }
+
+    #[tokio::test]
+    async fn revoke_and_remove_superseded_noop_when_sender_absent() {
+        let senders: WorkerSenders = Arc::new(Mutex::new(HashMap::new()));
+        // No sender for "gone-conn" — the common reconnect case where the old
+        // socket is already dropped. Must not panic; removing an absent key is
+        // harmless.
+        revoke_and_remove_superseded(&senders, "gone-conn", &[7]).await;
+        assert!(!senders.lock().await.contains_key("gone-conn"));
     }
 
     #[tokio::test]

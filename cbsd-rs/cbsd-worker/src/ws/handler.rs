@@ -149,7 +149,12 @@ pub async fn run_connection(
                         }
                     }
 
-                    ServerMessage::BuildRevoke { build_id } => {
+                    // The `reason` field (audit-rem D13) is intentionally
+                    // ignored: this single-connection worker never reads a
+                    // migration-supersede revoke (it is sent on the old,
+                    // already-dropped socket), so there is no drain-vs-discard
+                    // decision to make here. See design 019 v2.
+                    ServerMessage::BuildRevoke { build_id, .. } => {
                         tracing::info!(%build_id, "build revoke received");
 
                         match supervisor.on_build_revoke(build_id).await {

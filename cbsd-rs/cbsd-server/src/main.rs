@@ -421,6 +421,7 @@ async fn run_drain_shutdown(state: &app::AppState) {
         // Send revoke message to worker.
         let msg = cbsd_proto::ws::ServerMessage::BuildRevoke {
             build_id: cbsd_proto::BuildId(*build_id),
+            reason: Some(cbsd_proto::ws::BuildRevokeReason::Admin),
         };
         if let Ok(json) = serde_json::to_string(&msg) {
             let senders = state.worker_senders.lock().await;
