@@ -823,6 +823,29 @@ mod tests {
         ));
     }
 
+    /// audit-rem D11: the `Accepted` phase (`BuildAccepted` reported, executor
+    /// running, no `BuildStarted` yet) MUST report `Building` on reconnect, not
+    /// `Idle`. Reporting `Idle` here would let the server roll the assignment
+    /// back to `queued` and redispatch it while this worker is still about to
+    /// run it — a double execution. The other reconnect test covers `Started`;
+    /// this pins the `Accepted` window D11 is specifically about.
+    #[tokio::test]
+    async fn accepted_phase_reports_building_on_reconnect() {
+        let tmp = tempfile::tempdir().unwrap();
+        let sup = supervisor_with_cap(&tmp, DEFAULT_SPOOL_CAP_BYTES);
+        force_active(&sup, BuildId(42), BuildPhase::Accepted).await;
+
+        let msgs = sup.take_reconnect_messages().await;
+        assert_eq!(msgs.len(), 1);
+        assert!(matches!(
+            msgs[0],
+            WorkerMessage::WorkerStatus {
+                state: WorkerReportedState::Building,
+                build_id: Some(BuildId(42)),
+            }
+        ));
+    }
+
     #[tokio::test]
     async fn output_while_disconnected_is_spooled_and_replayed() {
         let tmp = tempfile::tempdir().unwrap();

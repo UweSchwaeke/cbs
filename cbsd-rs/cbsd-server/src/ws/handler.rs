@@ -981,12 +981,18 @@ async fn handle_worker_status(
                 "dispatched" => {
                     tracing::info!(
                         build_id = build_id.0,
-                        "reconnect: DB=dispatched, worker building — implicit accept → started"
+                        "reconnect: DB=dispatched, worker building — accepted-phase \
+                         reconnect: mark received, keep dispatched (audit-rem D11)"
                     );
-                    // Per WCP G10: set connection_id before the dispatched ->
-                    // started DB transition. The helper does both in order.
-                    dispatch::attach_connection_and_start(
-                        &state.pool,
+                    // audit-rem D11: the worker is in the accepted phase — it
+                    // reports Building but has not sent build_started. Treat
+                    // this as an authoritative receipt of build_accepted (which
+                    // may have been lost in the disconnect): mark the receipt
+                    // ReceivedByWorker and cancel the dispatch-ack timer so it
+                    // cannot requeue a build the worker is already running
+                    // (double execution). SM-S stays `dispatched` until the
+                    // worker's subprocess sends build_started.
+                    dispatch::attach_connection_and_mark_received(
                         &state.queue,
                         build_id.0,
                         connection_id,

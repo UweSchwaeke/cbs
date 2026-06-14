@@ -403,28 +403,28 @@ async fn send_and_recover(
     Ok(())
 }
 
-/// On reconnect-Building with DB state `dispatched`, attach the new
-/// connection to the existing active entry **before** committing the
-/// `dispatched -> started` transition. Per WCP G10, the DB transition
-/// is the observation point for ownership checks (added in commit 2);
-/// the active entry's `connection_id` must already reflect the new
-/// connection when `started` is committed.
-pub async fn attach_connection_and_start(
-    pool: &SqlitePool,
+/// On reconnect-`Building` with DB state `dispatched` (the worker is in the
+/// `accepted` phase per audit-rem D11): attach the new connection to the
+/// existing active entry, mark the receipt `ReceivedByWorker`, and cancel the
+/// dispatch-ack timer — but keep the build `dispatched`.
+///
+/// This treats the reconnect-`Building` as an authoritative receipt of
+/// `build_accepted` (the original may have been lost in the disconnect).
+/// Cancelling the ack timer is load-bearing: otherwise a stale timer fires and
+/// `rollback_active_to_queued` re-queues a build the worker is already running,
+/// redispatching it to a second worker (double execution). SM-S advances to
+/// `started` only when the worker's subprocess sends `build_started`; the
+/// ownership check at that point (WCP G10) sees the `connection_id` set here.
+pub async fn attach_connection_and_mark_received(
     queue: &SharedBuildQueue,
     build_id: i64,
     connection_id: &str,
 ) {
-    {
-        let mut q = queue.lock().await;
-        if let Some(ab) = q.active.get_mut(&build_id) {
-            ab.connection_id = connection_id.to_string();
-        }
-    }
-    match db::builds::set_build_started(pool, build_id).await {
-        Ok(true) => tracing::info!(build_id, "build started (reconnect)"),
-        Ok(false) => tracing::warn!(build_id, "build started: no DB row updated"),
-        Err(e) => tracing::error!(build_id, "set_build_started failed: {e}"),
+    let mut q = queue.lock().await;
+    if let Some(ab) = q.active.get_mut(&build_id) {
+        ab.connection_id = connection_id.to_string();
+        ab.ack_cancel.cancel();
+        ab.receipt = crate::queue::ActiveAssignmentReceipt::ReceivedByWorker;
     }
 }
 
@@ -1207,29 +1207,52 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn attach_connection_and_start_updates_connection_then_transitions_to_started() {
+    async fn attach_connection_and_mark_received_keeps_dispatched_and_marks_receipt() {
         let pool = test_pool().await;
         let queue = empty_queue();
         let build_id = insert_dispatched(&pool).await;
+        let ack = tokio_util::sync::CancellationToken::new();
 
         {
             let mut q = queue.lock().await;
-            q.active.insert(build_id, make_active(build_id, "old-conn"));
+            q.active.insert(
+                build_id,
+                ActiveBuild {
+                    ack_cancel: ack.clone(),
+                    ..make_active(build_id, "old-conn")
+                },
+            );
         }
 
-        attach_connection_and_start(&pool, &queue, build_id, "new-conn").await;
+        attach_connection_and_mark_received(&queue, build_id, "new-conn").await;
 
-        let q = queue.lock().await;
-        let ab = q.active.get(&build_id).expect("still active");
-        assert_eq!(ab.connection_id, "new-conn");
-        drop(q);
+        // In-memory: new connection attached, receipt advanced, ack cancelled.
+        {
+            let q = queue.lock().await;
+            let ab = q.active.get(&build_id).expect("still active");
+            assert_eq!(ab.connection_id, "new-conn");
+            assert_eq!(
+                ab.receipt,
+                crate::queue::ActiveAssignmentReceipt::ReceivedByWorker
+            );
+        }
+        assert!(
+            ack.is_cancelled(),
+            "dispatch-ack timer must be cancelled so it cannot requeue a build \
+             the worker is already running (D11 double-exec guard)"
+        );
 
+        // DB stays `dispatched`: SM-S advances to `started` only on a real
+        // build_started, not on the reconnect itself.
         let build = db::builds::get_build(&pool, build_id)
             .await
             .expect("get")
             .expect("row");
-        assert_eq!(build.state, "started");
-        assert!(build.started_at.is_some(), "started_at populated");
+        assert_eq!(build.state, "dispatched");
+        assert!(
+            build.started_at.is_none(),
+            "must not be marked started on reconnect"
+        );
     }
 
     /// Register a synthetic worker sender for `connection_id`, returning the
