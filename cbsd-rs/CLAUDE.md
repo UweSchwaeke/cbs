@@ -53,7 +53,6 @@ cargo fmt --all --check
 
 After any migration or query change:
 
-
 ```bash
 DATABASE_URL=sqlite:///tmp/cbsd-dev.db cargo sqlx prepare --workspace -- --all-targets
 ```
@@ -183,7 +182,6 @@ These are easy to get wrong. Document and test them:
 ## sqlx Offline Query Cache
 
 The `.sqlx/` directory lives at the workspace root (`cbsd-rs/.sqlx/`).
-
 
 **After any commit that adds or modifies sqlx queries:**
 

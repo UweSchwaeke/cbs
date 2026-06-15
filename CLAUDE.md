@@ -5,8 +5,8 @@ code in this repository.
 
 ## Project Overview
 
-CES Build System (CBS) — a collection of tools by Clyso to automate
-building and releasing containers for Ceph and other components.
+CES Build System (CBS) — a collection of tools by Clyso to automate building and
+releasing containers for Ceph and other components.
 
 ### Python workspace (UV, Python 3.13+)
 
@@ -30,8 +30,8 @@ FastAPI + Celery + Redis stack with Rust + axum + SQLite + WebSocket.
 
 - **`cbsd-proto`** — shared wire types (BuildDescriptor, BuildState, WebSocket
   messages); no IO dependencies
-- **`cbsd-server`** — REST API (axum), Google OAuth, PASETO tokens, RBAC,
-  build queue, WebSocket handler, SSE log streaming, SQLite persistence (sqlx)
+- **`cbsd-server`** — REST API (axum), Google OAuth, PASETO tokens, RBAC, build
+  queue, WebSocket handler, SSE log streaming, SQLite persistence (sqlx)
 - **`cbsd-worker`** — WebSocket client, build executor (spawns cbscore Python
   subprocess), SIGTERM/SIGKILL process management
 - **`cbc`** — Rust CLI client for the CBS service
@@ -182,8 +182,8 @@ cbsd-rs/
 
 - **Web**: axum (HTTP + WebSocket + SSE)
 - **Async runtime**: Tokio
-- **Auth**: Google OAuth, PASETO tokens (pasetors), tower-sessions (BFF
-  session cookies)
+- **Auth**: Google OAuth, PASETO tokens (pasetors), tower-sessions (BFF session
+  cookies)
 - **Database**: SQLite via sqlx (async, compile-time checked queries)
 - **Serialization**: serde / serde_json
 - **CLI** (`cbc`): clap
@@ -217,3 +217,63 @@ When making code changes, Claude should:
 4. Only proceed with additional changes after getting approval
 
 This ensures commits are logical, atomic, and well-documented.
+
+<!-- gitnexus:start -->
+
+# GitNexus — Code Intelligence
+
+This project is indexed by GitNexus as **cbs.git** (9123 symbols, 15282
+relationships, 300 execution flows). Use the GitNexus MCP tools to understand
+code, assess impact, and navigate safely.
+
+> Index stale? Run `node .gitnexus/run.cjs analyze` from the project root — it
+> auto-selects an available runner.
+
+## Always Do
+
+- **MUST run impact analysis before editing any symbol.** Before modifying a
+  function, class, or method, run
+  `impact({target: "symbolName", direction: "upstream"})` and report the blast
+  radius (direct callers, affected processes, risk level) to the user.
+- **MUST run `detect_changes()` before committing** to verify your changes only
+  affect expected symbols and execution flows. For regression review, compare
+  against the default branch:
+  `detect_changes({scope: "compare", base_ref: "main"})`.
+- **MUST warn the user** if impact analysis returns HIGH or CRITICAL risk before
+  proceeding with edits.
+- When exploring unfamiliar code, use `query({query: "concept"})` to find
+  execution flows instead of grepping. It returns process-grouped results ranked
+  by relevance.
+- When you need full context on a specific symbol — callers, callees, which
+  execution flows it participates in — use `context({name: "symbolName"})`.
+
+## Never Do
+
+- NEVER edit a function, class, or method without first running `impact` on it.
+- NEVER ignore HIGH or CRITICAL risk warnings from impact analysis.
+- NEVER rename symbols with find-and-replace — use `rename` which understands
+  the call graph.
+- NEVER commit changes without running `detect_changes()` to check affected
+  scope.
+
+## Resources
+
+| Resource                                 | Use for                                  |
+| ---------------------------------------- | ---------------------------------------- |
+| `gitnexus://repo/cbs.git/context`        | Codebase overview, check index freshness |
+| `gitnexus://repo/cbs.git/clusters`       | All functional areas                     |
+| `gitnexus://repo/cbs.git/processes`      | All execution flows                      |
+| `gitnexus://repo/cbs.git/process/{name}` | Step-by-step execution trace             |
+
+## CLI
+
+| Task                                         | Read this skill file                                        |
+| -------------------------------------------- | ----------------------------------------------------------- |
+| Understand architecture / "How does X work?" | `.claude/skills/gitnexus/gitnexus-exploring/SKILL.md`       |
+| Blast radius / "What breaks if I change X?"  | `.claude/skills/gitnexus/gitnexus-impact-analysis/SKILL.md` |
+| Trace bugs / "Why is X failing?"             | `.claude/skills/gitnexus/gitnexus-debugging/SKILL.md`       |
+| Rename / extract / split / refactor          | `.claude/skills/gitnexus/gitnexus-refactoring/SKILL.md`     |
+| Tools, resources, schema reference           | `.claude/skills/gitnexus/gitnexus-guide/SKILL.md`           |
+| Index, status, clean, wiki CLI commands      | `.claude/skills/gitnexus/gitnexus-cli/SKILL.md`             |
+
+<!-- gitnexus:end -->
