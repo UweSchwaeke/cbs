@@ -343,6 +343,35 @@ async fn cmd_new(
 // periodic list
 // ---------------------------------------------------------------------------
 
+/// Byte-slice the first `n` dash-separated UUID groups (`n >= 1`).
+///
+/// `n == 1` yields the first 8 hex chars. If `id` has fewer than `n`
+/// groups (e.g. `n >= 5` for a standard `8-4-4-4-12` UUID), the whole id
+/// is returned. Callers only ever pass `n >= 1` (guaranteed by
+/// [`min_unique_components`]).
+fn truncate_components(id: &str, n: usize) -> &str {
+    debug_assert!(n >= 1, "truncate_components requires n >= 1");
+    match id.match_indices('-').nth(n - 1) {
+        Some((idx, _)) => &id[..idx],
+        None => id,
+    }
+}
+
+/// Fewest leading UUID groups (`1..=5`) at which every id is distinct.
+///
+/// One group (8 hex chars) is the floor; a full UUID (five groups) is
+/// always unique, so the search is bounded at five. An empty slice
+/// trivially returns one.
+fn min_unique_components(ids: &[&str]) -> usize {
+    for n in 1..=5 {
+        let mut seen = std::collections::HashSet::new();
+        if ids.iter().all(|id| seen.insert(truncate_components(id, n))) {
+            return n;
+        }
+    }
+    5
+}
+
 async fn cmd_list(config_path: Option<&std::path::Path>, opts: ClientOpts) -> Result<(), Error> {
     let config = Config::load(config_path)?;
     let client = CbcClient::new(&config.host, &config.token, opts)?;
@@ -354,17 +383,23 @@ async fn cmd_list(config_path: Option<&std::path::Path>, opts: ClientOpts) -> Re
         return Ok(());
     }
 
+    // Show the fewest UUID components that keep every id unique, and size
+    // the ID column to the widest rendered id so the table stays aligned.
+    let ids: Vec<&str> = tasks.iter().map(|t| t.id.as_str()).collect();
+    let n = min_unique_components(&ids);
+    let id_width = ids
+        .iter()
+        .map(|id| truncate_components(id, n).len())
+        .max()
+        .unwrap_or(8);
+
     println!(
-        "  {:<10} {:<9} {:<15} NEXT RUN",
+        "  {:<id_width$} {:<9} {:<15} NEXT RUN",
         "ID", "ENABLED", "SCHEDULE"
     );
 
     for task in &tasks {
-        let id_short = if task.id.len() > 8 {
-            &task.id[..8]
-        } else {
-            &task.id
-        };
+        let id_short = truncate_components(&task.id, n);
         let enabled = if task.enabled { "yes" } else { "no" };
         let next_run = if task.enabled {
             task.next_run
@@ -375,7 +410,7 @@ async fn cmd_list(config_path: Option<&std::path::Path>, opts: ClientOpts) -> Re
         };
 
         println!(
-            "  {:<10} {:<9} {:<15} {}",
+            "  {:<id_width$} {:<9} {:<15} {}",
             id_short, enabled, task.cron_expr, next_run,
         );
     }
@@ -785,4 +820,76 @@ async fn cmd_disable(
         .await?;
     println!("periodic task {} disabled", args.id);
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const UUID_A: &str = "550e8400-e29b-41d4-a716-446655440000";
+
+    #[test]
+    fn truncate_first_component_is_eight_chars() {
+        assert_eq!(truncate_components(UUID_A, 1), "550e8400");
+        assert_eq!(truncate_components(UUID_A, 1).len(), 8);
+    }
+
+    #[test]
+    fn truncate_two_components() {
+        assert_eq!(truncate_components(UUID_A, 2), "550e8400-e29b");
+    }
+
+    #[test]
+    fn truncate_beyond_group_count_yields_whole_id() {
+        // A standard UUID has five groups (four hyphens), so n >= 5
+        // returns the whole id unchanged.
+        assert_eq!(truncate_components(UUID_A, 5), UUID_A);
+        assert_eq!(truncate_components(UUID_A, 6), UUID_A);
+    }
+
+    #[test]
+    fn min_unique_distinct_first_groups_is_one() {
+        let ids = [
+            "550e8400-e29b-41d4-a716-446655440000",
+            "660f9500-aaaa-41d4-a716-446655440000",
+        ];
+        assert_eq!(min_unique_components(&ids), 1);
+    }
+
+    #[test]
+    fn min_unique_escalates_on_first_group_collision() {
+        // Same first group, different second group -> needs two.
+        let ids = [
+            "550e8400-e29b-41d4-a716-446655440000",
+            "550e8400-aaaa-41d4-a716-446655440000",
+        ];
+        assert_eq!(min_unique_components(&ids), 2);
+    }
+
+    #[test]
+    fn min_unique_single_id_is_one() {
+        let ids = ["550e8400-e29b-41d4-a716-446655440000"];
+        assert_eq!(min_unique_components(&ids), 1);
+    }
+
+    #[test]
+    fn min_unique_empty_is_one() {
+        let ids: [&str; 0] = [];
+        assert_eq!(min_unique_components(&ids), 1);
+    }
+
+    #[test]
+    fn min_unique_identical_ids_hits_the_cap() {
+        // Two identical ids never separate, so the search exhausts the
+        // 1..=5 range and returns the five-component cap.
+        let ids = [
+            "550e8400-e29b-41d4-a716-446655440000",
+            "550e8400-e29b-41d4-a716-446655440000",
+        ];
+        assert_eq!(min_unique_components(&ids), 5);
+    }
 }
