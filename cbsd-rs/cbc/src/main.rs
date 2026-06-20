@@ -108,7 +108,7 @@ async fn run(cli: Cli) -> Result<(), Error> {
         eprintln!("{warning}");
     }
     match cli.command {
-        Commands::Login { url } => cmd_login(&url, opts).await,
+        Commands::Login { url } => cmd_login(&url, cli.config.as_deref(), opts).await,
         Commands::Whoami => cmd_whoami(cli.config.as_deref(), opts).await,
         Commands::Build(args) => builds::run(*args, cli.config.as_deref(), opts).await,
         Commands::Periodic(args) => periodic::run(args, cli.config.as_deref(), opts).await,
@@ -118,7 +118,11 @@ async fn run(cli: Cli) -> Result<(), Error> {
     }
 }
 
-async fn cmd_login(url: &str, opts: ClientOpts) -> Result<(), Error> {
+async fn cmd_login(
+    url: &str,
+    config_path: Option<&std::path::Path>,
+    opts: ClientOpts,
+) -> Result<(), Error> {
     // Verify server is reachable.
     let client = CbcClient::unauthenticated(url, opts)?;
     client
@@ -168,17 +172,18 @@ async fn cmd_login(url: &str, opts: ClientOpts) -> Result<(), Error> {
         .and_then(|v| v.as_str())
         .unwrap_or("unknown");
 
-    // Persist.
-    let config_path = Config::default_path()
-        .ok_or_else(|| Error::Config("cannot determine config directory".into()))?;
+    // Persist to the resolved config path (explicit --config, else the
+    // platform default) — the same resolution Config::load uses.
+    let path = Config::resolve_path(config_path)?;
 
     let cfg = Config {
         host: url.to_string(),
         token,
     };
-    cfg.save(&config_path)?;
+    cfg.save(&path)?;
 
     eprintln!("logged in as {email}");
+    eprintln!("config saved to {}", path.display());
     Ok(())
 }
 

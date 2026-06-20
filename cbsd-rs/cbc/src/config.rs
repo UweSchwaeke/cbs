@@ -39,11 +39,7 @@ impl Config {
     /// 1. Explicit `path` argument.
     /// 2. `dirs::config_dir()/cbc/config.json`.
     pub fn load(path: Option<&Path>) -> Result<Self, Error> {
-        let p = match path {
-            Some(p) => p.to_path_buf(),
-            None => Self::default_path()
-                .ok_or_else(|| Error::Config("cannot determine config directory".into()))?,
-        };
+        let p = Self::resolve_path(path)?;
 
         let contents = std::fs::read_to_string(&p)
             .map_err(|e| Error::Config(format!("cannot read {}: {e}", p.display())))?;
@@ -135,6 +131,18 @@ impl Config {
         result
     }
 
+    /// Resolve the config file path: the explicit `path` when provided,
+    /// otherwise the platform default ([`Config::default_path`]). Shared by
+    /// [`Config::load`] and the `login` write path so reads and writes
+    /// resolve to the same location.
+    pub fn resolve_path(path: Option<&Path>) -> Result<PathBuf, Error> {
+        match path {
+            Some(p) => Ok(p.to_path_buf()),
+            None => Self::default_path()
+                .ok_or_else(|| Error::Config("cannot determine config directory".into())),
+        }
+    }
+
     /// Return the default config file path: `$XDG_CONFIG_HOME/cbc/config.json`
     /// (or platform equivalent via `dirs::config_dir`).
     ///
@@ -175,6 +183,25 @@ mod tests {
     // defeat the `SecretString` wrap by letting the raw token be written out.
     // The on-disk shape is `ConfigFile`, not `Config`.
     static_assertions::assert_not_impl_any!(Config: Serialize);
+
+    #[test]
+    fn resolve_path_uses_explicit_when_given() {
+        let p = Path::new("/tmp/custom/cbc-config.json");
+        assert_eq!(
+            Config::resolve_path(Some(p)).expect("resolve explicit"),
+            p.to_path_buf()
+        );
+    }
+
+    #[test]
+    fn resolve_path_falls_back_to_default() {
+        // With no explicit path, resolution matches the platform default
+        // (or errors identically when the platform yields none).
+        match Config::default_path() {
+            Some(def) => assert_eq!(Config::resolve_path(None).expect("resolve default"), def),
+            None => assert!(Config::resolve_path(None).is_err()),
+        }
+    }
 
     #[test]
     fn token_is_redacted_in_debug() {
