@@ -248,6 +248,55 @@ pub async fn run(
 }
 
 // ---------------------------------------------------------------------------
+// ID prefix resolution
+// ---------------------------------------------------------------------------
+
+/// Resolve a task-id prefix to a full UUID over a list-fetch result.
+///
+/// Pure (no I/O) so every branch is unit-testable. A 403 means the caller
+/// lacks `periodic:view` and cannot list; the input is then returned
+/// verbatim as a full UUID so manage-only callers keep acting by id.
+/// Otherwise the prefix is matched against the listed ids: zero matches
+/// errors, one resolves, several report the ambiguous candidates.
+fn resolve_from_fetch(
+    fetched: Result<Vec<PeriodicListItem>, Error>,
+    prefix: &str,
+) -> Result<String, Error> {
+    let tasks = match fetched {
+        Ok(list) => list,
+        Err(Error::Api { status: 403, .. }) => return Ok(prefix.to_string()),
+        Err(e) => return Err(e),
+    };
+
+    let matches: Vec<&PeriodicListItem> =
+        tasks.iter().filter(|t| t.id.starts_with(prefix)).collect();
+
+    match matches.len() {
+        0 => Err(Error::Other(format!(
+            "no periodic task matching '{prefix}'"
+        ))),
+        1 => Ok(matches[0].id.clone()),
+        _ => {
+            // Show full ids: an ambiguous prefix shares its leading run,
+            // so a truncated id would render every candidate identically.
+            let candidates: Vec<String> = matches
+                .iter()
+                .map(|t| format!("  {}  {}", t.id, t.cron_expr))
+                .collect();
+            Err(Error::Other(format!(
+                "ambiguous task id '{prefix}' matches:\n{}",
+                candidates.join("\n"),
+            )))
+        }
+    }
+}
+
+/// Fetch the periodic task list and resolve `prefix` to a full UUID.
+async fn resolve_periodic_id(client: &CbcClient, prefix: &str) -> Result<String, Error> {
+    resolve_from_fetch(client.get("periodic").await, prefix)
+}
+
+// ---------------------------------------------------------------------------
 // periodic new
 // ---------------------------------------------------------------------------
 
@@ -430,7 +479,8 @@ async fn cmd_get(
     let config = Config::load(config_path)?;
     let client = CbcClient::new(&config.host, &config.token, opts)?;
 
-    let task: PeriodicDetail = client.get(&format!("periodic/{}", args.id)).await?;
+    let id = resolve_periodic_id(&client, &args.id).await?;
+    let task: PeriodicDetail = client.get(&format!("periodic/{id}")).await?;
 
     println!("          id: {}", task.id);
     println!("        cron: {}", task.cron_expr);
@@ -574,6 +624,10 @@ async fn cmd_update(
     let config = Config::load(config_path)?;
     let client = CbcClient::new(&config.host, &config.token, opts)?;
 
+    // Resolve after the has_field guard so a no-op update fails fast
+    // without a wasted list fetch.
+    let id = resolve_periodic_id(&client, &args.id).await?;
+
     // Build a JSON object with only the provided fields.
     let mut body = serde_json::Map::new();
 
@@ -618,7 +672,7 @@ async fn cmd_update(
 
     if has_descriptor_field {
         // Fetch existing task to merge descriptor fields.
-        let existing: PeriodicDetail = client.get(&format!("periodic/{}", args.id)).await?;
+        let existing: PeriodicDetail = client.get(&format!("periodic/{id}")).await?;
 
         let existing_desc = existing.descriptor.unwrap_or_default();
 
@@ -752,13 +806,10 @@ async fn cmd_update(
     }
 
     let _resp: SimpleResponse = client
-        .put_json(
-            &format!("periodic/{}", args.id),
-            &serde_json::Value::Object(body),
-        )
+        .put_json(&format!("periodic/{id}"), &serde_json::Value::Object(body))
         .await?;
 
-    println!("periodic task {} updated", args.id);
+    println!("periodic task {id} updated");
     Ok(())
 }
 
@@ -779,8 +830,11 @@ async fn cmd_delete(
     let config = Config::load(config_path)?;
     let client = CbcClient::new(&config.host, &config.token, opts)?;
 
-    let _resp: SimpleResponse = client.delete(&format!("periodic/{}", args.id)).await?;
-    println!("periodic task {} deleted", args.id);
+    let id = resolve_periodic_id(&client, &args.id).await?;
+    println!("deleting periodic task {id}");
+
+    let _resp: SimpleResponse = client.delete(&format!("periodic/{id}")).await?;
+    println!("periodic task {id} deleted");
     Ok(())
 }
 
@@ -796,10 +850,9 @@ async fn cmd_enable(
     let config = Config::load(config_path)?;
     let client = CbcClient::new(&config.host, &config.token, opts)?;
 
-    let _resp: SimpleResponse = client
-        .put_empty(&format!("periodic/{}/enable", args.id))
-        .await?;
-    println!("periodic task {} enabled", args.id);
+    let id = resolve_periodic_id(&client, &args.id).await?;
+    let _resp: SimpleResponse = client.put_empty(&format!("periodic/{id}/enable")).await?;
+    println!("periodic task {id} enabled");
     Ok(())
 }
 
@@ -815,10 +868,9 @@ async fn cmd_disable(
     let config = Config::load(config_path)?;
     let client = CbcClient::new(&config.host, &config.token, opts)?;
 
-    let _resp: SimpleResponse = client
-        .put_empty(&format!("periodic/{}/disable", args.id))
-        .await?;
-    println!("periodic task {} disabled", args.id);
+    let id = resolve_periodic_id(&client, &args.id).await?;
+    let _resp: SimpleResponse = client.put_empty(&format!("periodic/{id}/disable")).await?;
+    println!("periodic task {id} disabled");
     Ok(())
 }
 
@@ -891,5 +943,99 @@ mod tests {
             "550e8400-e29b-41d4-a716-446655440000",
         ];
         assert_eq!(min_unique_components(&ids), 5);
+    }
+
+    fn item(id: &str) -> PeriodicListItem {
+        PeriodicListItem {
+            id: id.to_string(),
+            enabled: true,
+            cron_expr: "0 0 * * *".to_string(),
+            next_run: None,
+        }
+    }
+
+    const UUID_B: &str = "660f9500-aaaa-41d4-a716-446655440000";
+
+    #[test]
+    fn resolve_no_match_errors() {
+        let err = resolve_from_fetch(Ok(vec![item(UUID_A)]), "ffffffff").unwrap_err();
+        assert!(matches!(err, Error::Other(_)));
+    }
+
+    #[test]
+    fn resolve_single_match_returns_full_id() {
+        let resolved = resolve_from_fetch(Ok(vec![item(UUID_A)]), "550e8400").unwrap();
+        assert_eq!(resolved, UUID_A);
+    }
+
+    #[test]
+    fn resolve_full_uuid_prefix_returns_that_task() {
+        let tasks = vec![item(UUID_A), item(UUID_B)];
+        assert_eq!(resolve_from_fetch(Ok(tasks), UUID_A).unwrap(), UUID_A);
+    }
+
+    #[test]
+    fn resolve_ambiguous_prefix_errors() {
+        let a = "550e8400-e29b-41d4-a716-446655440000";
+        let b = "550e8400-aaaa-41d4-a716-446655440000";
+        let tasks = vec![item(a), item(b)];
+        match resolve_from_fetch(Ok(tasks), "550e8400").unwrap_err() {
+            Error::Other(msg) => {
+                assert!(msg.contains("ambiguous"));
+                // Candidates must be distinguishable: both full ids appear.
+                assert!(msg.contains(a));
+                assert!(msg.contains(b));
+            }
+            other => panic!("expected Error::Other, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn resolve_403_falls_back_to_input() {
+        // No periodic:view: the input is treated as a full UUID so
+        // manage-only callers keep acting by id. This is the branch
+        // that prevents the manage-without-view regression.
+        let fetched = Err(Error::Api {
+            status: 403,
+            message: String::new(),
+        });
+        assert_eq!(resolve_from_fetch(fetched, UUID_A).unwrap(), UUID_A);
+    }
+
+    #[test]
+    fn resolve_non_403_error_propagates() {
+        let fetched = Err(Error::Api {
+            status: 500,
+            message: "boom".to_string(),
+        });
+        assert!(matches!(
+            resolve_from_fetch(fetched, "abc").unwrap_err(),
+            Error::Api { status: 500, .. }
+        ));
+    }
+
+    #[test]
+    fn resolve_empty_prefix_single_task_resolves() {
+        assert_eq!(
+            resolve_from_fetch(Ok(vec![item(UUID_A)]), "").unwrap(),
+            UUID_A
+        );
+    }
+
+    #[test]
+    fn resolve_empty_prefix_multiple_is_ambiguous() {
+        let tasks = vec![item(UUID_A), item(UUID_B)];
+        assert!(matches!(
+            resolve_from_fetch(Ok(tasks), "").unwrap_err(),
+            Error::Other(_)
+        ));
+    }
+
+    #[test]
+    fn resolve_empty_list_errors() {
+        assert!(matches!(
+            resolve_from_fetch(Ok(vec![]), "abc").unwrap_err(),
+            Error::Other(_)
+        ));
     }
 }
