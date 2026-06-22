@@ -18,6 +18,7 @@
 //! defends against gzip-bomb attacks.
 
 use std::io::Read;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Component, Path, PathBuf};
 
 use sha2::{Digest, Sha256};
@@ -335,6 +336,18 @@ fn unpack_one<R: Read>(
                 Some(cap) => ComponentError::CapExceeded(cap),
                 None => ComponentError::Unpack(e),
             })?;
+            // Apply the archived file mode so executable scripts stay
+            // executable. `File::create` opens with `0o666 & ~umask`
+            // (typically 0644), dropping the +x bit the server packed via
+            // tar's `HeaderMode::Complete`. Set the mode through the open
+            // handle (fchmod on the fd) rather than by path: it cannot be
+            // redirected by a symlink swapped in at `dest`, matching the
+            // phase-2 TOCTOU hardening above. The 0o777 mask drops
+            // setuid/setgid/sticky bits, mirroring the tar crate's default
+            // unpack behaviour.
+            let mode = entry.header().mode().map_err(ComponentError::Unpack)?;
+            out.set_permissions(std::fs::Permissions::from_mode(mode & 0o777))
+                .map_err(ComponentError::Unpack)?;
         }
 
         EntryType::Symlink => {
@@ -563,6 +576,39 @@ mod tests {
             validate_and_unpack(&tarball, &hash, tmp.path(), DEFAULT_MAX_UNCOMPRESSED_BYTES);
         let unpack_dir = result.expect("happy path must succeed");
         assert!(unpack_dir.join("test.txt").exists());
+    }
+
+    #[test]
+    fn preserves_executable_file_mode() {
+        // Regression: the hand-rolled unpack loop must apply the archived
+        // file mode so executable component scripts (packed 0o755 by the
+        // server) stay executable. Before the fix the file landed as 0644
+        // and the build failed with "Permission denied" on get_version.sh.
+        let content = b"#!/bin/sh\necho hi\n";
+        let tarball = build_tarball(|b| {
+            let mut header = tar::Header::new_gnu();
+            header.set_size(content.len() as u64);
+            header.set_mode(0o755);
+            header.set_cksum();
+            b.append_data(&mut header, "scripts/get_version.sh", &content[..])
+                .unwrap();
+        });
+        let hash = sha256_hex(&tarball);
+        let tmp = tempfile::tempdir().unwrap();
+
+        let unpack_dir =
+            validate_and_unpack(&tarball, &hash, tmp.path(), DEFAULT_MAX_UNCOMPRESSED_BYTES)
+                .expect("executable file must unpack");
+
+        let script = unpack_dir.join("scripts/get_version.sh");
+        let mode = std::fs::metadata(&script).unwrap().permissions().mode();
+        // The fix sets the mode explicitly, so this is umask-independent.
+        assert_eq!(
+            mode & 0o777,
+            0o755,
+            "expected permission bits 0o755, got {:o}",
+            mode & 0o777
+        );
     }
 
     #[test]
