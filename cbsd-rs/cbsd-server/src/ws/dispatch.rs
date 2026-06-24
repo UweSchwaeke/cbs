@@ -165,8 +165,36 @@ pub async fn try_dispatch(state: &AppState) -> Result<(), DispatchError> {
         .unwrap_or("unknown");
 
     let component_dir = state.config.components_dir.join(component_name);
-    let (tar_gz_bytes, sha256_hex) =
-        tarball::pack_component(&component_dir, component_name).map_err(DispatchError::Tarball)?;
+    let (tar_gz_bytes, sha256_hex) = match tarball::pack_component(&component_dir, component_name) {
+        Ok(packed) => packed,
+        Err(e) => {
+            // The pack step had no recovery of its own: by here the build is
+            // `dispatched` in the DB and present in `queue.active`, so a pack
+            // error left it wedged there until a restart. A pack failure is
+            // deterministic (a missing/unreadable component directory stays
+            // that way), so — unlike the transient send path — we must NOT
+            // re-queue: `enqueue_front` would put the build back at the head of
+            // its lane and the next dispatch trigger would re-pop, re-pack, and
+            // re-fail forever, blocking the lane (`next_pending` never consults
+            // `queue.active`, so the old wedge at least did not do that). Mark
+            // the build FAILURE instead so it leaves the queue and surfaces to
+            // the user, mirroring the integrity-reject branch of
+            // `handle_build_rejected`. No ack timer exists yet (it is spawned
+            // only after the send), so removing the active entry is sufficient.
+            let reason = format!("failed to pack component tarball: {e}");
+            tracing::error!(build_id = dispatch_info.build_id.0, "{reason}");
+            crate::ws::handler::cleanup_terminal_state(
+                &state.pool,
+                &state.queue,
+                &state.log_watchers,
+                dispatch_info.build_id.0,
+                crate::ws::handler::TerminalStatus::Failure,
+                &reason,
+            )
+            .await;
+            return Err(DispatchError::Tarball(e));
+        }
+    };
 
     tracing::debug!(
         build_id = dispatch_info.build_id.0,
@@ -1643,5 +1671,99 @@ mod tests {
         );
 
         drop(tempdir); // keep the component dir alive until after assertions
+    }
+
+    /// Regression guard: a deterministic dispatch tarball-pack failure must
+    /// mark the build FAILURE — not re-queue it. Re-queueing would push the
+    /// build back to its lane head (`enqueue_front`) and the next dispatch
+    /// trigger would re-pop and re-fail forever, since the missing component
+    /// directory never appears. Drives `try_dispatch` with a `components_dir`
+    /// that does not contain the referenced component subdir, so
+    /// `pack_component`'s `append_dir_all` fails on the missing source
+    /// directory.
+    #[tokio::test]
+    async fn try_dispatch_pack_failure_fails_build_end_to_end() {
+        use crate::routes::test_support::test_app_state_with_components_dir;
+        use crate::ws::liveness::WorkerState;
+        use cbsd_proto::Arch;
+
+        let pool = test_pool().await;
+        // Empty components dir: no subdir for the descriptor's "c" component,
+        // so packing fails on the missing source directory.
+        let tempdir = tempfile::TempDir::new().expect("tempdir");
+        let state = test_app_state_with_components_dir(pool.clone(), tempdir.path().to_path_buf());
+
+        seed_user(&pool, "u@e.com").await;
+        let descriptor = sample_descriptor();
+        let descriptor_json = serde_json::to_string(&descriptor).expect("serialize");
+        let build_id = db::builds::insert_build(
+            &pool,
+            &descriptor_json,
+            "u@e.com",
+            "normal",
+            None,
+            None,
+            None,
+        )
+        .await
+        .expect("insert");
+
+        {
+            let mut q = state.queue.lock().await;
+            q.enqueue(QueuedBuild {
+                build_id: BuildId(build_id),
+                priority: Priority::Normal,
+                descriptor: descriptor.clone(),
+                user_email: "u@e.com".to_string(),
+                queued_at: 0,
+            });
+            q.workers.insert(
+                "test-conn".to_string(),
+                WorkerState::Connected {
+                    registered_worker_id: "worker-1".to_string(),
+                    worker_name: "test-worker".to_string(),
+                    arch: Arch::X86_64,
+                    cores_total: 4,
+                    ram_total_mb: 1024,
+                    version: None,
+                },
+            );
+        }
+
+        let result = try_dispatch(&state).await;
+        assert!(
+            matches!(result, Err(DispatchError::Tarball(_))),
+            "expected DispatchError::Tarball, got {result:?}"
+        );
+
+        // The build is terminal FAILURE, with the failure reason recorded.
+        let build = db::builds::get_build(&pool, build_id)
+            .await
+            .expect("get")
+            .expect("row");
+        assert_eq!(build.state, "failure");
+        assert!(build.finished_at.is_some(), "finished_at must be set");
+        assert!(
+            build.error.as_deref().is_some_and(|e| e.contains("pack")),
+            "error must record the pack failure, got {:?}",
+            build.error
+        );
+
+        // It must NOT be re-enqueued (no poison-pill loop) and the active
+        // entry + log watcher must be gone.
+        let q = state.queue.lock().await;
+        assert!(!q.active.contains_key(&build_id), "active entry removed");
+        assert!(
+            !q.contains(BuildId(build_id)),
+            "failed build must not be re-enqueued"
+        );
+        drop(q);
+
+        assert!(
+            !state.log_watchers.lock().await.contains_key(&build_id),
+            "log watcher must be removed"
+        );
+
+        drop(tempdir);
     }
 }
