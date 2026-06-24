@@ -115,6 +115,8 @@ struct UserWithRoles {
     active: bool,
     #[serde(default)]
     is_robot: bool,
+    #[serde(default)]
+    first_login_at: Option<i64>,
     roles: Vec<UserRoleItem>,
 }
 
@@ -188,6 +190,21 @@ pub async fn run(
     }
 }
 
+/// Human-readable first-login state for display. Robots never log in (always
+/// NULL); a human with no `first_login_at` is "pending" (provisioned, never
+/// logged in); otherwise the UTC date of first login (design 020).
+fn login_state(user: &UserWithRoles) -> String {
+    if user.is_robot {
+        return "n/a".to_string();
+    }
+    match user.first_login_at {
+        None => "pending".to_string(),
+        Some(ts) => chrono::DateTime::from_timestamp(ts, 0)
+            .map(|dt| dt.format("%Y-%m-%d").to_string())
+            .unwrap_or_else(|| "?".to_string()),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // admin users list
 // ---------------------------------------------------------------------------
@@ -203,16 +220,21 @@ async fn cmd_list(config_path: Option<&std::path::Path>, opts: ClientOpts) -> Re
         return Ok(());
     }
 
-    println!("  {:<24} {:<12} {:<8} ROLES", "EMAIL", "NAME", "ACTIVE",);
+    println!(
+        "  {:<24} {:<12} {:<8} {:<12} ROLES",
+        "EMAIL", "NAME", "ACTIVE", "LOGIN",
+    );
 
     for user in &users {
         let active = if user.active { "yes" } else { "no" };
+        let login = login_state(user);
         let role_names: Vec<&str> = user.roles.iter().map(|r| r.role.as_str()).collect();
         println!(
-            "  {:<24} {:<12} {:<8} {}",
+            "  {:<24} {:<12} {:<8} {:<12} {}",
             user.email,
             user.name,
             active,
+            login,
             role_names.join(", "),
         );
     }
@@ -264,6 +286,7 @@ async fn cmd_get(
     println!("   email: {}", user.email);
     println!("    name: {}", user.name);
     println!("  active: {active}");
+    println!("   login: {}", login_state(user));
 
     // Roles with scopes
     if user.roles.is_empty() {

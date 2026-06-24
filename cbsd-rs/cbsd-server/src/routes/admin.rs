@@ -903,6 +903,9 @@ struct EntityWithRolesItem {
     name: String,
     active: bool,
     is_robot: bool,
+    /// Unix epoch seconds of first login; `null` for a provisioned user who
+    /// has never logged in ("pending"). Always `null` for robots.
+    first_login_at: Option<i64>,
     roles: Vec<EntityRoleItem>,
 }
 
@@ -969,6 +972,7 @@ async fn list_entities(
         let name = row.name;
         let active = row.active;
         let is_robot = row.is_robot;
+        let first_login_at = row.first_login_at;
 
         let entity_roles = db::roles::get_user_roles(&state.pool, &email)
             .await
@@ -990,6 +994,7 @@ async fn list_entities(
             name,
             active,
             is_robot,
+            first_login_at,
             roles,
         });
     }

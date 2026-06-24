@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT email AS \"email!\", name AS \"name!\", active AS \"active!\",\n                          is_robot AS \"is_robot!\"\n                   FROM users WHERE is_robot = 1 ORDER BY email",
+  "query": "SELECT email AS \"email!\", name AS \"name!\", active AS \"active!\",\n                          is_robot AS \"is_robot!\", first_login_at\n                   FROM users WHERE is_robot = 1 ORDER BY email",
   "describe": {
     "columns": [
       {
@@ -22,6 +22,11 @@
         "name": "is_robot!",
         "ordinal": 3,
         "type_info": "Integer"
+      },
+      {
+        "name": "first_login_at",
+        "ordinal": 4,
+        "type_info": "Integer"
       }
     ],
     "parameters": {
@@ -31,8 +36,9 @@
       true,
       false,
       false,
-      false
+      false,
+      true
     ]
   },
-  "hash": "84e735eb526bd32b86e02a7dd99cd981d4ff6bfd1bd2d3590a2768cb971673a9"
+  "hash": "6896d563d2ee0739778979b11c63a294d58c9fc5c8beb4a876cb021c6c83e894"
 }

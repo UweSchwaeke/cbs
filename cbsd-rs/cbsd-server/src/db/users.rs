@@ -66,8 +66,11 @@ pub async fn create_or_update_user(
     }
 
     sqlx::query!(
-        "INSERT INTO users (email, name) VALUES (?, ?)
-         ON CONFLICT(email) DO UPDATE SET name = excluded.name, updated_at = unixepoch()",
+        "INSERT INTO users (email, name, first_login_at) VALUES (?, ?, unixepoch())
+         ON CONFLICT(email) DO UPDATE SET
+             name = excluded.name,
+             updated_at = unixepoch(),
+             first_login_at = COALESCE(users.first_login_at, unixepoch())",
         email,
         name,
     )
@@ -120,6 +123,9 @@ pub struct EntitySummary {
     pub name: String,
     pub active: bool,
     pub is_robot: bool,
+    /// Unix epoch seconds of first login; `None` for a provisioned user who
+    /// has never logged in (the "pending" state). Always `None` for robots.
+    pub first_login_at: Option<i64>,
 }
 
 /// List entities filtered by kind. Uses three separate compile-time checked
@@ -137,6 +143,7 @@ pub async fn list_entities_filtered(
                     name: r.name,
                     active: r.active != 0,
                     is_robot: r.is_robot != 0,
+                    first_login_at: r.first_login_at,
                 })
                 .collect::<Vec<_>>()
         };
@@ -146,7 +153,7 @@ pub async fn list_entities_filtered(
         EntityFilter::User => {
             let rows = sqlx::query!(
                 r#"SELECT email AS "email!", name AS "name!", active AS "active!",
-                          is_robot AS "is_robot!"
+                          is_robot AS "is_robot!", first_login_at
                    FROM users WHERE is_robot = 0 ORDER BY email"#,
             )
             .fetch_all(pool)
@@ -156,7 +163,7 @@ pub async fn list_entities_filtered(
         EntityFilter::Robot => {
             let rows = sqlx::query!(
                 r#"SELECT email AS "email!", name AS "name!", active AS "active!",
-                          is_robot AS "is_robot!"
+                          is_robot AS "is_robot!", first_login_at
                    FROM users WHERE is_robot = 1 ORDER BY email"#,
             )
             .fetch_all(pool)
@@ -166,7 +173,7 @@ pub async fn list_entities_filtered(
         EntityFilter::All => {
             let rows = sqlx::query!(
                 r#"SELECT email AS "email!", name AS "name!", active AS "active!",
-                          is_robot AS "is_robot!"
+                          is_robot AS "is_robot!", first_login_at
                    FROM users ORDER BY email"#,
             )
             .fetch_all(pool)
@@ -249,6 +256,52 @@ mod tests {
             .unwrap();
         assert_eq!(user.name, "Alice");
         assert!(!user.is_robot);
+    }
+
+    #[tokio::test]
+    async fn create_or_update_user_stamps_and_preserves_first_login_at() {
+        let pool = test_pool().await;
+        create_or_update_user(&pool, "alice@example.com", "Alice")
+            .await
+            .unwrap();
+        let first: Option<i64> = sqlx::query_scalar(
+            "SELECT first_login_at FROM users WHERE email = 'alice@example.com'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert!(first.is_some(), "first login must stamp first_login_at");
+
+        // Pin first_login_at to a fixed past value, then log in again: the
+        // upsert must PRESERVE it via COALESCE, not overwrite with unixepoch().
+        // (unixepoch() is whole-second, so without a fixed pin a same-second
+        // re-login could not distinguish "preserved" from "re-stamped".)
+        sqlx::query(
+            "UPDATE users SET first_login_at = 1000000000 WHERE email = 'alice@example.com'",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let user = create_or_update_user(&pool, "alice@example.com", "Alice Renamed")
+            .await
+            .unwrap();
+        assert_eq!(
+            user.name, "Alice Renamed",
+            "subsequent login refreshes the name"
+        );
+
+        let preserved: Option<i64> = sqlx::query_scalar(
+            "SELECT first_login_at FROM users WHERE email = 'alice@example.com'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            preserved,
+            Some(1_000_000_000),
+            "first_login_at must be preserved across logins, not overwritten"
+        );
     }
 
     #[tokio::test]
