@@ -19,21 +19,32 @@ use flate2::Compression;
 use flate2::write::GzEncoder;
 use sha2::{Digest, Sha256};
 
-/// Pack the component directory into a gzip-compressed tar archive.
+/// Pack one or more component directories into a single gzip-compressed tar
+/// archive.
+///
+/// Each component `name` is read from `components_dir/<name>` and stored under
+/// its own `<name>/` top-level prefix, so the worker's unpack root holds one
+/// subdirectory per component — exactly the layout cbscore's `load_components`
+/// enumerates. This is what lets a multi-component build reach the worker: the
+/// descriptor lists every component, and every component's files ride in the
+/// one tarball.
 ///
 /// Returns `(tar_gz_bytes, sha256_hex)` where `sha256_hex` is the hex-encoded
-/// SHA-256 digest of the final gzip bytes. The archive entries are stored
-/// relative to `component_name/` as the top-level directory.
-pub fn pack_component(
-    component_dir: &Path,
-    component_name: &str,
+/// SHA-256 digest of the final gzip bytes (over the combined archive).
+pub fn pack_components(
+    components_dir: &Path,
+    component_names: &[&str],
 ) -> Result<(Vec<u8>, String), io::Error> {
     let buf = Vec::new();
     let encoder = GzEncoder::new(buf, Compression::fast());
     let mut archive = tar::Builder::new(encoder);
 
-    // Append the entire component directory under the component name prefix.
-    archive.append_dir_all(component_name, component_dir)?;
+    // Append each component directory under its own name prefix. The tar
+    // `Builder` defaults to `HeaderMode::Complete`, preserving file modes so
+    // executable component scripts stay executable on the worker.
+    for name in component_names {
+        archive.append_dir_all(name, components_dir.join(name))?;
+    }
 
     // Finish the tar archive and then the gzip stream.
     let encoder = archive.into_inner()?;
@@ -61,17 +72,33 @@ fn hex_encode(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
+    use std::collections::BTreeSet;
+
+    /// Gz-decode `gz_bytes` and return the set of top-level path segments of
+    /// every archive entry (e.g. `"ceph"` for an entry `ceph/scripts/x.sh`).
+    fn top_level_entries(gz_bytes: &[u8]) -> BTreeSet<String> {
+        let decoder = flate2::read::GzDecoder::new(gz_bytes);
+        let mut archive = tar::Archive::new(decoder);
+        let mut tops = BTreeSet::new();
+        for entry in archive.entries().unwrap() {
+            let entry = entry.unwrap();
+            let path = entry.path().unwrap().into_owned();
+            if let Some(first) = path.components().next() {
+                tops.insert(first.as_os_str().to_string_lossy().into_owned());
+            }
+        }
+        tops
+    }
 
     #[test]
     fn pack_and_verify_sha256() {
-        let tmp = std::env::temp_dir().join("cbsd-test-tarball");
-        let _ = fs::remove_dir_all(&tmp);
-        fs::create_dir_all(tmp.join("sub")).unwrap();
-        fs::write(tmp.join("file.txt"), b"hello world").unwrap();
-        fs::write(tmp.join("sub/nested.txt"), b"nested content").unwrap();
+        let tmp = tempfile::TempDir::new().unwrap();
+        let comp = tmp.path().join("test-component");
+        std::fs::create_dir_all(comp.join("sub")).unwrap();
+        std::fs::write(comp.join("file.txt"), b"hello world").unwrap();
+        std::fs::write(comp.join("sub/nested.txt"), b"nested content").unwrap();
 
-        let (gz_bytes, sha256_hex) = pack_component(&tmp, "test-component").unwrap();
+        let (gz_bytes, sha256_hex) = pack_components(tmp.path(), &["test-component"]).unwrap();
 
         // Verify the bytes are non-empty gzip (magic bytes 1f 8b)
         assert!(gz_bytes.len() > 20);
@@ -86,8 +113,52 @@ mod tests {
         hasher.update(&gz_bytes);
         let hash = hasher.finalize();
         assert_eq!(hex_encode(&hash), sha256_hex);
+    }
 
-        // Clean up
-        let _ = fs::remove_dir_all(&tmp);
+    /// The fix: a multi-component build must ship every referenced component's
+    /// directory in the one tarball, each under its own `<name>/` prefix. This
+    /// pins the packing boundary directly — before the fix only the first
+    /// component made it in.
+    #[test]
+    fn packs_all_components_under_their_name_prefix() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        for name in ["alpha", "beta"] {
+            let dir = tmp.path().join(name);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(dir.join("cbs.component.yaml"), b"name: x\n").unwrap();
+        }
+
+        let (gz_bytes, _sha) = pack_components(tmp.path(), &["alpha", "beta"]).unwrap();
+
+        let tops = top_level_entries(&gz_bytes);
+        assert!(tops.contains("alpha"), "missing alpha/ in {tops:?}");
+        assert!(tops.contains("beta"), "missing beta/ in {tops:?}");
+
+        // Both components' descriptor files must be present in the archive.
+        let decoder = flate2::read::GzDecoder::new(&gz_bytes[..]);
+        let mut archive = tar::Archive::new(decoder);
+        let mut found = BTreeSet::new();
+        for entry in archive.entries().unwrap() {
+            let entry = entry.unwrap();
+            let path = entry.path().unwrap().into_owned();
+            if path.file_name().and_then(|n| n.to_str()) == Some("cbs.component.yaml") {
+                found.insert(path.to_string_lossy().into_owned());
+            }
+        }
+        assert!(
+            found.iter().any(|p| p.starts_with("alpha/"))
+                && found.iter().any(|p| p.starts_with("beta/")),
+            "expected both components' cbs.component.yaml, got {found:?}"
+        );
+    }
+
+    /// A missing component source directory must surface as an `io::Error`
+    /// (the dispatch path turns this into a terminal build FAILURE, see
+    /// `try_dispatch_pack_failure_fails_build_end_to_end`).
+    #[test]
+    fn missing_component_dir_errors() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let result = pack_components(tmp.path(), &["does-not-exist"]);
+        assert!(result.is_err(), "expected error for missing component dir");
     }
 }

@@ -139,6 +139,25 @@ pub fn temp_component_dir(component_name: &str) -> tempfile::TempDir {
     tmp
 }
 
+/// Like [`temp_component_dir`] but creates one child directory per name, each
+/// holding a `cbs.component.yaml` placeholder, so that
+/// `cbsd-server::components::tarball::pack_components(tempdir.path(), names)`
+/// succeeds for a multi-component build. The returned `TempDir` cleans up on
+/// drop; callers must keep it alive for the duration of the test.
+pub fn temp_components_dir(component_names: &[&str]) -> tempfile::TempDir {
+    let tmp = tempfile::TempDir::new().expect("tempdir");
+    for name in component_names {
+        let component_root = tmp.path().join(name);
+        std::fs::create_dir_all(&component_root).expect("mkdir component");
+        std::fs::write(
+            component_root.join("cbs.component.yaml"),
+            format!("name: {name}\n").into_bytes(),
+        )
+        .expect("write component yaml");
+    }
+    tmp
+}
+
 /// Build a `SessionManagerLayer<SqliteStore, SignedCookie>` for tests
 /// that exercise the full `build_router` chain. Runs the tower-sessions
 /// SQLite migration and generates a fresh signing key per call.

@@ -22,8 +22,11 @@ use crate::build::{BuildDescriptor, BuildId, Priority};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ServerMessage {
-    /// Dispatch a build. Followed by a binary frame containing the component
-    /// tar.gz. The worker verifies `component_sha256` against the binary frame.
+    /// Dispatch a build. Followed by a binary frame containing a single tar.gz
+    /// that holds every component referenced by `descriptor.components`, each
+    /// under its own `<name>/` top-level directory. The worker verifies
+    /// `component_sha256` (computed over the combined archive) against the
+    /// binary frame.
     BuildNew {
         build_id: BuildId,
         trace_id: String,

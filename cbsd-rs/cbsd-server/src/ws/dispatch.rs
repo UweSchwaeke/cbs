@@ -156,16 +156,30 @@ pub async fn try_dispatch(state: &AppState) -> Result<(), DispatchError> {
     };
     // Step 9: Lock released here.
 
-    // Step 10: Pack component tarball (outside lock).
-    let component_name = dispatch_info
+    // Step 10: Pack the component tarball (outside lock). Every component the
+    // descriptor references is packed under its own `<name>/` prefix into the
+    // one tarball, so multi-component builds reach the worker intact (cbscore
+    // enumerates the unpack root's subdirectories to find each component).
+    let component_names: Vec<&str> = dispatch_info
         .descriptor
         .components
-        .first()
+        .iter()
         .map(|c| c.name.as_str())
-        .unwrap_or("unknown");
+        .collect();
 
-    let component_dir = state.config.components_dir.join(component_name);
-    let (tar_gz_bytes, sha256_hex) = match tarball::pack_component(&component_dir, component_name) {
+    // The submission validator guarantees at least one component, but guard
+    // here too: an empty list would otherwise ship an empty archive. Funnel it
+    // through the same deterministic-failure handling as a pack error below.
+    let pack_result = if component_names.is_empty() {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "build has no components",
+        ))
+    } else {
+        tarball::pack_components(&state.config.components_dir, &component_names)
+    };
+
+    let (tar_gz_bytes, sha256_hex) = match pack_result {
         Ok(packed) => packed,
         Err(e) => {
             // The pack step had no recovery of its own: by here the build is
@@ -198,7 +212,7 @@ pub async fn try_dispatch(state: &AppState) -> Result<(), DispatchError> {
 
     tracing::debug!(
         build_id = dispatch_info.build_id.0,
-        component = component_name,
+        components = ?component_names,
         tarball_size = tar_gz_bytes.len(),
         sha256 = %sha256_hex,
         "component tarball packed"
@@ -1762,6 +1776,108 @@ mod tests {
         assert!(
             !state.log_watchers.lock().await.contains_key(&build_id),
             "log watcher must be removed"
+        );
+
+        drop(tempdir);
+    }
+
+    /// End-to-end: a multi-component build must pack EVERY referenced component
+    /// into the single tarball sent to the worker. Drives `try_dispatch` with a
+    /// 2-component descriptor and a live worker sender, then decodes the emitted
+    /// binary frame and asserts both component subdirs are present. Before the
+    /// fix only the first component was packed, so the second never reached the
+    /// worker and cbscore failed with "unknown component".
+    #[tokio::test]
+    async fn try_dispatch_packs_all_components_into_tarball() {
+        use crate::routes::test_support::{
+            temp_components_dir, test_app_state_with_components_dir,
+        };
+        use crate::ws::liveness::WorkerState;
+        use cbsd_proto::Arch;
+        use flate2::read::GzDecoder;
+        use std::collections::BTreeSet;
+
+        let pool = test_pool().await;
+        let tempdir = temp_components_dir(&["alpha", "beta"]);
+        let state = test_app_state_with_components_dir(pool.clone(), tempdir.path().to_path_buf());
+
+        seed_user(&pool, "u@e.com").await;
+        let mut descriptor = sample_descriptor();
+        descriptor.components = vec![
+            BuildComponent {
+                name: "alpha".to_string(),
+                git_ref: "main".to_string(),
+                repo: None,
+            },
+            BuildComponent {
+                name: "beta".to_string(),
+                git_ref: "main".to_string(),
+                repo: None,
+            },
+        ];
+        let descriptor_json = serde_json::to_string(&descriptor).expect("serialize");
+        let build_id = db::builds::insert_build(
+            &pool,
+            &descriptor_json,
+            "u@e.com",
+            "normal",
+            None,
+            None,
+            None,
+        )
+        .await
+        .expect("insert");
+
+        let mut rx = register_sender(&state.worker_senders, "test-conn").await;
+
+        {
+            let mut q = state.queue.lock().await;
+            q.enqueue(QueuedBuild {
+                build_id: BuildId(build_id),
+                priority: Priority::Normal,
+                descriptor: descriptor.clone(),
+                user_email: "u@e.com".to_string(),
+                queued_at: 0,
+            });
+            q.workers.insert(
+                "test-conn".to_string(),
+                WorkerState::Connected {
+                    registered_worker_id: "worker-1".to_string(),
+                    worker_name: "test-worker".to_string(),
+                    arch: Arch::X86_64,
+                    cores_total: 4,
+                    ram_total_mb: 1024,
+                    version: None,
+                },
+            );
+        }
+
+        try_dispatch(&state).await.expect("dispatch succeeds");
+
+        // First frame: BuildNew JSON. Second frame: the component tarball.
+        let first = rx.try_recv().expect("BuildNew frame");
+        assert!(matches!(first, Message::Text(_)), "expected Text BuildNew");
+        let Message::Binary(tarball) = rx.try_recv().expect("tarball frame") else {
+            panic!("expected Binary tarball frame");
+        };
+
+        let decoder = GzDecoder::new(&tarball[..]);
+        let mut archive = tar::Archive::new(decoder);
+        let mut tops = BTreeSet::new();
+        for entry in archive.entries().unwrap() {
+            let entry = entry.unwrap();
+            let path = entry.path().unwrap().into_owned();
+            if let Some(seg) = path.components().next() {
+                tops.insert(seg.as_os_str().to_string_lossy().into_owned());
+            }
+        }
+        assert!(
+            tops.contains("alpha"),
+            "alpha/ missing from tarball: {tops:?}"
+        );
+        assert!(
+            tops.contains("beta"),
+            "beta/ missing from tarball: {tops:?}"
         );
 
         drop(tempdir);
