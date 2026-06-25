@@ -18,6 +18,7 @@ mod config;
 mod error;
 pub mod logs;
 pub mod periodic;
+pub mod table;
 pub mod worker;
 
 use std::io::Write;

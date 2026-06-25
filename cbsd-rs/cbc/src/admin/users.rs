@@ -244,24 +244,21 @@ async fn cmd_list(config_path: Option<&std::path::Path>, opts: ClientOpts) -> Re
         return Ok(());
     }
 
-    println!(
-        "  {:<24} {:<12} {:<8} {:<12} ROLES",
-        "EMAIL", "NAME", "ACTIVE", "LOGIN",
-    );
-
-    for user in &users {
-        let active = if user.active { "yes" } else { "no" };
-        let login = login_state(user);
-        let role_names: Vec<&str> = user.roles.iter().map(|r| r.role.as_str()).collect();
-        println!(
-            "  {:<24} {:<12} {:<8} {:<12} {}",
-            user.email,
-            user.name,
-            active,
-            login,
-            role_names.join(", "),
-        );
-    }
+    let headers = ["EMAIL", "NAME", "ACTIVE", "LOGIN", "ROLES"];
+    let rows: Vec<Vec<String>> = users
+        .iter()
+        .map(|user| {
+            let role_names: Vec<&str> = user.roles.iter().map(|r| r.role.as_str()).collect();
+            vec![
+                user.email.clone(),
+                user.name.clone(),
+                if user.active { "yes" } else { "no" }.to_string(),
+                login_state(user),
+                role_names.join(", "),
+            ]
+        })
+        .collect();
+    crate::table::print_table(&headers, &rows);
 
     Ok(())
 }
