@@ -196,12 +196,18 @@ async fn cmd_list(config_path: Option<&std::path::Path>, opts: ClientOpts) -> Re
         return Ok(());
     }
 
-    println!("  {:<18} {:<9} DESCRIPTION", "NAME", "BUILTIN",);
-
-    for role in &roles {
-        let builtin = if role.builtin { "yes" } else { "no" };
-        println!("  {:<18} {:<9} {}", role.name, builtin, role.description);
-    }
+    let headers = ["NAME", "BUILTIN", "DESCRIPTION"];
+    let rows: Vec<Vec<String>> = roles
+        .iter()
+        .map(|role| {
+            vec![
+                role.name.clone(),
+                if role.builtin { "yes" } else { "no" }.to_string(),
+                role.description.clone(),
+            ]
+        })
+        .collect();
+    crate::table::print_table(&headers, &rows);
 
     Ok(())
 }

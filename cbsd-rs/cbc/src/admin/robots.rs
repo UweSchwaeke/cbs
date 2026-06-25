@@ -480,22 +480,28 @@ async fn cmd_list(config_path: Option<&std::path::Path>, opts: ClientOpts) -> Re
         return Ok(());
     }
 
-    println!(
-        "  {:<24} {:<8} {:<10} {:<14} EMAIL",
-        "NAME", "ACTIVE", "TOKEN", "EXPIRES",
-    );
-
-    for robot in &robots {
-        let active = if robot.active { "yes" } else { "no" };
-        let expires = match robot.token_expires_at {
-            Some(exp) => exp.to_string(),
-            None => "never".to_string(),
-        };
-        println!(
-            "  {:<24} {:<8} {:<10} {:<14} {}  ({})",
-            robot.name, active, robot.token_state, expires, robot.email, robot.display_name,
-        );
-    }
+    let headers = ["NAME", "ACTIVE", "TOKEN", "EXPIRES", "EMAIL"];
+    let rows: Vec<Vec<String>> = robots
+        .iter()
+        .map(|robot| {
+            let active = if robot.active { "yes" } else { "no" };
+            let expires = match robot.token_expires_at {
+                Some(exp) => exp.to_string(),
+                None => "never".to_string(),
+            };
+            // The trailing column shows the email with the display name in
+            // parens; the helper leaves the last column unpadded, so this stays
+            // intact.
+            vec![
+                robot.name.clone(),
+                active.to_string(),
+                robot.token_state.clone(),
+                expires,
+                format!("{}  ({})", robot.email, robot.display_name),
+            ]
+        })
+        .collect();
+    crate::table::print_table(&headers, &rows);
 
     Ok(())
 }

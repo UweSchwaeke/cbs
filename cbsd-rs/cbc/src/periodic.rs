@@ -432,37 +432,31 @@ async fn cmd_list(config_path: Option<&std::path::Path>, opts: ClientOpts) -> Re
         return Ok(());
     }
 
-    // Show the fewest UUID components that keep every id unique, and size
-    // the ID column to the widest rendered id so the table stays aligned.
+    // Show the fewest UUID components that keep every id unique; the table
+    // helper sizes the ID column to the widest rendered id.
     let ids: Vec<&str> = tasks.iter().map(|t| t.id.as_str()).collect();
     let n = min_unique_components(&ids);
-    let id_width = ids
+
+    let headers = ["ID", "ENABLED", "SCHEDULE", "NEXT RUN"];
+    let rows: Vec<Vec<String>> = tasks
         .iter()
-        .map(|id| truncate_components(id, n).len())
-        .max()
-        .unwrap_or(8);
-
-    println!(
-        "  {:<id_width$} {:<9} {:<15} NEXT RUN",
-        "ID", "ENABLED", "SCHEDULE"
-    );
-
-    for task in &tasks {
-        let id_short = truncate_components(&task.id, n);
-        let enabled = if task.enabled { "yes" } else { "no" };
-        let next_run = if task.enabled {
-            task.next_run
-                .map(format_timestamp)
-                .unwrap_or_else(|| "-".to_string())
-        } else {
-            "-".to_string()
-        };
-
-        println!(
-            "  {:<id_width$} {:<9} {:<15} {}",
-            id_short, enabled, task.cron_expr, next_run,
-        );
-    }
+        .map(|task| {
+            let next_run = if task.enabled {
+                task.next_run
+                    .map(format_timestamp)
+                    .unwrap_or_else(|| "-".to_string())
+            } else {
+                "-".to_string()
+            };
+            vec![
+                truncate_components(&task.id, n).to_string(),
+                if task.enabled { "yes" } else { "no" }.to_string(),
+                task.cron_expr.clone(),
+                next_run,
+            ]
+        })
+        .collect();
+    crate::table::print_table(&headers, &rows);
 
     Ok(())
 }
