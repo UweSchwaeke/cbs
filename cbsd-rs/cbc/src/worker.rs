@@ -183,33 +183,30 @@ async fn cmd_list(config_path: Option<&std::path::Path>, opts: ClientOpts) -> Re
         return Ok(());
     }
 
-    println!(
-        "  {name:<18} {arch:<10} {status:<14} {ver:<20} {build:<7} LAST SEEN",
-        name = "NAME",
-        arch = "ARCH",
-        status = "STATUS",
-        ver = "VERSION",
-        build = "BUILD",
-    );
-
-    for w in &workers {
-        let build = w
-            .current_build_id
-            .map(|id| format!("#{id}"))
-            .unwrap_or_else(|| "-".to_string());
-
-        let last_seen = w
-            .last_seen
-            .map(format_timestamp)
-            .unwrap_or_else(|| "-".to_string());
-
-        let ver = w.version.as_deref().unwrap_or("-");
-
-        println!(
-            "  {:<18} {:<10} {:<14} {:<20} {:<7} {}",
-            w.name, w.arch, w.status, ver, build, last_seen,
-        );
-    }
+    let headers = ["NAME", "ARCH", "STATUS", "VERSION", "BUILD", "LAST SEEN"];
+    let rows: Vec<Vec<String>> = workers
+        .iter()
+        .map(|w| {
+            let build = w
+                .current_build_id
+                .map(|id| format!("#{id}"))
+                .unwrap_or_else(|| "-".to_string());
+            let last_seen = w
+                .last_seen
+                .map(format_timestamp)
+                .unwrap_or_else(|| "-".to_string());
+            let ver = w.version.as_deref().unwrap_or("-");
+            vec![
+                w.name.clone(),
+                w.arch.clone(),
+                w.status.clone(),
+                ver.to_string(),
+                build,
+                last_seen,
+            ]
+        })
+        .collect();
+    crate::table::print_table(&headers, &rows);
 
     Ok(())
 }

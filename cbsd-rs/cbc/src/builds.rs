@@ -346,13 +346,19 @@ async fn cmd_list(
         return Ok(());
     }
 
-    for build in &builds {
-        let ts = format_timestamp(build.submitted_at);
-        println!(
-            "  #{:<5} {:<12} {:<30} {}",
-            build.id, build.state, build.user_email, ts,
-        );
-    }
+    let headers = ["ID", "STATE", "USER", "SUBMITTED"];
+    let rows: Vec<Vec<String>> = builds
+        .iter()
+        .map(|build| {
+            vec![
+                format!("#{}", build.id),
+                build.state.clone(),
+                build.user_email.clone(),
+                format_timestamp(build.submitted_at),
+            ]
+        })
+        .collect();
+    crate::table::print_table(&headers, &rows);
 
     Ok(())
 }
