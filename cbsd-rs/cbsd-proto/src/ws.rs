@@ -245,6 +245,11 @@ pub struct AppMetrics {
     /// nonzero means the server is missing samples and the push path is the
     /// bottleneck.
     pub push_drops_total: u64,
+    /// Cumulative SIGTERM→SIGKILL escalations on build subprocesses since the
+    /// worker started. `#[serde(default)]` so an older worker that never sends
+    /// it decodes to 0 rather than breaking the message (SI-18).
+    #[serde(default)]
+    pub sigkill_escalations_total: u64,
 }
 
 /// ccache size and effectiveness (from `ccache -s`).
@@ -542,6 +547,7 @@ mod tests {
                 },
                 spool_bytes: 42,
                 push_drops_total: 0,
+                sigkill_escalations_total: 4,
             },
         };
         let json = serde_json::to_string(&msg).unwrap();
@@ -558,6 +564,7 @@ mod tests {
                 assert_eq!(uptime_secs, 3600);
                 assert_eq!(host.filesystems.len(), 1);
                 assert_eq!(app.subprocess_exits.failure, 2);
+                assert_eq!(app.sigkill_escalations_total, 4);
                 assert_eq!(app.ccache.unwrap().hit_ratio, 0.87);
             }
             other => panic!("expected Metrics, got {other:?}"),
@@ -577,6 +584,7 @@ mod tests {
             },
             spool_bytes: 0,
             push_drops_total: 0,
+            sigkill_escalations_total: 0,
         };
         let json = serde_json::to_string(&app).unwrap();
         assert!(
@@ -988,6 +996,7 @@ mod tests {
             },
             spool_bytes: 0,
             push_drops_total: 0,
+            sigkill_escalations_total: 0,
         }
     }
 

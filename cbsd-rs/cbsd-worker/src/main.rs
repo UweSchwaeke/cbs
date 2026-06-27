@@ -12,6 +12,7 @@
 
 mod build;
 mod config;
+mod metrics;
 mod signal;
 mod ws;
 

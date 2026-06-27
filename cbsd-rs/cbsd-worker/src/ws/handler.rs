@@ -28,9 +28,11 @@
 //! soundness review.)
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
 use tokio::sync::mpsc;
+use tokio::task::JoinHandle;
 use tokio_tungstenite::tungstenite;
 
 use cbsd_proto::build::BuildId;
@@ -48,6 +50,19 @@ const PROTOCOL_VERSION: u32 = 2;
 /// Channel capacity for the outbound message queue between the supervisor
 /// and this transport.
 const OUTPUT_CHANNEL_CAPACITY: usize = 64;
+
+/// Aborts the wrapped task when dropped. Ties a connection-scoped background
+/// task (the metrics sampler) to the lifetime of `run_connection`, so every
+/// exit path — graceful shutdown, transport error, reconnect — stops it without
+/// each return site having to remember to. The sampler would also stop on its
+/// own once the channel closes; this just makes teardown immediate and tidy.
+struct AbortOnDrop(JoinHandle<()>);
+
+impl Drop for AbortOnDrop {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
 
 /// Run a single WebSocket connection: send Hello, wait for Welcome, then
 /// enter the message loop.
@@ -80,7 +95,7 @@ pub async fn run_connection(
     tracing::debug!("sent Hello");
 
     // --- Wait for Welcome ---
-    let connection_id = wait_for_welcome(&mut receiver, config).await?;
+    let (connection_id, accepts_metrics) = wait_for_welcome(&mut receiver, config).await?;
 
     // --- Drain pending supervisor state out the new transport ---
     // Order is fixed by the supervisor: WorkerStatus first, then any
@@ -103,6 +118,26 @@ pub async fn run_connection(
             });
         }
     }
+
+    // --- Per-connection metrics sampler ---
+    // Spawn only when the worker collects metrics and the server asked for them.
+    // The task holds its own transport clone (a sibling of the supervisor's) and
+    // pushes with `try_send`, so it can never stall the build path. The guard
+    // aborts it on every exit path from this function, and a reconnect spawns a
+    // fresh sampler against the new connection's channel.
+    let _sampler_guard =
+        if crate::metrics::sampler::should_start(config.metrics.enabled, accepts_metrics) {
+            // Clamp to >=1s: `tokio::time::interval` panics on a zero period.
+            let push = Duration::from_secs(config.metrics.push_interval_secs.max(1));
+            let ccache = Duration::from_secs(config.metrics.ccache_interval_secs.max(1));
+            let tx = out_tx.clone();
+            let sup = Arc::clone(&supervisor);
+            Some(AbortOnDrop(tokio::spawn(async move {
+                crate::metrics::sampler::run_sampler(tx, sup, push, ccache).await;
+            })))
+        } else {
+            None
+        };
 
     tracing::info!(%connection_id, "entering message loop");
 
@@ -256,11 +291,12 @@ pub async fn run_connection(
 // Handshake helpers
 // ---------------------------------------------------------------------------
 
-/// Run the Welcome wait loop. Returns the server-assigned connection id.
+/// Run the Welcome wait loop. Returns the server-assigned connection id and
+/// whether the server asked this worker to push metrics (`accepts_metrics`).
 async fn wait_for_welcome<S>(
     receiver: &mut S,
     config: &ResolvedWorkerConfig,
-) -> Result<String, HandlerError>
+) -> Result<(String, bool), HandlerError>
 where
     S: StreamExt<Item = Result<tungstenite::Message, tungstenite::Error>> + Unpin,
 {
@@ -289,8 +325,7 @@ where
                 protocol_version,
                 connection_id,
                 grace_period_secs,
-                // G6 reads `accepts_metrics` here to gate the push collector.
-                ..
+                accepts_metrics,
             } => {
                 tracing::info!(
                     %connection_id,
@@ -311,7 +346,7 @@ where
                     );
                 }
 
-                return Ok(connection_id);
+                return Ok((connection_id, accepts_metrics));
             }
             ServerMessage::Error {
                 reason,

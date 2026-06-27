@@ -206,10 +206,14 @@ pub async fn stream_output(
         }
     }
 
-    // Determine final status from the wrapper result.
+    // Determine final status from the wrapper result. This is the single
+    // terminal classification point for a build subprocess, so it is also where
+    // the per-result subprocess-exit metric is counted (one increment per
+    // completed subprocess, including the no-result-line failure below).
     match wrapper_result {
         Some(wr) => {
             let status = super::executor::classify_exit_code(Some(wr.exit_code));
+            crate::metrics::app::record_subprocess_exit(status);
             Ok((status, wr.error, wr.build_report))
         }
         None => {
@@ -220,6 +224,7 @@ pub async fn stream_output(
                 "no result line from wrapper — subprocess may have \
                  crashed or been OOM-killed"
             );
+            crate::metrics::app::record_subprocess_exit(BuildFinishedStatus::Failure);
             Ok((BuildFinishedStatus::Failure, None, None))
         }
     }

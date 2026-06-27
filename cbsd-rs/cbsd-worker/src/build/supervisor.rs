@@ -551,8 +551,8 @@ impl Supervisor {
         self.state.lock().await.active.as_ref().map(|a| a.phase)
     }
 
-    /// Test/diagnostic accessor for spool bytes consumed.
-    #[cfg(test)]
+    /// Current build's output-spool fill in bytes, or 0 when idle. Read by the
+    /// metrics sampler for `cbsd_worker_spool_bytes`; also used in tests.
     pub async fn spool_bytes(&self) -> u64 {
         self.state
             .lock()

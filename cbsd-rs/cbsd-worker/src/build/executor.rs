@@ -243,6 +243,9 @@ impl BuildExecutor {
                 pid,
                 "escalating to SIGKILL after {timeout:?} timeout"
             );
+            // Count the escalation: SIGTERM did not bring the subprocess down
+            // within the grace window, so the harder signal was needed.
+            crate::metrics::app::record_sigkill_escalation();
             // SAFETY: Same as above — sending SIGKILL to the process group.
             unsafe {
                 libc::kill(pgid, libc::SIGKILL);

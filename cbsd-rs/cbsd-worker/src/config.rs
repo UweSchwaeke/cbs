@@ -41,6 +41,50 @@ fn default_log_level() -> String {
     "info".to_string()
 }
 
+/// Worker metrics-collection configuration. The worker exposes no endpoint, so
+/// there is no bind address: it pushes samples over the existing WebSocket only
+/// when the server advertises `accepts_metrics`.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct WorkerMetricsConfig {
+    /// Master switch for worker-side collection (default true). When false the
+    /// worker never samples or pushes, regardless of the server's request.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+
+    /// How often a connected worker pushes a metrics snapshot (default 15s).
+    #[serde(default = "default_push_interval_secs")]
+    pub push_interval_secs: u64,
+
+    /// How often the slower ccache stats are re-sampled and carried forward
+    /// onto each push (default 60s) — `ccache --print-stats` is comparatively
+    /// expensive, so it runs less often than the host sample.
+    #[serde(default = "default_ccache_interval_secs")]
+    pub ccache_interval_secs: u64,
+}
+
+impl Default for WorkerMetricsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_true(),
+            push_interval_secs: default_push_interval_secs(),
+            ccache_interval_secs: default_ccache_interval_secs(),
+        }
+    }
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_push_interval_secs() -> u64 {
+    15
+}
+
+fn default_ccache_interval_secs() -> u64 {
+    60
+}
+
 /// Worker configuration loaded from a YAML file.
 ///
 /// Identity fields (`api_key`, `arch`) can be provided individually or
@@ -102,6 +146,10 @@ pub struct WorkerConfig {
     /// Logging configuration.
     #[serde(default)]
     pub logging: LoggingConfig,
+
+    /// Metrics-collection configuration.
+    #[serde(default)]
+    pub metrics: WorkerMetricsConfig,
 }
 
 /// Resolved worker configuration with all identity fields guaranteed present.
@@ -129,6 +177,9 @@ pub struct ResolvedWorkerConfig {
     /// Cap on uncompressed bytes from a component tarball (audit-rem
     /// D5). `None` → use [`crate::build::component::DEFAULT_MAX_UNCOMPRESSED_BYTES`].
     pub max_uncompressed_component_bytes: Option<u64>,
+
+    /// Metrics-collection configuration (no resolution needed; carried as-is).
+    pub metrics: WorkerMetricsConfig,
 }
 
 impl ResolvedWorkerConfig {
@@ -252,6 +303,7 @@ impl WorkerConfig {
                 sigkill_escalation_timeout_secs: self.sigkill_escalation_timeout_secs,
                 reconnect_backoff_ceiling_secs: self.reconnect_backoff_ceiling_secs,
                 max_uncompressed_component_bytes: self.max_uncompressed_component_bytes,
+                metrics: self.metrics,
             });
         }
 
@@ -289,6 +341,7 @@ impl WorkerConfig {
             sigkill_escalation_timeout_secs: self.sigkill_escalation_timeout_secs,
             reconnect_backoff_ceiling_secs: self.reconnect_backoff_ceiling_secs,
             max_uncompressed_component_bytes: self.max_uncompressed_component_bytes,
+            metrics: self.metrics,
         })
     }
 }
@@ -386,6 +439,7 @@ mod tests {
             reconnect_backoff_ceiling_secs: None,
             max_uncompressed_component_bytes: None,
             logging: LoggingConfig::default(),
+            metrics: WorkerMetricsConfig::default(),
         }
     }
 

@@ -108,6 +108,11 @@ pub fn record_worker_metrics(worker: &str, uptime_secs: u64, host: &HostMetrics,
     .absolute(app.subprocess_exits.revoked);
     counter!("cbsd_worker_metrics_push_drops_total", "worker" => worker.to_string())
         .absolute(app.push_drops_total);
+    // SIGKILL escalations are a worker-side event (the design originally placed
+    // this server-side, but only the worker observes it); keep the design's
+    // metric name and add the `worker` label like the other pushed counters.
+    counter!("cbsd_sigkill_escalations_total", "worker" => worker.to_string())
+        .absolute(app.sigkill_escalations_total);
 }
 
 #[cfg(test)]
@@ -149,6 +154,7 @@ mod tests {
             },
             spool_bytes: 64,
             push_drops_total: 2,
+            sigkill_escalations_total: 5,
         }
     }
 
@@ -190,6 +196,10 @@ mod tests {
         assert!(
             out.contains(r#"cbsd_worker_ccache_hit_ratio{worker="w-7"} 0.9"#),
             "ccache gauge missing:\n{out}"
+        );
+        assert!(
+            out.contains(r#"cbsd_sigkill_escalations_total{worker="w-7"} 5"#),
+            "sigkill-escalation counter missing:\n{out}"
         );
     }
 
