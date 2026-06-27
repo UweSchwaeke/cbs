@@ -9,9 +9,9 @@ dependency graph live in the 022 plan.
 
 ## Progress
 
-| #   | Commit                                                            | ~LOC                | Status  |
-| --- | ----------------------------------------------------------------- | ------------------- | ------- |
-| 1   | `cbsd-rs: add Prometheus/Grafana monitoring stack and dashboards` | ~mostly config/JSON | Pending |
+| #   | Commit                                                            | ~LOC                | Status |
+| --- | ----------------------------------------------------------------- | ------------------- | ------ |
+| 1   | `cbsd-rs: add Prometheus/Grafana monitoring stack and dashboards` | ~mostly config/JSON | Done   |
 
 **Total:** 1 commit (config + provisioned dashboard JSON).
 

@@ -8,13 +8,13 @@ worker), `023-…-metrics-deployment-and-dashboards.md` (ops).
 
 ## Progress
 
-| #   | Commit                                                          | ~LOC | Status  |
-| --- | --------------------------------------------------------------- | ---- | ------- |
-| 1   | `cbsd-rs/server: add /metrics exporter and server-owned gauges` | ~450 | Done    |
-| 2   | `cbsd-rs/server: instrument build outcomes and durations`       | ~350 | Done    |
-| 3   | `cbsd-rs/server: instrument queue, dispatch, and scheduler`     | ~350 | Done    |
-| 4   | `cbsd-rs/server: add HTTP RED metrics layer`                    | ~300 | Done    |
-| 5   | `cbsd-rs/server: advertise and ingest pushed worker metrics`    | ~400 | Pending |
+| #   | Commit                                                          | ~LOC | Status |
+| --- | --------------------------------------------------------------- | ---- | ------ |
+| 1   | `cbsd-rs/server: add /metrics exporter and server-owned gauges` | ~450 | Done   |
+| 2   | `cbsd-rs/server: instrument build outcomes and durations`       | ~350 | Done   |
+| 3   | `cbsd-rs/server: instrument queue, dispatch, and scheduler`     | ~350 | Done   |
+| 4   | `cbsd-rs/server: add HTTP RED metrics layer`                    | ~300 | Done   |
+| 5   | `cbsd-rs/server: advertise and ingest pushed worker metrics`    | ~400 | Done   |
 
 **Total:** ~1850 LOC, 5 commits.
 
