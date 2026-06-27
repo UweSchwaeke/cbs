@@ -11,7 +11,7 @@ dependency graph live in the 022 plan.
 
 | #   | Commit                                                        | ~LOC | Status  |
 | --- | ------------------------------------------------------------- | ---- | ------- |
-| 1   | `cbsd-rs/proto: add metrics wire types and accepts_metrics`   | ~350 | Pending |
+| 1   | `cbsd-rs/proto: add metrics wire types and accepts_metrics`   | ~350 | Done    |
 | 2   | `cbsd-rs/worker: collect and push metrics over the WebSocket` | ~650 | Pending |
 
 **Total:** ~1000 LOC, 2 commits.
