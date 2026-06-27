@@ -1,0 +1,375 @@
+{
+  "uid": "cbsd-worker-host",
+  "title": "cbsd-rs \u2014 Worker Host & ccache",
+  "tags": [
+    "cbsd-rs"
+  ],
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "graphTooltip": 1,
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "refresh": "30s",
+  "timezone": "",
+  "templating": {
+    "list": [
+      {
+        "name": "worker",
+        "label": "Worker",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "cbsd-prometheus"
+        },
+        "query": {
+          "query": "label_values(cbsd_worker_uptime_seconds, worker)",
+          "refId": "StandardVariableQuery"
+        },
+        "refresh": 2,
+        "sort": 1,
+        "includeAll": false,
+        "multi": false,
+        "current": {},
+        "options": []
+      }
+    ]
+  },
+  "annotations": {
+    "list": []
+  },
+  "panels": [
+    {
+      "id": 15,
+      "type": "timeseries",
+      "title": "CPU busy by worker",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cbsd-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "cbsd_worker_host_cpu_busy_ratio",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cbsd-prometheus"
+          },
+          "legendFormat": "{{worker}}"
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "type": "timeseries",
+      "title": "Load average (1m)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cbsd-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {}
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "cbsd_worker_host_load1",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cbsd-prometheus"
+          },
+          "legendFormat": "{{worker}}"
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "type": "timeseries",
+      "title": "Memory used ratio / available",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cbsd-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {}
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "cbsd_worker_host_mem_used_bytes / cbsd_worker_host_mem_total_bytes",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cbsd-prometheus"
+          },
+          "legendFormat": "{{worker}} used ratio"
+        },
+        {
+          "refId": "B",
+          "expr": "cbsd_worker_host_mem_available_bytes",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cbsd-prometheus"
+          },
+          "legendFormat": "{{worker}} available"
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "type": "timeseries",
+      "title": "Swap used / total",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cbsd-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "cbsd_worker_host_swap_used_bytes / clamp_min(cbsd_worker_host_swap_total_bytes, 1)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cbsd-prometheus"
+          },
+          "legendFormat": "{{worker}} swap ratio"
+        }
+      ]
+    },
+    {
+      "id": 19,
+      "type": "timeseries",
+      "title": "Filesystem fill",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cbsd-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "cbsd_worker_host_fs_used_bytes / cbsd_worker_host_fs_total_bytes",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cbsd-prometheus"
+          },
+          "legendFormat": "{{worker}} {{mount}}"
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "type": "timeseries",
+      "title": "Disk IO",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cbsd-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "unit": "Bps"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(cbsd_worker_host_disk_read_bytes_total[5m])",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cbsd-prometheus"
+          },
+          "legendFormat": "{{worker}} read"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(cbsd_worker_host_disk_written_bytes_total[5m])",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cbsd-prometheus"
+          },
+          "legendFormat": "{{worker}} written"
+        }
+      ]
+    },
+    {
+      "id": 21,
+      "type": "timeseries",
+      "title": "ccache size vs max",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cbsd-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 24
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "cbsd_worker_ccache_size_bytes",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cbsd-prometheus"
+          },
+          "legendFormat": "{{worker}} size"
+        },
+        {
+          "refId": "B",
+          "expr": "cbsd_worker_ccache_max_bytes",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cbsd-prometheus"
+          },
+          "legendFormat": "{{worker}} max"
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "type": "timeseries",
+      "title": "ccache hit ratio",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cbsd-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 24
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "cbsd_worker_ccache_hit_ratio",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cbsd-prometheus"
+          },
+          "legendFormat": "{{worker}}"
+        }
+      ]
+    },
+    {
+      "id": 23,
+      "type": "timeseries",
+      "title": "Metrics push drops",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cbsd-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 32
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {}
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(cbsd_worker_metrics_push_drops_total[15m])",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cbsd-prometheus"
+          },
+          "legendFormat": "{{worker}}"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+# Grafana dashboard provider — loads the cbsd-rs dashboards from disk.
+#
+# Copyright (C) 2026  Clyso
+#
+# The JSON under /dashboards is generated from the panel/PromQL contract in
+# design 023, which stays authoritative if the two ever drift.
+
+apiVersion: 1
+
+providers:
+  - name: cbsd-rs
+    orgId: 1
+    folder: cbsd-rs
+    type: file
+    disableDeletion: false
+    allowUiUpdates: false
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

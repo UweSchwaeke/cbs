@@ -136,6 +136,39 @@ log-retention:
   log-retention-days: 30
 
 # --------------------------------------------------------------------------
+# Metrics  (Prometheus exposition — all values shown are defaults)
+#
+# When enabled, the server exposes a Prometheus `/metrics` endpoint carrying
+# both its own `cbsd_*` series and the per-worker `cbsd_worker_*` series that
+# capable workers push over the WebSocket. A single scrape target therefore
+# covers the whole fleet — no per-worker service discovery.
+#
+# Cadence tuning (keep these as a coupled set — see design 023):
+#   - The worker `metrics.push-interval-secs` (default 15) should match the
+#     Prometheus scrape_interval.
+#   - `stale-after-secs` should be >= ~3x the worker push interval so a single
+#     dropped push does not prune a worker's host gauges.
+#   - `gauge-refresh-secs` must be < `stale-after-secs` so server-owned gauges
+#     are re-touched and never idle-expire between scrapes.
+# --------------------------------------------------------------------------
+
+metrics:
+  # Master switch for the metrics subsystem. When false, no recorder is
+  # installed and `/metrics` returns 404.
+  enabled: true
+
+  # Address for the Prometheus endpoint. Use a dedicated bind so the metrics
+  # surface stays off the public listener; it must differ from listen-addr.
+  # Omit to serve `/metrics` on the main listener instead.
+  bind: "0.0.0.0:9090"
+
+  # Seconds of silence after which a worker's pushed host gauges are pruned.
+  stale-after-secs: 45
+
+  # Seconds between server-owned gauge refreshes (resync + idle-timer touch).
+  gauge-refresh-secs: 5
+
+# --------------------------------------------------------------------------
 # Logging
 #
 # Console output (stdout) is controlled by the CBSD_DEV environment variable:

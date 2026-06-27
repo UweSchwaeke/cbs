@@ -1,0 +1,234 @@
+{
+  "uid": "cbsd-build-queue",
+  "title": "cbsd-rs \u2014 Build Queue & Throughput",
+  "tags": [
+    "cbsd-rs"
+  ],
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "graphTooltip": 1,
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "refresh": "30s",
+  "timezone": "",
+  "templating": {
+    "list": []
+  },
+  "annotations": {
+    "list": []
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Queue depth by priority",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cbsd-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {}
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (priority) (cbsd_builds_queued)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cbsd-prometheus"
+          },
+          "legendFormat": "{{priority}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Active builds",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cbsd-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {}
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(cbsd_builds_active)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cbsd-prometheus"
+          },
+          "legendFormat": "active"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Build rate by result",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cbsd-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {}
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (result) (rate(cbsd_build_results_total[5m]))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cbsd-prometheus"
+          },
+          "legendFormat": "{{result}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Success ratio (1h)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cbsd-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(cbsd_build_results_total{result=\"success\"}[1h])) / clamp_min(sum(rate(cbsd_build_results_total[1h])), 1)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cbsd-prometheus"
+          },
+          "legendFormat": "success ratio"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Re-dispatch (retry) rate",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cbsd-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {}
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (reason) (rate(cbsd_build_requeues_total[15m]))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cbsd-prometheus"
+          },
+          "legendFormat": "{{reason}}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Queue wait p50/p95",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cbsd-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(cbsd_build_queue_wait_seconds_bucket[15m])))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cbsd-prometheus"
+          },
+          "legendFormat": "p50"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(cbsd_build_queue_wait_seconds_bucket[15m])))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cbsd-prometheus"
+          },
+          "legendFormat": "p95"
+        }
+      ]
+    }
+  ]
+}

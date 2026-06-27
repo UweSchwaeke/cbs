@@ -120,6 +120,67 @@ services:
       - server-dev
       - ui-dev
 
+  # ----------------------------------------------------------------------
+  # Monitoring stack (Prometheus + Grafana + server-host node-exporter).
+  #
+  # Per proposal 002 there are NO worker-side monitoring services: a single
+  # Prometheus target (server-dev:9090) carries both the server-owned cbsd_*
+  # series and the per-worker cbsd_worker_* series workers push over the
+  # WebSocket. node-exporter runs beside the server only.
+  #
+  # The server's metrics endpoint (metrics.bind 0.0.0.0:9090 in the example
+  # config) is reachable on the compose network and intentionally NOT
+  # published, keeping the metrics surface off the host.
+  # ----------------------------------------------------------------------
+  prometheus:
+    profiles: [dev]
+    image: docker.io/prom/prometheus:latest
+    container_name: cbsd-rs-prometheus
+    volumes:
+      - ./container/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - cbsd-rs-prometheus-data:/prometheus
+    # Publish 9091→9090 for ad-hoc local debugging of the Prometheus UI only;
+    # Grafana reaches it internally over the compose network.
+    ports:
+      - "9091:9090"
+    security_opt:
+      - label=disable
+    depends_on:
+      - server-dev
+
+  grafana:
+    profiles: [dev]
+    image: docker.io/grafana/grafana:latest
+    container_name: cbsd-rs-grafana
+    volumes:
+      - ./container/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./container/monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - cbsd-rs-grafana-data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    environment:
+      # Dev convenience only — anonymous viewer access, no login wall. Do NOT
+      # carry these into a production deployment.
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Admin"
+      GF_SECURITY_ADMIN_PASSWORD: "admin"
+    security_opt:
+      - label=disable
+    depends_on:
+      - prometheus
+
+  node-exporter:
+    profiles: [dev]
+    image: docker.io/prom/node-exporter:latest
+    container_name: cbsd-rs-node-exporter
+    command:
+      - "--path.rootfs=/host"
+    pid: host
+    volumes:
+      - /:/host:ro,rslave
+    security_opt:
+      - label=disable
+
 volumes:
   # Persistent Cargo registry and git caches shared across dev containers.
   # Avoids re-downloading crates on every container restart.
@@ -128,3 +189,6 @@ volumes:
   # Persistent node_modules for the UI. Avoids re-downloading on every
   # container restart.
   cbsd-rs-ui-node-modules:
+  # Prometheus TSDB and Grafana state.
+  cbsd-rs-prometheus-data:
+  cbsd-rs-grafana-data:

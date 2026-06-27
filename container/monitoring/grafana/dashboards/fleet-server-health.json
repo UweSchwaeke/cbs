@@ -1,0 +1,310 @@
+{
+  "uid": "cbsd-fleet-health",
+  "title": "cbsd-rs \u2014 Fleet & Server Health",
+  "tags": [
+    "cbsd-rs"
+  ],
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "graphTooltip": 1,
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "refresh": "30s",
+  "timezone": "",
+  "templating": {
+    "list": []
+  },
+  "annotations": {
+    "list": []
+  },
+  "panels": [
+    {
+      "id": 26,
+      "type": "timeseries",
+      "title": "Workers connected by state",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cbsd-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {}
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (state) (cbsd_workers_connected)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cbsd-prometheus"
+          },
+          "legendFormat": "{{state}}"
+        }
+      ]
+    },
+    {
+      "id": 27,
+      "type": "timeseries",
+      "title": "DB pool saturation",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cbsd-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {}
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "cbsd_db_pool_connections{state=\"acquired\"}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cbsd-prometheus"
+          },
+          "legendFormat": "acquired"
+        },
+        {
+          "refId": "B",
+          "expr": "4",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cbsd-prometheus"
+          },
+          "legendFormat": "pool max"
+        }
+      ]
+    },
+    {
+      "id": 28,
+      "type": "timeseries",
+      "title": "Dispatch latency p95",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cbsd-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(cbsd_dispatch_latency_seconds_bucket[15m])))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cbsd-prometheus"
+          },
+          "legendFormat": "p95"
+        }
+      ]
+    },
+    {
+      "id": 29,
+      "type": "timeseries",
+      "title": "Ack timeouts",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cbsd-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {}
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(cbsd_dispatch_ack_timeouts_total[15m])",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cbsd-prometheus"
+          },
+          "legendFormat": "dispatch"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(cbsd_revoke_ack_timeouts_total[15m])",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cbsd-prometheus"
+          },
+          "legendFormat": "revoke"
+        }
+      ]
+    },
+    {
+      "id": 30,
+      "type": "timeseries",
+      "title": "HTTP request rate by status",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cbsd-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {}
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (status) (rate(cbsd_http_requests_total[5m]))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cbsd-prometheus"
+          },
+          "legendFormat": "{{status}}"
+        }
+      ]
+    },
+    {
+      "id": 31,
+      "type": "timeseries",
+      "title": "HTTP latency p95 by route",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cbsd-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le, route) (rate(cbsd_http_request_duration_seconds_bucket[5m])))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cbsd-prometheus"
+          },
+          "legendFormat": "{{route}}"
+        }
+      ]
+    },
+    {
+      "id": 32,
+      "type": "timeseries",
+      "title": "Periodic outcomes",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cbsd-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 24
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {}
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (result) (rate(cbsd_periodic_fires_total[1d]))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cbsd-prometheus"
+          },
+          "legendFormat": "{{result}}"
+        }
+      ]
+    },
+    {
+      "id": 33,
+      "type": "timeseries",
+      "title": "Periodic schedule lag p95",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cbsd-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 24
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(cbsd_periodic_schedule_lag_seconds_bucket[15m])))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cbsd-prometheus"
+          },
+          "legendFormat": "p95"
+        }
+      ]
+    }
+  ]
+}

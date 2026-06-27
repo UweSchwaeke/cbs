@@ -1,0 +1,212 @@
+{
+  "uid": "cbsd-per-worker",
+  "title": "cbsd-rs \u2014 Per-Worker",
+  "tags": [
+    "cbsd-rs"
+  ],
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "graphTooltip": 1,
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "refresh": "30s",
+  "timezone": "",
+  "templating": {
+    "list": [
+      {
+        "name": "worker",
+        "label": "Worker",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "cbsd-prometheus"
+        },
+        "query": {
+          "query": "label_values(cbsd_worker_uptime_seconds, worker)",
+          "refId": "StandardVariableQuery"
+        },
+        "refresh": 2,
+        "sort": 1,
+        "includeAll": false,
+        "multi": false,
+        "current": {},
+        "options": []
+      }
+    ]
+  },
+  "annotations": {
+    "list": []
+  },
+  "panels": [
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Duration p95 by worker",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cbsd-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le, worker) (rate(cbsd_build_duration_seconds_bucket[1h])))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cbsd-prometheus"
+          },
+          "legendFormat": "{{worker}}"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Throughput by worker",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cbsd-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {}
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (worker) (rate(cbsd_build_results_total[15m]))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cbsd-prometheus"
+          },
+          "legendFormat": "{{worker}}"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Subprocess exits by worker/result",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cbsd-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {}
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (worker, result) (rate(cbsd_worker_subprocess_exits_total[15m]))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cbsd-prometheus"
+          },
+          "legendFormat": "{{worker}} {{result}}"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Reconnects by worker",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cbsd-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {}
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (worker) (rate(cbsd_worker_reconnects_total[1h]))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cbsd-prometheus"
+          },
+          "legendFormat": "{{worker}}"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "type": "stat",
+      "title": "Worker uptime",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cbsd-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 16
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "cbsd_worker_uptime_seconds",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cbsd-prometheus"
+          },
+          "legendFormat": "{{worker}}"
+        }
+      ]
+    }
+  ]
+}

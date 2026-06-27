@@ -1,0 +1,187 @@
+{
+  "uid": "cbsd-build-duration",
+  "title": "cbsd-rs \u2014 Build Duration & SLOs",
+  "tags": [
+    "cbsd-rs"
+  ],
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "graphTooltip": 1,
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "refresh": "30s",
+  "timezone": "",
+  "templating": {
+    "list": []
+  },
+  "annotations": {
+    "list": []
+  },
+  "panels": [
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Duration p50/p90/p99",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cbsd-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(cbsd_build_duration_seconds_bucket[1h])))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cbsd-prometheus"
+          },
+          "legendFormat": "p50"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.90, sum by (le) (rate(cbsd_build_duration_seconds_bucket[1h])))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cbsd-prometheus"
+          },
+          "legendFormat": "p90"
+        },
+        {
+          "refId": "C",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(cbsd_build_duration_seconds_bucket[1h])))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cbsd-prometheus"
+          },
+          "legendFormat": "p99"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Time-to-failure p50/p95",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cbsd-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(cbsd_build_duration_seconds_bucket{result=\"failure\"}[1h])))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cbsd-prometheus"
+          },
+          "legendFormat": "p50"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(cbsd_build_duration_seconds_bucket{result=\"failure\"}[1h])))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cbsd-prometheus"
+          },
+          "legendFormat": "p95"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "heatmap",
+      "title": "Duration heatmap",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cbsd-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (le) (rate(cbsd_build_duration_seconds_bucket[5m]))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cbsd-prometheus"
+          },
+          "legendFormat": "{{le}}"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "SIGKILL escalations",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cbsd-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 16
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {}
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (worker) (rate(cbsd_sigkill_escalations_total[1h]))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cbsd-prometheus"
+          },
+          "legendFormat": "{{worker}}"
+        }
+      ]
+    }
+  ]
+}

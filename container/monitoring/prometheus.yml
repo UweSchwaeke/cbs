@@ -1,0 +1,24 @@
+# Prometheus scrape configuration for the cbsd-rs monitoring stack.
+#
+# Copyright (C) 2026  Clyso
+#
+# A single `cbsd-server` target carries BOTH the server-owned `cbsd_*` series
+# and the per-worker `cbsd_worker_*` series that workers push over the
+# WebSocket — so the whole fleet is covered without per-worker discovery
+# (design 023). The server-host node-exporter is the one place node_exporter
+# still applies; the worker fleet deliberately runs no scrape targets.
+
+global:
+  # Matches the worker `metrics.push-interval-secs` default so a scrape sees
+  # at most one push of staleness.
+  scrape_interval: 15s
+  scrape_timeout: 10s
+
+scrape_configs:
+  - job_name: cbsd-server
+    static_configs:
+      - targets: ["server-dev:9090"]
+
+  - job_name: node-server
+    static_configs:
+      - targets: ["node-exporter:9100"]

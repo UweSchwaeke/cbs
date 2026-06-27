@@ -72,6 +72,30 @@ cbscore-config-path: /cbs/config/cbs-build.config.yaml
 # reconnect-backoff-ceiling-secs: 30
 
 # --------------------------------------------------------------------------
+# Metrics  (host + application metrics push — defaults shown)
+#
+# The worker exposes no endpoint. When enabled, a connected worker samples host
+# and application metrics and pushes them over the existing WebSocket, but only
+# if the server advertised that it accepts them. The server stamps the worker
+# identity and re-exposes the series on its own `/metrics`.
+#
+# push-interval-secs should match the server's Prometheus scrape_interval; see
+# the coupled-cadence note in the server config (design 023).
+# --------------------------------------------------------------------------
+
+metrics:
+  # Master switch for worker-side collection. When false, the worker never
+  # samples or pushes regardless of what the server requests.
+  enabled: true
+
+  # Seconds between metrics pushes while connected.
+  push-interval-secs: 15
+
+  # Seconds between the slower ccache stats samples (carried forward onto
+  # each push). `ccache --print-stats` is comparatively expensive.
+  ccache-interval-secs: 60
+
+# --------------------------------------------------------------------------
 # Logging
 #
 # Console output (stdout) is controlled by the CBSD_DEV environment variable:

@@ -1,0 +1,145 @@
+{
+  "uid": "cbsd-build-resource",
+  "title": "cbsd-rs \u2014 Build \u2194 Resource Correlation",
+  "tags": [
+    "cbsd-rs"
+  ],
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "graphTooltip": 1,
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "refresh": "30s",
+  "timezone": "",
+  "templating": {
+    "list": [
+      {
+        "name": "worker",
+        "label": "Worker",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "cbsd-prometheus"
+        },
+        "query": {
+          "query": "label_values(cbsd_worker_uptime_seconds, worker)",
+          "refId": "StandardVariableQuery"
+        },
+        "refresh": 2,
+        "sort": 1,
+        "includeAll": false,
+        "multi": false,
+        "current": {},
+        "options": []
+      }
+    ]
+  },
+  "annotations": {
+    "list": [
+      {
+        "name": "Build events",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "cbsd-prometheus"
+        },
+        "enable": true,
+        "iconColor": "green",
+        "titleFormat": "build completed",
+        "target": {
+          "expr": "increase(cbsd_build_results_total{worker=\"$worker\"}[1m]) > 0",
+          "refId": "Anno"
+        }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 24,
+      "type": "timeseries",
+      "title": "CPU vs build completions ($worker)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cbsd-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {}
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "cbsd_worker_host_cpu_busy_ratio{worker=\"$worker\"}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cbsd-prometheus"
+          },
+          "legendFormat": "cpu busy"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (worker) (rate(cbsd_build_results_total{worker=\"$worker\"}[5m]))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cbsd-prometheus"
+          },
+          "legendFormat": "completions/s"
+        }
+      ]
+    },
+    {
+      "id": 25,
+      "type": "timeseries",
+      "title": "Memory used vs spool ($worker)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cbsd-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "cbsd_worker_host_mem_used_bytes{worker=\"$worker\"}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cbsd-prometheus"
+          },
+          "legendFormat": "mem used"
+        },
+        {
+          "refId": "B",
+          "expr": "cbsd_worker_spool_bytes{worker=\"$worker\"}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cbsd-prometheus"
+          },
+          "legendFormat": "spool"
+        }
+      ]
+    }
+  ]
+}
