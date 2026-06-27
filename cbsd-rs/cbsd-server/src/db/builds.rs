@@ -331,6 +331,11 @@ pub async fn set_build_started(pool: &SqlitePool, id: i64) -> Result<bool, sqlx:
 /// Mark a build as finished (success, failure, or revoked) and set finished_at.
 /// Optionally records an error message and a build artifact report.
 /// Returns `true` if a row was updated.
+///
+/// This is the universal terminal choke point — every finish path (worker
+/// `build_finished`, integrity reject, dead-worker resolution, revoke timeout,
+/// drain) routes through here — so it is also where the build-result counter
+/// and duration histogram are emitted, each build counted exactly once.
 pub async fn set_build_finished(
     pool: &SqlitePool,
     id: i64,
@@ -338,18 +343,44 @@ pub async fn set_build_finished(
     error: Option<&str>,
     build_report: Option<&str>,
 ) -> Result<bool, sqlx::Error> {
-    let result = sqlx::query!(
-        "UPDATE builds SET state = ?, finished_at = unixepoch(), error = COALESCE(?, error), build_report = ?
-         WHERE id = ?",
+    // RETURNING gives the label values for the metrics in the same round-trip:
+    // `arch` comes straight off the stored descriptor JSON; `periodic` is just
+    // whether the build was scheduler-triggered.
+    let row = sqlx::query!(
+        r#"UPDATE builds
+           SET state = ?, finished_at = unixepoch(),
+               error = COALESCE(?, error), build_report = ?
+           WHERE id = ?
+           RETURNING
+               worker_id AS "worker_id?: String",
+               json_extract(descriptor, '$.build.arch') AS "arch?: String",
+               (periodic_task_id IS NOT NULL) AS "periodic!: bool",
+               started_at AS "started_at?: i64",
+               finished_at AS "finished_at!: i64""#,
         state,
         error,
         build_report,
         id,
     )
-    .execute(pool)
+    .fetch_optional(pool)
     .await?;
 
-    Ok(result.rows_affected() > 0)
+    let Some(row) = row else {
+        return Ok(false);
+    };
+
+    // `finished_at` was just set by this UPDATE, so it is always present here;
+    // only `started_at` can be absent (the F6 guard handles that).
+    crate::metrics::builds::record_build_finished(
+        state,
+        row.arch.as_deref().unwrap_or("unknown"),
+        row.worker_id.as_deref().unwrap_or("unknown"),
+        row.periodic,
+        row.started_at,
+        Some(row.finished_at),
+    );
+
+    Ok(true)
 }
 
 /// Set a build's state to "revoking".
@@ -512,5 +543,43 @@ mod tests {
         let pool = test_pool().await;
         let rolled = rollback_dispatch_to_queued(&pool, 9999).await.expect("ok");
         assert!(!rolled);
+    }
+
+    #[tokio::test]
+    async fn set_build_finished_extracts_arch_and_reports_row_match() {
+        let pool = test_pool().await;
+        seed_user(&pool, "u@e.com").await;
+        // A descriptor whose `build.arch` the terminal metric query reads back.
+        let descriptor = r#"{"build":{"arch":"x86_64"}}"#;
+        let id = insert_build(&pool, descriptor, "u@e.com", "normal", None, None, None)
+            .await
+            .expect("insert");
+        sqlx::query!(
+            "UPDATE builds SET worker_id = 'w1', started_at = 100 WHERE id = ?",
+            id,
+        )
+        .execute(&pool)
+        .await
+        .expect("dirty");
+
+        // Lock the JSON path the RETURNING clause depends on.
+        let arch: Option<String> = sqlx::query_scalar::<_, Option<String>>(
+            "SELECT json_extract(descriptor, '$.build.arch') FROM builds WHERE id = ?",
+        )
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .expect("json_extract");
+        assert_eq!(arch.as_deref(), Some("x86_64"));
+
+        let updated = set_build_finished(&pool, id, "success", None, None)
+            .await
+            .expect("finish");
+        assert!(updated, "an existing row must report a match");
+
+        let missing = set_build_finished(&pool, 999_999, "success", None, None)
+            .await
+            .expect("finish-missing");
+        assert!(!missing, "a missing row must report no match");
     }
 }

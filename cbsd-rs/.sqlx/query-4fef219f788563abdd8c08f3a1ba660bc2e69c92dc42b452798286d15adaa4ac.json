@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE builds SET worker_id = 'w1', started_at = 100 WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "4fef219f788563abdd8c08f3a1ba660bc2e69c92dc42b452798286d15adaa4ac"
+}

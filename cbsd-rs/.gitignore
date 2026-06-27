@@ -1,2 +1,4 @@
 /target/
 .git-version
+# Local sqlx dev databases (used to regenerate the .sqlx offline cache).
+*.db

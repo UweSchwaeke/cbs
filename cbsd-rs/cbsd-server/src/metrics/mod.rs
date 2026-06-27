@@ -28,15 +28,23 @@ use axum::extract::State;
 use axum::http::StatusCode;
 use axum::http::header::CONTENT_TYPE;
 use axum::response::{IntoResponse, Response};
-use metrics_exporter_prometheus::{BuildError, PrometheusBuilder, PrometheusHandle};
+use metrics_exporter_prometheus::{BuildError, Matcher, PrometheusBuilder, PrometheusHandle};
 use metrics_util::MetricKindMask;
 
 use crate::app::AppState;
 
+pub mod builds;
 pub mod gauges;
 
 /// Prometheus exposition content type (text format v0.0.4).
 const PROMETHEUS_CONTENT_TYPE: &str = "text/plain; version=0.0.4";
+
+/// Histogram buckets (seconds) for `cbsd_build_duration_seconds`. Sized for the
+/// observed range — minutes to ~1-2h depending on ccache warmth — with headroom
+/// to 3h and an implicit `+Inf` catch-all (design 022).
+const BUILD_DURATION_BUCKETS: [f64; 12] = [
+    30.0, 60.0, 120.0, 240.0, 480.0, 900.0, 1800.0, 2700.0, 3600.0, 5400.0, 7200.0, 10800.0,
+];
 
 /// Render handle for the installed Prometheus recorder. Cloneable and cheap;
 /// the only state `/metrics` and the gauge-refresh task need.
@@ -55,6 +63,10 @@ pub struct MetricsState {
 /// Must be called once, before any metric is emitted.
 pub fn install(stale_after: Duration) -> Result<PrometheusHandle, BuildError> {
     PrometheusBuilder::new()
+        .set_buckets_for_metric(
+            Matcher::Full("cbsd_build_duration_seconds".to_string()),
+            &BUILD_DURATION_BUCKETS,
+        )?
         .idle_timeout(MetricKindMask::GAUGE, Some(stale_after))
         .install_recorder()
 }

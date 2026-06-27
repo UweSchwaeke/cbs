@@ -1,0 +1,44 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE builds\n           SET state = ?, finished_at = unixepoch(),\n               error = COALESCE(?, error), build_report = ?\n           WHERE id = ?\n           RETURNING\n               worker_id AS \"worker_id?: String\",\n               json_extract(descriptor, '$.build.arch') AS \"arch?: String\",\n               (periodic_task_id IS NOT NULL) AS \"periodic!: bool\",\n               started_at AS \"started_at?: i64\",\n               finished_at AS \"finished_at!: i64\"",
+  "describe": {
+    "columns": [
+      {
+        "name": "worker_id?: String",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "arch?: String",
+        "ordinal": 1,
+        "type_info": "Null"
+      },
+      {
+        "name": "periodic!: bool",
+        "ordinal": 2,
+        "type_info": "Integer"
+      },
+      {
+        "name": "started_at?: i64",
+        "ordinal": 3,
+        "type_info": "Integer"
+      },
+      {
+        "name": "finished_at!: i64",
+        "ordinal": 4,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": [
+      true,
+      null,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "9557736345a5394557483aae9324fbcaa95dd5091aefecb2d1e3e33ce84aa108"
+}
