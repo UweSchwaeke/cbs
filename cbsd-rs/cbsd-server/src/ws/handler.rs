@@ -304,6 +304,7 @@ async fn handle_connection(
                 "migrated worker '{}' to new connection",
                 worker_name,
             );
+            crate::metrics::lifecycle::record_worker_reconnect(&registered_worker_id);
             Some((old_cid, was_connected, migrated_builds))
         } else {
             None
@@ -912,6 +913,7 @@ async fn idle_reconcile_one(
                 receipt = ?candidate.receipt,
                 "reconnect idle: rolling back stale dispatch to queued"
             );
+            crate::metrics::lifecycle::record_requeue("reconnect_stale");
             dispatch::rollback_active_to_queued(pool, queue, log_watchers, candidate.build_id)
                 .await;
         }
@@ -1214,6 +1216,7 @@ async fn resolve_dead_build(
                 connection_id = %connection_id,
                 "worker dead — rolling unacknowledged dispatch back to queued"
             );
+            crate::metrics::lifecycle::record_requeue("worker_dead");
             dispatch::rollback_active_to_queued(pool, queue, log_watchers, build_id).await;
         }
         DeadWorkerAction::Fail(reason) => {

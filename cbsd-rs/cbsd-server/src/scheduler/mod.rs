@@ -176,7 +176,10 @@ pub async fn run_scheduler(state: AppState, notify: Arc<tokio::sync::Notify>) {
         // Step 5: Wait for fire time or notification.
         tokio::select! {
             () = tokio::time::sleep_until(sleep_until) => {
-                // Fire time reached — proceed to trigger.
+                // Fire time reached — record how late we are versus the cron
+                // time (clamped at 0; early fires are not meaningful).
+                let lag = (Utc::now() - fire_time).num_milliseconds() as f64 / 1000.0;
+                crate::metrics::lifecycle::record_periodic_schedule_lag(lag.max(0.0));
             }
             () = notify.notified() => {
                 // Tasks changed — reload.
@@ -212,7 +215,13 @@ pub async fn run_scheduler(state: AppState, notify: Arc<tokio::sync::Notify>) {
         };
 
         // Step 8: Trigger the build.
-        match trigger::trigger_periodic_build(&state, &task).await {
+        let trigger_result = trigger::trigger_periodic_build(&state, &task).await;
+        crate::metrics::lifecycle::record_periodic_fire(if trigger_result.is_ok() {
+            "success"
+        } else {
+            "failure"
+        });
+        match trigger_result {
             // Step 9: Success.
             Ok(build_id) => {
                 tracing::info!(

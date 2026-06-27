@@ -152,9 +152,13 @@ pub async fn try_dispatch(state: &AppState) -> Result<(), DispatchError> {
             descriptor: build.descriptor.clone(),
             trace_id,
             connection_id,
+            queued_at: build.queued_at,
         }
     };
     // Step 9: Lock released here.
+
+    // Dispatch latency spans the out-of-lock pack + send below.
+    let dispatch_started = std::time::Instant::now();
 
     // Step 10: Pack the component tarball (outside lock). Every component the
     // descriptor references is packed under its own `<name>/` prefix into the
@@ -244,6 +248,16 @@ pub async fn try_dispatch(state: &AppState) -> Result<(), DispatchError> {
     )
     .await?;
 
+    // The build is now successfully handed off — record how long it waited in
+    // the queue and how long the pack+send took.
+    let arch = dispatch_info.descriptor.build.arch;
+    crate::metrics::lifecycle::record_dispatch_latency(
+        arch,
+        dispatch_started.elapsed().as_secs_f64(),
+    );
+    let wait_secs = (chrono::Utc::now().timestamp() - dispatch_info.queued_at).max(0) as f64;
+    crate::metrics::lifecycle::record_queue_wait(dispatch_info.priority, arch, wait_secs);
+
     // Step 13: Spawn ack timeout task. If the worker doesn't send
     // build_accepted within dispatch_ack_timeout_secs, re-queue the build.
     // The CancellationToken in ActiveBuild is cancelled by handle_build_accepted.
@@ -270,6 +284,8 @@ pub async fn try_dispatch(state: &AppState) -> Result<(), DispatchError> {
                             timeout_secs = ack_timeout_secs,
                             "dispatch ack timeout — re-queuing build"
                         );
+                        crate::metrics::lifecycle::record_dispatch_ack_timeout();
+                        crate::metrics::lifecycle::record_requeue("ack_timeout");
                         rollback_active_to_queued(
                             &ack_state.pool,
                             &ack_state.queue,
@@ -368,7 +384,10 @@ pub async fn rollback_active_to_queued(
             priority: ab.priority,
             descriptor: ab.descriptor,
             user_email: String::new(),
-            queued_at: 0,
+            // Re-stamp so the queue-wait metric measures the wait for this
+            // re-dispatch attempt, not a 0 sentinel (which would read as a
+            // ~55-year wait once dispatched).
+            queued_at: chrono::Utc::now().timestamp(),
         });
     }
 
@@ -572,6 +591,7 @@ pub async fn handle_build_rejected(
             "build rejected — re-queuing"
         );
 
+        crate::metrics::lifecycle::record_requeue("rejected");
         rollback_active_to_queued(&state.pool, &state.queue, &state.log_watchers, build_id).await;
 
         // Try to dispatch to another worker.
@@ -822,6 +842,7 @@ pub async fn handle_revoke_timeout(state: &AppState, build_id: i64) {
         build_id = build_id,
         "revoke ack timeout — marking REVOKED unilaterally"
     );
+    crate::metrics::lifecycle::record_revoke_ack_timeout();
 
     crate::ws::handler::cleanup_terminal_state(
         &state.pool,
@@ -882,6 +903,8 @@ struct DispatchInfo {
     descriptor: cbsd_proto::BuildDescriptor,
     trace_id: String,
     connection_id: String,
+    /// Unix time the build entered the queue, for the queue-wait metric.
+    queued_at: i64,
 }
 
 #[cfg(test)]
@@ -1177,6 +1200,7 @@ mod tests {
             descriptor: sample_descriptor(),
             trace_id: "trace-1".to_string(),
             connection_id: connection_id.to_string(),
+            queued_at: 0,
         }
     }
 
