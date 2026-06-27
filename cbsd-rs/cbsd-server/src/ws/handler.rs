@@ -360,9 +360,11 @@ async fn handle_connection(
             protocol_version: 2,
             connection_id: connection_id.clone(),
             grace_period_secs,
-            // Metrics push is not yet advertised; G5 sets this from the
-            // server's metrics config so workers only push when wanted.
-            accepts_metrics: false,
+            // Ask the worker to push host/app metrics only when this server
+            // collects them at all. This is independent of the `/metrics` bind:
+            // a separate-bind deployment still ingests pushes into the same
+            // recorder. A worker too old to read the field stays silent.
+            accepts_metrics: state.config.metrics.enabled,
         },
     )
     .await
@@ -706,15 +708,26 @@ async fn handle_worker_message(
                 },
             );
         }
-        WorkerMessage::Metrics { .. } => {
-            // The wire contract exists (cbsd-proto), but the server does not yet
-            // advertise `accepts_metrics`, so no compliant worker pushes this.
-            // Ingestion under a server-stamped `worker` label lands in G5;
-            // until then a stray sample is dropped rather than mis-attributed.
-            tracing::debug!(
+        WorkerMessage::Metrics {
+            uptime_secs,
+            host,
+            app,
+        } => {
+            // Stamp the `worker` label from the stable registered identity, not
+            // anything the worker sent (F8): a worker cannot forge another's
+            // series, and a reconnect on a fresh connection_id keeps one
+            // continuous series. Written straight into the facade, no cache.
+            tracing::trace!(
                 connection_id = %connection_id,
                 worker_name = %worker_name,
-                "received worker metrics before ingestion is wired; dropping"
+                uptime_secs,
+                "ingesting worker metrics push"
+            );
+            crate::metrics::worker::record_worker_metrics(
+                registered_worker_id,
+                uptime_secs,
+                &host,
+                &app,
             );
         }
     }

@@ -37,6 +37,7 @@ pub mod builds;
 pub mod gauges;
 pub mod http;
 pub mod lifecycle;
+pub mod worker;
 
 /// Prometheus exposition content type (text format v0.0.4).
 const PROMETHEUS_CONTENT_TYPE: &str = "text/plain; version=0.0.4";
