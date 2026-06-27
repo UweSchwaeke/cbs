@@ -144,6 +144,21 @@ impl BuildQueue {
         (self.high.len(), self.normal.len(), self.low.len())
     }
 
+    /// Per-(priority, arch) pending build counts, for the metrics gauge.
+    /// Bounded by total queue depth; iterates all three lanes since arch lives
+    /// on each build's descriptor, not the lane.
+    pub fn queued_by_priority_arch(&self) -> Vec<(Priority, Arch, u64)> {
+        let mut counts: HashMap<(Priority, Arch), u64> = HashMap::new();
+        for lane in [&self.high, &self.normal, &self.low] {
+            for b in lane {
+                *counts
+                    .entry((b.priority, b.descriptor.build.arch))
+                    .or_insert(0) += 1;
+            }
+        }
+        counts.into_iter().map(|((p, a), n)| (p, a, n)).collect()
+    }
+
     /// Check if a build with the given ID is in the queue.
     #[allow(dead_code)]
     pub fn contains(&self, build_id: BuildId) -> bool {

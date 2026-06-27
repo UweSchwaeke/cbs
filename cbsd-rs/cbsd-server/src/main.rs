@@ -17,6 +17,7 @@ mod components;
 mod config;
 mod db;
 mod logs;
+mod metrics;
 mod openapi;
 mod queue;
 mod routes;
@@ -221,6 +222,18 @@ async fn main() {
     let scheduler_notify = Arc::new(tokio::sync::Notify::new());
     let scheduler_handle = Arc::new(tokio::sync::Mutex::new(None));
 
+    // Install the Prometheus recorder before any metric is emitted. GAUGE-only
+    // idle-timeout so a silent worker's gauges expire while server-owned
+    // counters are never pruned (design 022). `None` ⇒ metrics disabled.
+    let metrics_state = if config.metrics.enabled {
+        let stale = std::time::Duration::from_secs(config.metrics.stale_after_secs);
+        let handle = metrics::install(stale).expect("failed to install metrics recorder");
+        Some(metrics::MetricsState { handle })
+    } else {
+        None
+    };
+    let metrics_handle = metrics_state.as_ref().map(|m| m.handle.clone());
+
     let state = app::AppState {
         pool: pool.clone(),
         config: Arc::new(config),
@@ -235,6 +248,7 @@ async fn main() {
         gc_handle: gc_handle.clone(),
         scheduler_notify: scheduler_notify.clone(),
         scheduler_handle: scheduler_handle.clone(),
+        metrics: metrics_state,
     };
 
     // Start the periodic re-dispatch sweep.
@@ -267,6 +281,43 @@ async fn main() {
         *guard = Some(sched_task_handle);
     }
     tracing::info!("periodic build scheduler started");
+
+    // Start the server-owned gauge refresh + recorder upkeep task.
+    let metrics_refresh_handle = metrics_handle.clone().map(|handle| {
+        let refresh = std::time::Duration::from_secs(state.config.metrics.gauge_refresh_secs);
+        tokio::spawn(metrics::gauges::run_gauge_refresh(
+            state.clone(),
+            handle,
+            refresh,
+        ))
+    });
+
+    // Serve `/metrics` on a dedicated listener when configured (kept off the
+    // public API surface by deployment). With `metrics.bind: null` the endpoint
+    // is mounted on the main router instead (see `build_router`).
+    let metrics_shutdown = tokio_util::sync::CancellationToken::new();
+    let metrics_server_handle = match (&metrics_handle, state.config.metrics.bind.as_deref()) {
+        (Some(_), Some(bind)) => {
+            let metrics_addr: SocketAddr = bind.parse().expect("invalid metrics.bind address");
+            let metrics_listener = tokio::net::TcpListener::bind(metrics_addr)
+                .await
+                .expect("failed to bind metrics listener");
+            tracing::info!("metrics listening on {metrics_addr}");
+            let metrics_router = axum::Router::new()
+                .route("/metrics", axum::routing::get(metrics::metrics_handler))
+                .with_state(state.clone());
+            let shutdown = metrics_shutdown.clone();
+            Some(tokio::spawn(async move {
+                if let Err(e) = axum::serve(metrics_listener, metrics_router)
+                    .with_graceful_shutdown(async move { shutdown.cancelled().await })
+                    .await
+                {
+                    tracing::error!("metrics server error: {e}");
+                }
+            }))
+        }
+        _ => None,
+    };
 
     let router = app::build_router(state.clone(), session_layer);
 
@@ -320,6 +371,15 @@ async fn main() {
         if let Some(h) = guard.as_ref() {
             h.abort();
         }
+    }
+
+    // Stop the metrics listener gracefully and the refresh task.
+    metrics_shutdown.cancel();
+    if let Some(h) = metrics_server_handle {
+        let _ = h.await;
+    }
+    if let Some(h) = metrics_refresh_handle {
+        h.abort();
     }
 
     tracing::info!("cbsd-server shut down");

@@ -74,6 +74,10 @@ pub struct ServerConfig {
     /// Tracing / logging configuration.
     #[serde(default)]
     pub logging: LoggingConfig,
+
+    /// Prometheus metrics exporter configuration.
+    #[serde(default)]
+    pub metrics: MetricsConfig,
 }
 
 #[derive(Debug, Deserialize)]
@@ -209,6 +213,46 @@ impl Default for LoggingConfig {
     }
 }
 
+/// Prometheus metrics exporter. The parent uses `#[serde(default)]`, so the
+/// whole section is optional and defaults on. Per-field defaults keep a
+/// partially-specified section valid.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct MetricsConfig {
+    /// Master switch. When false, no recorder is installed and `/metrics` is
+    /// not served. Default true.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+
+    /// Where to serve `/metrics`. `Some(addr)` serves it on a dedicated
+    /// listener (default `0.0.0.0:9090`), kept off the public API surface by
+    /// deployment. `None` mounts `/metrics` on the main API listener.
+    #[serde(default = "default_metrics_bind")]
+    pub bind: Option<String>,
+
+    /// Gauge `idle_timeout`: seconds before an un-refreshed gauge series is
+    /// pruned, so a silent worker's host gauges disappear. Must exceed
+    /// `gauge_refresh_secs`. Default 45 (≈ 3× the worker push interval).
+    #[serde(default = "default_stale_after")]
+    pub stale_after_secs: u64,
+
+    /// Seconds between server-owned gauge refresh samples (also drives
+    /// `run_upkeep`). Default 5.
+    #[serde(default = "default_gauge_refresh")]
+    pub gauge_refresh_secs: u64,
+}
+
+impl Default for MetricsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_true(),
+            bind: default_metrics_bind(),
+            stale_after_secs: default_stale_after(),
+            gauge_refresh_secs: default_gauge_refresh(),
+        }
+    }
+}
+
 // -- defaults for serde --
 
 fn default_listen_addr() -> String {
@@ -234,6 +278,22 @@ fn default_log_level() -> String {
 /// 6 months in seconds (180 days).
 fn default_max_token_ttl() -> u64 {
     15_552_000
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_metrics_bind() -> Option<String> {
+    Some("0.0.0.0:9090".to_string())
+}
+
+fn default_stale_after() -> u64 {
+    45
+}
+
+fn default_gauge_refresh() -> u64 {
+    5
 }
 
 // -- validation --
@@ -280,6 +340,9 @@ impl ServerConfig {
                  set dev.enabled: true or remove dev.seed_workers"
             );
         }
+
+        // Metrics invariants (factored out for unit testing).
+        check_metrics_invariants(&self.metrics, &self.listen_addr);
 
         // Logging validation: production mode requires a log file.
         let is_dev = cbsd_common::env::is_truthy_env("CBSD_DEV");
@@ -333,6 +396,39 @@ impl ServerConfig {
     }
 }
 
+/// Metrics configuration invariants, factored out of [`ServerConfig::validate`]
+/// for unit testing. Panics on violation.
+///
+/// The gauge-refresh cadence must stay strictly inside the gauge idle-timeout,
+/// or server-owned gauges idle out between refreshes and vanish between scrapes
+/// (design 022 §Risks). A dedicated metrics bind must not collide with the main
+/// API listener.
+fn check_metrics_invariants(metrics: &MetricsConfig, listen_addr: &str) {
+    if !metrics.enabled {
+        return;
+    }
+    if metrics.gauge_refresh_secs >= metrics.stale_after_secs {
+        panic!(
+            "config error: metrics.gauge-refresh-secs ({}) must be less than \
+             metrics.stale-after-secs ({})",
+            metrics.gauge_refresh_secs, metrics.stale_after_secs,
+        );
+    }
+    if let Some(bind) = metrics.bind.as_deref() {
+        if bind == listen_addr {
+            panic!(
+                "config error: metrics.bind ({bind}) must differ from listen-addr \
+                 ({listen_addr}) — the metrics endpoint needs its own listener, or \
+                 set metrics.bind: null to serve it on the main listener"
+            );
+        }
+        // Fail fast here rather than panicking later when the listener binds.
+        if let Err(e) = bind.parse::<std::net::SocketAddr>() {
+            panic!("config error: metrics.bind ({bind}) is not a valid socket address: {e}");
+        }
+    }
+}
+
 /// Load and validate server config from a YAML file.
 pub fn load_config(path: &std::path::Path) -> ServerConfig {
     let contents = std::fs::read_to_string(path)
@@ -354,4 +450,62 @@ pub fn load_config(path: &std::path::Path) -> ServerConfig {
     }
     config.validate();
     config
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[should_panic(expected = "gauge-refresh-secs")]
+    fn metrics_refresh_must_be_under_stale() {
+        let metrics = MetricsConfig {
+            enabled: true,
+            bind: None,
+            stale_after_secs: 30,
+            gauge_refresh_secs: 30,
+        };
+        check_metrics_invariants(&metrics, "0.0.0.0:8080");
+    }
+
+    #[test]
+    #[should_panic(expected = "must differ from listen-addr")]
+    fn metrics_bind_must_differ_from_listen_addr() {
+        let metrics = MetricsConfig {
+            enabled: true,
+            bind: Some("0.0.0.0:8080".to_string()),
+            stale_after_secs: 45,
+            gauge_refresh_secs: 5,
+        };
+        check_metrics_invariants(&metrics, "0.0.0.0:8080");
+    }
+
+    #[test]
+    #[should_panic(expected = "not a valid socket address")]
+    fn metrics_bind_must_be_a_valid_socket_addr() {
+        let metrics = MetricsConfig {
+            enabled: true,
+            bind: Some("not-an-address".to_string()),
+            stale_after_secs: 45,
+            gauge_refresh_secs: 5,
+        };
+        check_metrics_invariants(&metrics, "0.0.0.0:8080");
+    }
+
+    #[test]
+    fn metrics_disabled_skips_all_checks() {
+        // Deliberately invalid values; disabled metrics must not panic.
+        let metrics = MetricsConfig {
+            enabled: false,
+            bind: Some("0.0.0.0:8080".to_string()),
+            stale_after_secs: 1,
+            gauge_refresh_secs: 99,
+        };
+        check_metrics_invariants(&metrics, "0.0.0.0:8080");
+    }
+
+    #[test]
+    fn metrics_defaults_are_valid() {
+        check_metrics_invariants(&MetricsConfig::default(), "0.0.0.0:8080");
+    }
 }

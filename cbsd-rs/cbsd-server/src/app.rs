@@ -36,6 +36,7 @@ use crate::auth::token_cache::TokenCache;
 use crate::components::ComponentInfo;
 use crate::config::ServerConfig;
 use crate::logs::writer::SharedLogWriter;
+use crate::metrics::MetricsState;
 use crate::queue::SharedBuildQueue;
 use crate::routes;
 
@@ -72,6 +73,9 @@ pub struct AppState {
     pub scheduler_notify: Arc<tokio::sync::Notify>,
     /// Handle for the periodic build scheduler task.
     pub scheduler_handle: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
+    /// Prometheus render handle, present when metrics are enabled. `None`
+    /// disables the `/metrics` endpoint (no recorder installed).
+    pub metrics: Option<MetricsState>,
 }
 
 /// Header name used for request IDs (propagated to responses).
@@ -157,11 +161,18 @@ pub fn build_router(
     //   4. PropagateRequestId — copies x-request-id to the response
     //   5. SessionManagerLayer — session handling for OAuth
     //   6. RequestBodyLimit — bounds REST payloads at 1 MiB
-    Router::new()
-        .nest(
-            "/api",
-            api.route("/ws/worker", get(ws::handler::ws_upgrade)),
-        )
+    let mut router = Router::new().nest(
+        "/api",
+        api.route("/ws/worker", get(ws::handler::ws_upgrade)),
+    );
+
+    // When metrics are enabled without a dedicated bind, serve `/metrics` on
+    // the main listener (a separate-bind deployment serves it elsewhere).
+    if state.config.metrics.enabled && state.config.metrics.bind.is_none() {
+        router = router.route("/metrics", get(crate::metrics::metrics_handler));
+    }
+
+    router
         .layer(body_limit_layer)
         .layer(session_layer)
         .layer(PropagateRequestIdLayer::new(X_REQUEST_ID.clone()))

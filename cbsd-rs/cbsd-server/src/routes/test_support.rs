@@ -38,8 +38,8 @@ use crate::auth::extractors::AuthUser;
 use crate::auth::oauth::OAuthState;
 use crate::auth::token_cache::TokenCache;
 use crate::config::{
-    DevConfig, LogRetentionConfig, LoggingConfig, OAuthConfig, SecretsConfig, SeedConfig,
-    ServerConfig, TimeoutsConfig,
+    DevConfig, LogRetentionConfig, LoggingConfig, MetricsConfig, OAuthConfig, SecretsConfig,
+    SeedConfig, ServerConfig, TimeoutsConfig,
 };
 use crate::logs::writer::LogWriterState;
 use crate::queue::BuildQueue;
@@ -98,6 +98,7 @@ pub fn test_app_state_with_components_dir(pool: SqlitePool, components_dir: Path
         gc_handle: Arc::new(Mutex::new(None)),
         scheduler_notify: Arc::new(Notify::new()),
         scheduler_handle: Arc::new(Mutex::new(None)),
+        metrics: None,
     }
 }
 
@@ -123,6 +124,7 @@ fn test_server_config_with_components_dir(components_dir: PathBuf) -> ServerConf
         seed: SeedConfig::default(),
         dev: DevConfig::default(),
         logging: LoggingConfig::default(),
+        metrics: MetricsConfig::default(),
     }
 }
 
