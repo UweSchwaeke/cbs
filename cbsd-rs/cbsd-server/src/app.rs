@@ -158,9 +158,10 @@ pub fn build_router(
     //   1. SetRequestId — assigns x-request-id before tracing sees it
     //   2. Sensitive headers — marks Authorization as sensitive
     //   3. TraceLayer — logs request/response with the assigned ID
-    //   4. PropagateRequestId — copies x-request-id to the response
-    //   5. SessionManagerLayer — session handling for OAuth
-    //   6. RequestBodyLimit — bounds REST payloads at 1 MiB
+    //   4. HTTP RED metrics — track_metrics, by matched route pattern
+    //   5. PropagateRequestId — copies x-request-id to the response
+    //   6. SessionManagerLayer — session handling for OAuth
+    //   7. RequestBodyLimit — bounds REST payloads at 1 MiB
     let mut router = Router::new().nest(
         "/api",
         api.route("/ws/worker", get(ws::handler::ws_upgrade)),
@@ -176,6 +177,11 @@ pub fn build_router(
         .layer(body_limit_layer)
         .layer(session_layer)
         .layer(PropagateRequestIdLayer::new(X_REQUEST_ID.clone()))
+        // HTTP RED metrics — labelled by matched route pattern. Added via
+        // Router::layer so `MatchedPath` is populated when it runs.
+        .layer(axum::middleware::from_fn(
+            crate::metrics::http::track_metrics,
+        ))
         .layer(trace_layer)
         .layer(sensitive_headers_layer)
         .layer(SetRequestIdLayer::new(

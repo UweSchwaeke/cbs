@@ -35,6 +35,7 @@ use crate::app::AppState;
 
 pub mod builds;
 pub mod gauges;
+pub mod http;
 pub mod lifecycle;
 
 /// Prometheus exposition content type (text format v0.0.4).
@@ -57,6 +58,12 @@ const DISPATCH_LATENCY_BUCKETS: [f64; 8] = [0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0,
 /// Buckets (seconds) for `cbsd_periodic_schedule_lag_seconds` — how late a cron
 /// fire ran versus its intended time.
 const SCHEDULE_LAG_BUCKETS: [f64; 6] = [1.0, 5.0, 15.0, 60.0, 300.0, 900.0];
+
+/// Buckets (seconds) for `cbsd_http_request_duration_seconds` — typical web
+/// latency, milliseconds to a few seconds.
+const HTTP_DURATION_BUCKETS: [f64; 11] = [
+    0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0,
+];
 
 /// Render handle for the installed Prometheus recorder. Cloneable and cheap;
 /// the only state `/metrics` and the gauge-refresh task need.
@@ -90,6 +97,10 @@ pub fn install(stale_after: Duration) -> Result<PrometheusHandle, BuildError> {
         .set_buckets_for_metric(
             Matcher::Full("cbsd_periodic_schedule_lag_seconds".to_string()),
             &SCHEDULE_LAG_BUCKETS,
+        )?
+        .set_buckets_for_metric(
+            Matcher::Full("cbsd_http_request_duration_seconds".to_string()),
+            &HTTP_DURATION_BUCKETS,
         )?
         .idle_timeout(MetricKindMask::GAUGE, Some(stale_after))
         .install_recorder()
