@@ -30,6 +30,10 @@ _ERRORMARK="\U1F4A5"
 
 _REPO_NAME="clyso/cbs"
 
+# Monotonic config/template version. Bump by one whenever cbsd-rs-ctr.sh or any
+# config/systemd template changes, and add a matching _update_v_<N>() below.
+_VERSION=1
+
 _cleanup_dirs=()
 
 cleanup() {
@@ -188,6 +192,129 @@ download() {
   }
 }
 
+# --------------------------------------------------------------------------
+# Update staging
+#
+# '--update' never modifies a live deployment. It stages the files and
+# templates that changed since the deployment's recorded version into an
+# 'update-v<_VERSION>' directory under the deployment's data dir and prints
+# what changed; merging and applying those changes is left to the operator.
+# The recorded version is advanced as soon as the files are staged.
+#
+# Each tracked version N has an append-only '_update_v_<N>()' that copies its
+# changed files into the staging dir (passed as $1) and describes the change.
+# --------------------------------------------------------------------------
+
+_check_update_funcs() {
+  local v
+  for ((v = 1; v <= _VERSION; v++)); do
+    declare -F "_update_v_${v}" >/dev/null || {
+      err "internal: _VERSION is ${_VERSION} but _update_v_${v}() is missing"
+      exit 1
+    }
+  done
+}
+
+_update_v_1() {
+  local stage="${1}"
+  local src="${src_systemd_dir}"
+
+  cp "${src}/cbsd-rs-ctr.sh" "${stage}/cbsd-rs-ctr.sh" || {
+    err "failed to stage cbsd-rs-ctr.sh"
+    exit 1
+  }
+  cp "${src}/templates/config/server.conf.in" "${stage}/server.conf" || {
+    err "failed to stage server.conf"
+    exit 1
+  }
+  cp "${src}/templates/config/server.yaml.in" "${stage}/server.yaml" || {
+    err "failed to stage server.yaml"
+    exit 1
+  }
+
+  cat <<EOF
+
+v1 — server metrics exposure
+  Staged files (templates/defaults; merge into your live config by hand):
+    cbsd-rs-ctr.sh -> ${data_dir}/cbsd-rs-ctr.sh   (shared across the host)
+    server.conf    -> ${config_dir}/${deployment}/server.conf
+    server.yaml    -> ${config_dir}/${deployment}/server/server.yaml
+  What changed:
+    - cbsd-rs-ctr.sh can now publish the server's Prometheus /metrics port to
+      the host (opt-in); replacing it affects every deployment on this host.
+    - server.conf gained WITH_METRICS / METRICS_BIND_ADDR / METRICS_BIND_PORT
+      (default off); set WITH_METRICS="true" to expose the port.
+    - server.yaml gained a 'metrics:' section (in-container listener config).
+    - /metrics is a separate internal port (default :9090), not proxied by the
+      UI nginx vhost; review your monitoring exposure if you front it.
+EOF
+}
+
+do_update_deployment() {
+  _check_update_funcs
+
+  local dep_data="${data_dir}/${deployment}"
+  local ver_file="${dep_data}/.cbsd-rs-version"
+
+  [[ ! -d "${dep_data}" ]] && {
+    err "deployment '${deployment}' is not installed (missing ${dep_data})"
+    exit 1
+  }
+
+  local current=0
+  [[ -r "${ver_file}" ]] && current="$(cat "${ver_file}" 2>/dev/null)"
+  [[ "${current}" =~ ^[0-9]+$ ]] || {
+    warn "unreadable version in ${ver_file}, assuming 0"
+    current=0
+  }
+
+  [[ ${current} -ge ${_VERSION} ]] && {
+    success "deployment '${deployment}' is up to date (v${current})"
+    return 0
+  }
+
+  local stage="${dep_data}/update-v${_VERSION}"
+  [[ -d "${stage}" ]] && {
+    warn "replacing existing staging directory ${stage}"
+    rm -fr "${stage}" || {
+      err "failed to remove existing staging directory ${stage}"
+      exit 1
+    }
+  }
+  mkdir -p "${stage}" || {
+    err "failed to create staging directory ${stage}"
+    exit 1
+  }
+
+  info "staging updates for deployment '${deployment}': v${current} -> v${_VERSION}"
+
+  local v fn
+  for ((v = current + 1; v <= _VERSION; v++)); do
+    fn="_update_v_${v}"
+    "${fn}" "${stage}"
+  done
+
+  echo "${_VERSION}" >"${ver_file}" || {
+    err "failed to record version at ${ver_file}"
+    exit 1
+  }
+
+  print_boxed "$(
+    cat <<EOF
+
+Updates for deployment '${deployment}' have been staged at:
+  ${stage}
+
+These are template/default files. Review them, merge the changes into your
+live configuration by hand, then restart the affected services, e.g.:
+  systemctl --user restart cbsd-rs-${deployment}@server.service
+
+The deployment version is now recorded as v${_VERSION}; applying the staged
+changes is left to you.
+EOF
+  )" "update"
+}
+
 usage() {
   cat <<EOF >&2
 usage: $0 [SERVICE] [options...]
@@ -195,6 +322,7 @@ usage: $0 [SERVICE] [options...]
 ADDRESS must be in the form 'DOMAIN:PORT'; e.g., 'cbsd.example.tld:443'.
 
 Services:
+  all       all of the below (server, worker, ui, nginx)
   server    cbsd-rs server
   worker    cbsd-rs worker
   ui        cbsd-rs UI (nginx serving static content)
@@ -210,6 +338,8 @@ Options:
   -a | --archive PATH     Path to a tarball archive containing
                           unit and config files
   --no-systemd            Only installs the components, not systemd units
+  --update                Stage config/template updates for the deployment
+                          (requires -d; writes to the deployment's data dir)
   --download              Download the archive containing unit and config files
   --cbs-version VERSION   Version of the archive to download (default: latest)
   -h | --help             Show this help message and exit
@@ -220,9 +350,11 @@ systemd_dir="${HOME}/.config/systemd/user"
 config_dir="${HOME}/.config/cbsd-rs"
 data_dir="${HOME}/.local/share/cbsd-rs"
 deployment="default"
+deployment_explicit=0
 service_name=
 archive_path=
 do_no_systemd=0
+do_update=0
 do_download=0
 download_version=""
 address=
@@ -251,6 +383,7 @@ while [[ $# -gt 0 ]]; do
         exit 1
       }
       deployment="${2}"
+      deployment_explicit=1
       shift 1
       ;;
     -n | --name)
@@ -273,6 +406,9 @@ while [[ $# -gt 0 ]]; do
       ;;
     --no-systemd)
       do_no_systemd=1
+      ;;
+    --update)
+      do_update=1
       ;;
     --download)
       do_download=1
@@ -317,6 +453,24 @@ while [[ $# -gt 0 ]]; do
 done
 
 our_dir=
+
+[[ ${do_update} -eq 1 && ${do_no_systemd} -eq 1 ]] && {
+  err "--update cannot be combined with --no-systemd"
+  usage
+  exit 1
+}
+
+[[ ${do_update} -eq 1 && ${deployment_explicit} -eq 0 ]] && {
+  err "--update requires an explicit -d/--deployment"
+  usage
+  exit 1
+}
+
+[[ ${do_update} -eq 1 && ${#positional_args[@]} -gt 0 ]] && {
+  err "services cannot be specified with --update (it is deployment-wide)"
+  usage
+  exit 1
+}
 
 [[ -n "${download_version}" && ${do_download} -eq 0 ]] && {
   err "--cbs-version can only be used with --download"
@@ -385,7 +539,7 @@ fi
   exit 1
 }
 
-[[ -z "${src_components_dir}" || ! -d "${src_components_dir}" ]] && {
+[[ ${do_update} -eq 0 ]] && [[ -z "${src_components_dir}" || ! -d "${src_components_dir}" ]] && {
   err "source components directory does not exist: ${src_components_dir}"
   exit 1
 }
@@ -407,7 +561,12 @@ die_on_no_files() {
 }
 
 [[ ${do_no_systemd} -eq 0 ]] && die_on_no_files "${src_systemd_dir}" "cbsd-rs.*"
-die_on_no_files "${src_components_dir}" "cbs.component.yaml"
+[[ ${do_update} -eq 0 ]] && die_on_no_files "${src_components_dir}" "cbs.component.yaml"
+
+[[ ${do_update} -eq 1 ]] && {
+  do_update_deployment
+  exit 0
+}
 
 do_server=0
 do_worker=0
@@ -429,6 +588,12 @@ if [[ ${#positional_args[@]} -eq 0 && ${do_no_systemd} -eq 0 ]]; then
 else
   for what in "${positional_args[@]}"; do
     case "${what}" in
+      all)
+        do_server=1
+        do_worker=1
+        do_ui=1
+        do_nginx=1
+        ;;
       server)
         do_server=1
         ;;
@@ -946,6 +1111,11 @@ EOF
 
 [[ ${do_nginx} -eq 1 ]] && {
   install_nginx
+}
+
+echo "${_VERSION}" >"${deployment_data_dir}/.cbsd-rs-version" || {
+  err "failed to record deployment version at ${deployment_data_dir}/.cbsd-rs-version"
+  exit 1
 }
 
 systemctl --user daemon-reload || {
