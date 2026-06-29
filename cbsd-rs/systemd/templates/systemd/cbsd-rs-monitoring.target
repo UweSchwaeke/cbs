@@ -1,0 +1,18 @@
+# CBS build service daemon (cbsd-rs) — monitoring target (per-host)
+# Copyright (C) 2026  Clyso
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# Groups the per-host monitoring containers (Prometheus, Grafana,
+# node-exporter). Start this target to bring the whole stack up, stop it to
+# bring it down together. It is intentionally independent of cbsd-rs.target so
+# monitoring can run (or not) regardless of the build service.
+
+[Unit]
+Description=cbsd-rs monitoring stack
+
+[Install]
+WantedBy=default.target

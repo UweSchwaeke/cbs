@@ -76,7 +76,55 @@ internet. `node_exporter` is likewise internal-only. Scrape over a trusted
 network (or a TLS-terminating reverse proxy / mesh) between Prometheus and the
 targets.
 
-## 5. Quick start (dev)
+## 5. Production: containers under systemd (per-host)
+
+Run the stack as rootless podman containers under systemd **user** units — one
+set per server host, not per deployment. Templates live in
+`cbsd-rs/systemd/templates/systemd/`: `cbsd-rs-prometheus.service`,
+`cbsd-rs-grafana.service`, `cbsd-rs-node-exporter.service`, and
+`cbsd-rs-monitoring.target`. They run with `--network host`, so Prometheus
+scrapes everything over `127.0.0.1`.
+
+**Prerequisites.** Publish the server's metrics to the host loopback so
+Prometheus can reach them: set `WITH_METRICS="true"` (keep
+`METRICS_BIND_ADDR="127.0.0.1"`) in the deployment's `server.conf` and restart
+the server. Enable lingering so the user units survive logout:
+`loginctl enable-linger "$USER"`.
+
+**1. Config.** Copy the monitoring assets to the host config dir, then point
+them at the host loopback (the units use `--network host`):
+
+```bash
+mkdir -p ~/.config/cbsd-rs/monitoring
+cp -r container/monitoring/* ~/.config/cbsd-rs/monitoring/
+```
+
+Edit two files: in `prometheus.yml` set the targets to `localhost:9090`
+(`cbsd-server`) and `localhost:9100` (`node-server`); in
+`grafana/provisioning/datasources/prometheus.yml` set the URL to
+`http://localhost:9091`.
+
+**2. Units.** Install, enable, and start the stack:
+
+```bash
+cp cbsd-rs/systemd/templates/systemd/cbsd-rs-prometheus.service \
+  cbsd-rs/systemd/templates/systemd/cbsd-rs-grafana.service \
+  cbsd-rs/systemd/templates/systemd/cbsd-rs-node-exporter.service \
+  cbsd-rs/systemd/templates/systemd/cbsd-rs-monitoring.target \
+  ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable cbsd-rs-prometheus cbsd-rs-grafana \
+  cbsd-rs-node-exporter cbsd-rs-monitoring.target
+systemctl --user start cbsd-rs-monitoring.target
+```
+
+**Ports (all bound to `127.0.0.1`).** server `/metrics` `9090`, Prometheus
+`9091`, node-exporter `9100`, Grafana `3000`. Only Grafana is meant for human
+access — front it with the existing nginx or an SSH tunnel, and set a real admin
+password on first login (image default `admin`/`admin`). Stop or disable the
+whole stack with `systemctl --user stop cbsd-rs-monitoring.target`.
+
+## 6. Quick start (dev)
 
 The compose stack wires all of this up for local use:
 
@@ -86,5 +134,4 @@ podman-compose -f podman-compose.cbsd-rs.yaml --profile dev up
 
 Prometheus is published on `:9091` (debug UI) and Grafana on `:3000` (anonymous
 admin — dev only). The server's `:9090` stays on the compose network. For
-production, run Prometheus, Grafana, and `node_exporter` under your own
-orchestrator, mounting the same `container/monitoring/` configs.
+production, use the systemd units in §5 instead.

@@ -1,0 +1,38 @@
+# CBS build service daemon (cbsd-rs) — node-exporter monitoring unit (per-host)
+# Copyright (C) 2026  Clyso
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# Per-host node-exporter for the SERVER host's OS metrics. The worker fleet
+# pushes its own host metrics over the WebSocket, so node-exporter runs only
+# beside the server. Rootless: it reads the host read-only via /host and
+# '--pid host'; a few collectors that require root are unavailable — run a
+# system (rootful) node-exporter instead if you need the full surface. It
+# listens on 127.0.0.1:9100.
+
+[Unit]
+Description=cbsd-rs monitoring — node-exporter (server host)
+After=network-online.target
+Wants=network-online.target
+PartOf=cbsd-rs-monitoring.target
+Before=cbsd-rs-monitoring.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/podman run --replace --name cbsd-rs-node-exporter \
+  --network host \
+  --pid host \
+  --security-opt label=disable \
+  -v /:/host:ro,rslave \
+  docker.io/prom/node-exporter:latest \
+  --path.rootfs=/host \
+  --web.listen-address=127.0.0.1:9100
+ExecStop=/usr/bin/podman stop cbsd-rs-node-exporter
+Restart=on-failure
+RestartSec=10s
+
+[Install]
+WantedBy=cbsd-rs-monitoring.target

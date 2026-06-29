@@ -1,0 +1,39 @@
+# CBS build service daemon (cbsd-rs) — Prometheus monitoring unit (per-host)
+# Copyright (C) 2026  Clyso
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# Per-host (not per-deployment): one Prometheus per server host. It mounts its
+# scrape config from ~/.config/cbsd-rs/monitoring/prometheus.yml and keeps its
+# TSDB in the 'cbsd-rs-prometheus-data' podman volume. '--network host' lets it
+# scrape the server's published /metrics (127.0.0.1:9090) and the node-exporter
+# (127.0.0.1:9100); it listens on 127.0.0.1:9091 to avoid colliding with the
+# server metrics port (9090).
+
+[Unit]
+Description=cbsd-rs monitoring — Prometheus
+After=network-online.target
+Wants=network-online.target
+PartOf=cbsd-rs-monitoring.target
+Before=cbsd-rs-monitoring.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/podman run --replace --name cbsd-rs-prometheus \
+  --network host \
+  --security-opt label=disable \
+  -v %h/.config/cbsd-rs/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro \
+  -v cbsd-rs-prometheus-data:/prometheus \
+  docker.io/prom/prometheus:latest \
+  --config.file=/etc/prometheus/prometheus.yml \
+  --storage.tsdb.path=/prometheus \
+  --web.listen-address=127.0.0.1:9091
+ExecStop=/usr/bin/podman stop cbsd-rs-prometheus
+Restart=on-failure
+RestartSec=10s
+
+[Install]
+WantedBy=cbsd-rs-monitoring.target

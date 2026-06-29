@@ -1,0 +1,38 @@
+# CBS build service daemon (cbsd-rs) — Grafana monitoring unit (per-host)
+# Copyright (C) 2026  Clyso
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# Per-host Grafana. Provisioning and dashboards are mounted read-only from
+# ~/.config/cbsd-rs/monitoring/grafana/; the Grafana DB lives in the
+# 'cbsd-rs-grafana-data' podman volume. It binds 127.0.0.1:3000 — put it behind
+# the existing nginx (or reach it over an SSH tunnel) and set a real admin
+# password on first login (the image default is admin/admin).
+
+[Unit]
+Description=cbsd-rs monitoring — Grafana
+After=network-online.target cbsd-rs-prometheus.service
+Wants=network-online.target
+PartOf=cbsd-rs-monitoring.target
+Before=cbsd-rs-monitoring.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/podman run --replace --name cbsd-rs-grafana \
+  --network host \
+  --security-opt label=disable \
+  -e GF_SERVER_HTTP_ADDR=127.0.0.1 \
+  -e GF_SERVER_HTTP_PORT=3000 \
+  -v %h/.config/cbsd-rs/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro \
+  -v %h/.config/cbsd-rs/monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro \
+  -v cbsd-rs-grafana-data:/var/lib/grafana \
+  docker.io/grafana/grafana:latest
+ExecStop=/usr/bin/podman stop cbsd-rs-grafana
+Restart=on-failure
+RestartSec=10s
+
+[Install]
+WantedBy=cbsd-rs-monitoring.target
