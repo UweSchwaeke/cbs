@@ -1,8 +1,8 @@
 {
   "uid": "cbsd-worker-host",
-  "title": "cbsd-rs \u2014 Worker Host & ccache",
+  "title": "Worker Host & ccache",
   "tags": [
-    "cbsd-rs"
+    "cbs"
   ],
   "schemaVersion": 39,
   "version": 1,

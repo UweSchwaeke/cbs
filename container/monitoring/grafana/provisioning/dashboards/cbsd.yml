@@ -8,9 +8,9 @@
 apiVersion: 1
 
 providers:
-  - name: cbsd-rs
+  - name: CES Build Service
     orgId: 1
-    folder: cbsd-rs
+    folder: cbs
     type: file
     disableDeletion: false
     allowUiUpdates: false

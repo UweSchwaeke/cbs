@@ -1,8 +1,8 @@
 {
   "uid": "cbsd-build-resource",
-  "title": "cbsd-rs \u2014 Build \u2194 Resource Correlation",
+  "title": "Build \u2194 Resource Correlation",
   "tags": [
-    "cbsd-rs"
+    "cbs"
   ],
   "schemaVersion": 39,
   "version": 1,

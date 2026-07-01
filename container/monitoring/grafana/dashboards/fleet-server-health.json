@@ -1,8 +1,8 @@
 {
   "uid": "cbsd-fleet-health",
-  "title": "cbsd-rs \u2014 Fleet & Server Health",
+  "title": "Fleet & Server Health",
   "tags": [
-    "cbsd-rs"
+    "cbs"
   ],
   "schemaVersion": 39,
   "version": 1,

@@ -1,8 +1,8 @@
 {
   "uid": "cbsd-build-queue",
-  "title": "cbsd-rs \u2014 Build Queue & Throughput",
+  "title": "Build Queue & Throughput",
   "tags": [
-    "cbsd-rs"
+    "cbs"
   ],
   "schemaVersion": 39,
   "version": 1,

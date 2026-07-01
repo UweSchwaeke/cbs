@@ -1,8 +1,8 @@
 {
   "uid": "cbsd-per-worker",
-  "title": "cbsd-rs \u2014 Per-Worker",
+  "title": "Per-Worker",
   "tags": [
-    "cbsd-rs"
+    "cbs"
   ],
   "schemaVersion": 39,
   "version": 1,

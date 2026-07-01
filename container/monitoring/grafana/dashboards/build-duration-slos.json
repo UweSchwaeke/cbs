@@ -1,8 +1,8 @@
 {
   "uid": "cbsd-build-duration",
-  "title": "cbsd-rs \u2014 Build Duration & SLOs",
+  "title": "Build Duration & SLOs",
   "tags": [
-    "cbsd-rs"
+    "cbs"
   ],
   "schemaVersion": 39,
   "version": 1,
